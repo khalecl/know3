@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>know3 — Local RAG + Training Data Engine</title>
+<title>know3 — Local Edition — RAG + Training Data Engine</title>
+<link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='50' font-size='80' fill='%2300e5a0'>k</text></svg>">
 
 <!-- PDF.js for PDF parsing -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs" type="module"></script>
@@ -62,7 +63,7 @@ body {
   line-height: 1.55;
 }
 
-/* ── ANIMATED NETWORK BACKGROUND ── */
+/* ── ANIMATED NEURAL NETWORK BACKGROUND ── */
 #network-bg {
   position: fixed;
   inset: 0;
@@ -1365,6 +1366,7 @@ OUTPUT: [your output here]</textarea>
     </div>
 
     <div style="margin-top:.8rem; font-size:.7rem; color:var(--text3);">
+      <span style="background:var(--purple-dim);color:var(--purple);padding:.15rem .5rem;border-radius:100px;font-size:.65rem;font-weight:600;border:1px solid rgba(167,139,250,0.15);margin-right:.4rem;">Local Edition</span>
       Created by <a href="https://github.com/khalecl" target="_blank" style="color:var(--accent); text-decoration:none;">Dr. Khaled Diab</a>
       · <a href="https://github.com/khalecl/know3" target="_blank" style="color:var(--text3); text-decoration:none;">GitHub</a>
       · MIT License
@@ -1837,7 +1839,6 @@ OUTPUT: [your output here]</textarea>
     </div>
   </div>
 </div>
-
 <!-- ═══════════════════════════════════════════════════════════════════ -->
 <!-- ANIMATED NEURAL NETWORK BACKGROUND -->
 <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -2463,8 +2464,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── Footer Hit Counter ──
   initHitCounter();
 
-  // ── GitHub Hosting Check (soft) ──
-  checkHosting();
+  // No hosting check in local edition
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -2574,81 +2574,10 @@ function renderVisitorFlags(visitors) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// GITHUB HOSTING CHECK — HARDWIRED
+// LOCAL EDITION — No hosting restrictions
 // ════════════════════════════════════════════════════════════════════════════
-function checkHosting() {
-  const hostname = window.location.hostname;
-  const protocol = window.location.protocol;
-
-  // Allowed origins: GitHub Pages only (and localhost for dev)
-  const isGitHub = hostname === 'khalecl.github.io';
-  const isLocalDev = hostname === 'localhost' || hostname === '127.0.0.1' || hostname.endsWith('.localhost');
-  const isFile = protocol === 'file:';
-
-  if (isGitHub || isLocalDev) {
-    // Fully allowed — no notice
-    return;
-  }
-
-  if (isFile) {
-    // Opened as a downloaded file — block with redirect
-    showHostingBlock('file');
-    return;
-  }
-
-  // Hosted on an unauthorized domain — block
-  showHostingBlock('unofficial');
-}
-
-function showHostingBlock(type) {
-  // Disable the main app
-  const app = document.querySelector('.app');
-  if (app) app.style.filter = 'blur(6px) grayscale(0.5)';
-  if (app) app.style.pointerEvents = 'none';
-  if (app) app.style.userSelect = 'none';
-
-  const overlay = document.createElement('div');
-  overlay.id = 'hosting-block';
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(5,9,17,0.92);backdrop-filter:blur(12px);font-family:Outfit,sans-serif;';
-
-  if (type === 'file') {
-    overlay.innerHTML = `
-      <div style="text-align:center;max-width:480px;padding:2rem;">
-        <div style="font-size:3rem;margin-bottom:1rem;">🔒</div>
-        <h2 style="color:#e8eaf4;font-size:1.4rem;margin-bottom:.8rem;">know3 Runs on GitHub Pages</h2>
-        <p style="color:#8690b8;line-height:1.7;margin-bottom:1.5rem;font-size:.92rem;">
-          This application is designed to run from its official hosted location.<br>
-          Your documents still stay 100% local — only the UI loads from GitHub.
-        </p>
-        <a href="https://khalecl.github.io/know3/index.html" style="display:inline-block;padding:.7rem 2rem;background:linear-gradient(135deg,#00e5a0,#00c78a);color:#050810;border-radius:8px;text-decoration:none;font-weight:700;font-size:.9rem;box-shadow:0 4px 20px rgba(0,229,160,0.3);transition:transform .2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
-          🚀 Open Official know3
-        </a>
-        <p style="color:#505878;font-size:.75rem;margin-top:1.2rem;">
-          Created by Dr. Khaled Diab · <a href="https://github.com/khalecl/know3" target="_blank" style="color:#505878;">github.com/khalecl/know3</a>
-        </p>
-      </div>
-    `;
-  } else {
-    overlay.innerHTML = `
-      <div style="text-align:center;max-width:480px;padding:2rem;">
-        <div style="font-size:3rem;margin-bottom:1rem;">⚠️</div>
-        <h2 style="color:#e8eaf4;font-size:1.4rem;margin-bottom:.8rem;">Unofficial Copy Detected</h2>
-        <p style="color:#8690b8;line-height:1.7;margin-bottom:1.5rem;font-size:.92rem;">
-          This appears to be an unauthorized copy of know3.<br>
-          Please use the official version for security, updates, and full functionality.
-        </p>
-        <a href="https://khalecl.github.io/know3/index.html" style="display:inline-block;padding:.7rem 2rem;background:linear-gradient(135deg,#00e5a0,#00c78a);color:#050810;border-radius:8px;text-decoration:none;font-weight:700;font-size:.9rem;box-shadow:0 4px 20px rgba(0,229,160,0.3);transition:transform .2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
-          🚀 Go to Official know3
-        </a>
-        <p style="color:#505878;font-size:.75rem;margin-top:1.2rem;">
-          Created by Dr. Khaled Diab · <a href="https://github.com/khalecl/know3" target="_blank" style="color:#505878;">github.com/khalecl/know3</a>
-        </p>
-      </div>
-    `;
-  }
-
-  document.body.appendChild(overlay);
-}
+// This is the local/developer edition of know3.
+// All features work without any hosting requirements.
 </script>
 
 <script type="module">
@@ -3065,29 +2994,30 @@ async function parseEPUB(file) {
 function chunkText(text, maxLen) {
   const chunks = [];
   let current = '';
-  const minChunkSize = 100;
 
+  const minChunkSize = 100;
+ 
   // Split by multiple delimiters: paragraphs → sentences → words
   const paragraphs = text.split(/\n\n+/);
-
+ 
   for (const para of paragraphs) {
     const cleaned = para.replace(/\s+/g, ' ').trim();
     if (!cleaned || cleaned.length < 30) continue;
-
+ 
     // If paragraph itself is larger than maxLen, split it further by sentences
     if (cleaned.length > maxLen) {
       const sentences = cleaned.match(/[^.!?]+[.!?]+/g) || [cleaned];
-
+ 
       for (let sent of sentences) {
         sent = sent.trim();
         if (!sent) continue;
-
+ 
         // If current + sentence exceeds limit, save current and start new chunk
         if (current.length + sent.length > maxLen && current.length >= minChunkSize) {
           chunks.push(current.trim());
           current = '';
         }
-
+ 
         // If sentence itself is huge, split by words as last resort
         if (sent.length > maxLen) {
           const words = sent.split(/\s+/);
@@ -3118,12 +3048,12 @@ function chunkText(text, maxLen) {
       current += (current ? '\n\n' : '') + cleaned;
     }
   }
-
+ 
   // Add final chunk if it meets minimum size
   if (current.trim().length >= minChunkSize) {
     chunks.push(current.trim());
   }
-
+ 
   return chunks;
 }
 
