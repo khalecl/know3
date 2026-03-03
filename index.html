@@ -1119,7 +1119,6 @@ OUTPUT: [your output here]</textarea>
           multiple
           accept=".json,.jsonl,.ndjson"
           style="display: none;"
-          onchange="handleDataUpload(event)"
         >
       </div>
 
@@ -1163,10 +1162,10 @@ OUTPUT: [your output here]</textarea>
 
       <!-- Action Buttons -->
       <div style="display: flex; gap: 0.5rem;">
-        <button class="btn btn-primary" id="btn-data-load" style="flex: 1;" onclick="loadDataFile()">
+        <button class="btn btn-primary" id="btn-data-load" style="flex: 1;">
           📤 Load File
         </button>
-        <button class="btn btn-secondary" id="btn-data-clear" style="flex: 1;" onclick="clearCustomData()">
+        <button class="btn btn-secondary" id="btn-data-clear" style="flex: 1;">
           🗑️ Clear Custom Data
         </button>
       </div>
@@ -4281,6 +4280,30 @@ $('chunk-size').addEventListener('change', () => {
     $('file-meta').textContent = $('file-meta').textContent;
   }
 });
+
+// ── Custom data file input event listener ──
+const dataFileInput = document.getElementById('data-file-input');
+if (dataFileInput) {
+  dataFileInput.addEventListener('change', (e) => {
+    handleDataUpload(e);
+  });
+}
+
+// ── Data load button event listener ──
+const btnDataLoad = document.getElementById('btn-data-load');
+if (btnDataLoad) {
+  btnDataLoad.addEventListener('click', () => {
+    loadDataFile();
+  });
+}
+
+// ── Clear custom data button event listener ──
+const btnDataClear = document.getElementById('btn-data-clear');
+if (btnDataClear) {
+  btnDataClear.addEventListener('click', () => {
+    clearCustomData();
+  });
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // INIT
