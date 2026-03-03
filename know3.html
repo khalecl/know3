@@ -1,0 +1,3838 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>know3 — Local RAG + Training Data Engine</title>
+
+<!-- PDF.js for PDF parsing -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs" type="module"></script>
+<!-- Mammoth for DOCX parsing -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js"></script>
+<!-- JSZip for EPUB parsing -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --bg: #060810;
+  --surface: #0c0f1a;
+  --surface2: #131728;
+  --surface3: #1a1f35;
+  --border: #232842;
+  --border-bright: #2d3456;
+  --text: #e2e4f0;
+  --text2: #7b80a0;
+  --text3: #4e5270;
+  --accent: #00e5a0;
+  --accent2: #00c78a;
+  --accent-dim: rgba(0,229,160,0.08);
+  --accent-glow: rgba(0,229,160,0.15);
+  --purple: #a78bfa;
+  --purple-dim: rgba(167,139,250,0.08);
+  --blue: #38bdf8;
+  --blue-dim: rgba(56,189,248,0.08);
+  --orange: #fb923c;
+  --orange-dim: rgba(251,146,60,0.08);
+  --warn: #fbbf24;
+  --err: #f87171;
+  --mono: 'IBM Plex Mono', monospace;
+  --sans: 'Outfit', system-ui, sans-serif;
+  --radius: 10px;
+  --radius-sm: 6px;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+/* Subtle dot grid background */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: radial-gradient(rgba(0,229,160,0.04) 1px, transparent 1px);
+  background-size: 32px 32px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.app { position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
+
+/* ── TOP BAR ── */
+.top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1.5rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1rem;
+  gap: 1rem;
+}
+.logo h1 {
+  font-size: 1.3rem;
+  font-weight: 800;
+  margin: 0;
+}
+.logo h1 .k { color: var(--accent); }
+.top-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.top-btn {
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  color: var(--text2);
+}
+.top-btn:hover {
+  background: var(--surface2);
+  color: var(--accent);
+  transform: scale(1.05);
+}
+
+/* ── HEADER ── */
+header {
+  text-align: center;
+  margin-bottom: 1.5rem;
+  padding: 2rem 0 1.5rem;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+header::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+}
+header h1 {
+  font-family: var(--sans);
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+header h1 .k { color: var(--accent); }
+header h1 .n { color: var(--text); }
+header h1 .ver { color: var(--text3); font-weight: 400; font-size: 0.6em; vertical-align: super; }
+.subtitle {
+  color: var(--text2);
+  font-size: .88rem;
+  margin-top: .3rem;
+  font-weight: 300;
+  letter-spacing: 0.04em;
+}
+.subtitle b { color: var(--accent); font-weight: 600; }
+
+/* ── STATUS BAR ── */
+#status-bar {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  justify-content: center;
+  margin: 1rem 0;
+  font-size: .82rem;
+  font-family: var(--mono);
+  color: var(--text2);
+}
+.status-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--err);
+  transition: all .3s;
+}
+.status-dot.ok { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+.status-dot.warn { background: var(--warn); }
+
+/* ── TABS ── */
+.tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 1.5rem;
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 3px;
+  border: 1px solid var(--border);
+}
+.tab {
+  flex: 1;
+  padding: .7rem 1rem;
+  text-align: center;
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--text2);
+  cursor: pointer;
+  border-radius: calc(var(--radius) - 2px);
+  transition: all .2s;
+  background: transparent;
+  border: none;
+  font-family: var(--sans);
+  letter-spacing: 0.02em;
+}
+.tab:hover { color: var(--text); background: var(--surface2); }
+.tab.active {
+  background: var(--surface2);
+  color: var(--accent);
+  box-shadow: 0 1px 4px rgba(0,0,0,.3);
+}
+.tab .tab-icon { font-size: 1.1em; margin-right: .3rem; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ── MODALS ── */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+.modal-box {
+  position: relative;
+  z-index: 1001;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2rem;
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  animation: slideIn 0.3s ease;
+  pointer-events: auto;
+}
+.modal-close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--text2);
+  padding: 0;
+  width: 32px;
+  height: 32px;
+}
+.modal-close:hover {
+  color: var(--text);
+  background: var(--surface2);
+  border-radius: 6px;
+}
+.modal button {
+  pointer-events: auto;
+}
+.modal input, .modal select, .modal textarea {
+  pointer-events: auto;
+}
+
+/* ── SETTINGS DRAWER ── */
+.settings-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2000;
+  display: none;
+  align-items: flex-end;
+}
+.settings-drawer.open {
+  display: flex;
+}
+.settings-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+  cursor: pointer;
+}
+.settings-panel {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+  height: 100vh;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  box-shadow: -10px 0 40px rgba(0, 0, 0, 0.5);
+  animation: slideInRight 0.3s ease;
+  z-index: 2001;
+  pointer-events: auto;
+}
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+.settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 2;
+}
+.settings-header h2 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+.close-settings {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--text2);
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+.close-settings:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+.settings-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+}
+.settings-section {
+  margin-bottom: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0;
+}
+.settings-section summary {
+  padding: 1rem;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.settings-section summary:hover {
+  background: var(--surface2);
+}
+.settings-section[open] summary {
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+}
+.settings-category {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+.setting-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.setting-item label {
+  font-weight: 600;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+.setting-item input[type="text"],
+.setting-item input[type="number"],
+.setting-item input[type="range"],
+.setting-item select {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 0.6rem;
+  font-family: var(--sans);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.setting-item input[type="range"] {
+  padding: 0;
+  height: 6px;
+}
+.setting-item input[type="text"]:focus,
+.setting-item input[type="number"]:focus,
+.setting-item select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(0, 229, 160, 0.1);
+}
+.hint {
+  font-size: 0.75rem;
+  color: var(--text3);
+  font-style: italic;
+}
+.hint-with-value {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+}
+.hint-with-value .hint {
+  margin: 0;
+}
+#temp-value {
+  font-weight: 600;
+  color: var(--accent);
+  font-family: var(--mono);
+}
+.settings-footer {
+  display: flex;
+  gap: 0.5rem;
+  padding: 1rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface2);
+  position: sticky;
+  bottom: 0;
+}
+.settings-footer .btn {
+  flex: 1;
+}
+@media (max-width: 768px) {
+  .settings-panel {
+    max-width: 100%;
+  }
+}
+
+/* ── TUTORIAL ── */
+.tutorial-box { text-align: center; }
+.tutorial-step {
+  display: none;
+  animation: fadeIn 0.3s ease;
+}
+.tutorial-visual {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  align-items: center;
+  margin: 2rem 0;
+  padding: 2rem;
+  background: var(--surface2);
+  border-radius: 10px;
+  font-size: 2.5rem;
+}
+.tutorial-progress {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.9rem;
+  color: var(--text2);
+}
+
+/* ── HELP & FAQ ── */
+.help-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.help-tab {
+  background: none;
+  border: none;
+  color: var(--text2);
+  cursor: pointer;
+  padding: 0.75rem 1rem;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s ease;
+  font-family: var(--sans);
+  font-size: 0.9rem;
+}
+.help-tab:hover {
+  color: var(--text);
+}
+.help-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.help-section {
+  display: none;
+}
+.help-section.active {
+  display: block;
+}
+.faq-item {
+  margin: 1rem 0;
+  padding: 1rem;
+  background: var(--surface2);
+  border-radius: 6px;
+  text-align: left;
+}
+.faq-item summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text);
+}
+.faq-item summary:hover {
+  color: var(--accent);
+}
+.faq-item p {
+  margin: 0.75rem 0 0 0;
+  color: var(--text2);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+.faq-item code {
+  background: var(--surface);
+  padding: 0.2rem 0.4rem;
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--accent);
+}
+
+/* ── ANIMATIONS ── */
+@keyframes slideIn {
+  from {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ── COLLAPSIBLE SECTION ── */
+details {
+  margin: 1rem 0;
+}
+details summary {
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s ease;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+details summary:hover {
+  background: var(--surface2);
+  color: var(--accent);
+}
+details[open] summary {
+  color: var(--accent);
+  margin-bottom: 0.5rem;
+}
+details summary::marker {
+  color: var(--accent);
+}
+
+/* ── SETTINGS GRID ── */
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .8rem;
+  margin-bottom: 1.2rem;
+}
+.setting-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .9rem 1rem;
+}
+.setting-card.wide { grid-column: 1 / -1; }
+.setting-card label {
+  display: block;
+  font-size: .75rem;
+  font-weight: 600;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: .4rem;
+}
+.setting-card select,
+.setting-card input[type="number"],
+.setting-card input[type="text"] {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: .82rem;
+  padding: .5rem .7rem;
+  outline: none;
+  transition: border-color .2s;
+}
+.setting-card select:focus,
+.setting-card input:focus {
+  border-color: var(--accent);
+}
+.setting-card textarea {
+  width: 100%;
+  min-height: 80px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: .78rem;
+  padding: .5rem .7rem;
+  outline: none;
+  resize: vertical;
+  line-height: 1.5;
+  transition: border-color .2s;
+}
+.setting-card textarea:focus { border-color: var(--accent); }
+
+/* ── DROP ZONE ── */
+#drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 2.5rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all .25s;
+  margin-bottom: 1rem;
+  background: var(--surface);
+}
+#drop-zone:hover, #drop-zone.dragover {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  box-shadow: 0 0 30px rgba(0,229,160,0.06);
+}
+#drop-zone .icon { font-size: 2.5rem; margin-bottom: .5rem; filter: grayscale(0.3); }
+#drop-zone h3 { font-size: 1rem; font-weight: 600; color: var(--text); margin-bottom: .25rem; }
+#drop-zone p { font-size: .82rem; color: var(--text2); }
+
+/* ── FILE INFO ── */
+#file-info {
+  display: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .8rem 1rem;
+  margin-bottom: 1rem;
+  font-size: .85rem;
+}
+#file-info .name { font-weight: 600; color: var(--accent); font-family: var(--mono); font-size: .8rem; }
+#file-info .meta { color: var(--text2); margin-top: .2rem; font-size: .78rem; }
+
+/* ── COLLECTION BADGES ── */
+.collections-row {
+  display: flex;
+  gap: .5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.collection-badge {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .35rem .7rem;
+  border-radius: 20px;
+  font-size: .75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .2s;
+  border: 1px solid;
+}
+.collection-badge.c1 { background: var(--accent-dim); border-color: rgba(0,229,160,0.2); color: var(--accent); }
+.collection-badge.c2 { background: var(--purple-dim); border-color: rgba(167,139,250,0.2); color: var(--purple); }
+.collection-badge.c3 { background: var(--blue-dim); border-color: rgba(56,189,248,0.2); color: var(--blue); }
+.collection-badge.c4 { background: var(--orange-dim); border-color: rgba(251,146,60,0.2); color: var(--orange); }
+.collection-badge .count { opacity: .7; }
+.collection-badge:hover { transform: translateY(-1px); }
+.collection-badge.active { box-shadow: 0 0 12px rgba(0,229,160,0.15); }
+
+/* ── BUTTONS ── */
+.btn-row {
+  display: flex;
+  gap: .6rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.btn {
+  padding: .6rem 1.2rem;
+  border-radius: var(--radius-sm);
+  border: none;
+  font-family: var(--sans);
+  font-size: .82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .2s;
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+}
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: #050810;
+  box-shadow: 0 2px 12px rgba(0,229,160,0.2);
+}
+.btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(0,229,160,0.3); }
+.btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+.btn-secondary {
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.btn-secondary:disabled { opacity: .3; cursor: not-allowed; }
+.btn-stop { background: var(--err); color: white; }
+.btn-stop:disabled { opacity: .3; }
+.btn-purple { background: var(--purple-dim); color: var(--purple); border: 1px solid rgba(167,139,250,0.2); }
+.btn-purple:hover { background: rgba(167,139,250,0.15); }
+
+/* ── PROGRESS ── */
+#progress-area {
+  display: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: .5rem;
+  font-size: .82rem;
+  color: var(--text2);
+}
+.progress-bar {
+  height: 4px;
+  background: var(--surface2);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: .8rem;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--blue));
+  border-radius: 2px;
+  width: 0%;
+  transition: width .3s;
+}
+#progress-log {
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: var(--mono);
+  font-size: .72rem;
+  line-height: 1.6;
+  color: var(--text2);
+}
+#progress-log .ok { color: var(--accent); }
+#progress-log .err { color: var(--err); }
+#progress-log .info { color: var(--blue); }
+#progress-log .warn { color: var(--warn); }
+
+/* ── RESULTS ── */
+#results {
+  display: none;
+  margin-top: 1rem;
+}
+#results h2 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: .5rem;
+}
+#results-count {
+  font-size: .78rem;
+  color: var(--text2);
+  margin-bottom: .8rem;
+  font-family: var(--mono);
+}
+
+/* ── CHUNK PREVIEW ── */
+.chunk-item {
+  display: flex;
+  align-items: flex-start;
+  gap: .6rem;
+  padding: .7rem;
+  margin-bottom: .4rem;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all .2s;
+}
+.chunk-item:hover {
+  border-color: var(--accent);
+  background: var(--surface3);
+}
+.chunk-item.selected {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  box-shadow: 0 0 8px rgba(0,229,160,0.1);
+}
+.chunk-item.filtered {
+  opacity: .5;
+  background: var(--surface);
+}
+.chunk-item input[type="checkbox"] {
+  margin-top: .2rem;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.chunk-content {
+  flex: 1;
+  font-size: .78rem;
+  color: var(--text);
+  font-family: var(--mono);
+  line-height: 1.4;
+  max-height: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre-wrap;
+}
+.chunk-meta {
+  font-size: .7rem;
+  color: var(--text2);
+  margin-top: .3rem;
+  display: flex;
+  gap: .8rem;
+}
+.chunk-badge {
+  padding: .2rem .4rem;
+  border-radius: 3px;
+  background: var(--border);
+  font-size: .65rem;
+}
+.chunk-badge.clean { background: rgba(0,229,160,0.15); color: var(--accent); }
+.chunk-badge.filtered { background: rgba(248,113,113,0.15); color: var(--err); }
+
+.pair-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .8rem 1rem;
+  margin-bottom: .5rem;
+  transition: border-color .2s;
+}
+.pair-card:hover { border-color: var(--border-bright); }
+.pair-num {
+  font-family: var(--mono);
+  font-size: .7rem;
+  color: var(--text3);
+  margin-bottom: .3rem;
+}
+.pair-q {
+  font-weight: 600;
+  font-size: .85rem;
+  color: var(--accent);
+  margin-bottom: .3rem;
+}
+.pair-a {
+  font-size: .82rem;
+  color: var(--text2);
+  line-height: 1.5;
+}
+.pair-source {
+  margin-top: .4rem;
+  font-size: .68rem;
+  color: var(--text3);
+  font-family: var(--mono);
+  border-top: 1px solid var(--border);
+  padding-top: .3rem;
+}
+
+/* ── RAG QUERY PANEL ── */
+.rag-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.2rem;
+  margin-bottom: 1rem;
+}
+.rag-input-row {
+  display: flex;
+  gap: .5rem;
+  margin-bottom: 1rem;
+}
+.rag-input-row input {
+  flex: 1;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: .88rem;
+  padding: .6rem .9rem;
+  outline: none;
+  transition: border-color .2s;
+}
+.rag-input-row input:focus { border-color: var(--accent); }
+.rag-input-row input::placeholder { color: var(--text3); }
+
+#rag-answer {
+  display: none;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+}
+#rag-answer .answer-text {
+  font-size: .88rem;
+  line-height: 1.7;
+  color: var(--text);
+}
+#rag-answer .sources {
+  margin-top: .8rem;
+  padding-top: .6rem;
+  border-top: 1px solid var(--border);
+  font-size: .72rem;
+  color: var(--text3);
+  font-family: var(--mono);
+}
+#rag-answer .sources span { color: var(--purple); }
+
+/* ── VECTOR STORE STATS ── */
+.store-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: .5rem;
+  margin-bottom: 1rem;
+}
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .7rem;
+  text-align: center;
+}
+.stat-num {
+  font-family: var(--mono);
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+.stat-label {
+  font-size: .68rem;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: .15rem;
+}
+
+/* ── SETUP GUIDE ── */
+#setup-guide { display: none; }
+#setup-guide .setting-card {
+  border-color: var(--warn);
+}
+#setup-guide code {
+  background: var(--surface2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: .78rem;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* Responsive */
+@media (max-width: 700px) {
+  .settings-grid { grid-template-columns: 1fr; }
+  .store-stats { grid-template-columns: repeat(2, 1fr); }
+  .tabs { flex-wrap: nowrap; overflow-x: auto; }
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- TOP BAR -->
+  <div class="top-bar">
+    <div class="logo">
+      <h1><span class="k">know</span><span class="n">3</span></h1>
+    </div>
+    <div class="top-actions">
+      <button class="top-btn" id="btn-tutorial" title="Tutorial">📖</button>
+      <button class="top-btn" id="btn-help" title="Help">?</button>
+      <button class="top-btn" id="btn-about" title="About">ℹ️</button>
+      <button class="top-btn" id="btn-settings" title="Settings">⚙️</button>
+    </div>
+  </div>
+
+  <header>
+    <h1><span class="k">know</span><span class="n">3</span> <span class="ver">v3.1</span></h1>
+    <div class="subtitle">Local RAG + Training Data Engine · <b>100% Offline</b> · Zero Cloud Cost</div>
+  </header>
+
+  <div id="status-bar">
+    <div class="status-dot" id="status-dot"></div>
+    <span id="status-text">Connecting to Ollama...</span>
+    <span style="margin-left:.5rem; opacity:.5;">|</span>
+    <span id="model-info" style="margin-left:.5rem;"></span>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <button class="tab active" data-tab="ingest"><span class="tab-icon">📥</span> Ingest</button>
+    <button class="tab" data-tab="generate"><span class="tab-icon">⚡</span> Generate</button>
+    <button class="tab" data-tab="export"><span class="tab-icon">💾</span> Export</button>
+    <button class="tab" data-tab="tools"><span class="tab-icon">🔧</span> Tools</button>
+  </div>
+
+  <!-- ═══════════════════ TAB 1: INGEST ═══════════════════ -->
+  <div class="tab-panel active" id="panel-ingest">
+
+    <div class="settings-grid">
+      <div class="setting-card">
+        <label>LLM Model</label>
+        <select id="model-select"><option>Loading...</option></select>
+      </div>
+      <div class="setting-card">
+        <label>Embedding Model</label>
+        <select id="embed-model-select"><option>Loading...</option></select>
+      </div>
+      <div class="setting-card">
+        <label>Chunk Size (chars)</label>
+        <input type="number" id="chunk-size" value="800" min="200" max="3000" step="100">
+      </div>
+      <div class="setting-card">
+        <label>Collection Name</label>
+        <input type="text" id="collection-name" value="default" placeholder="e.g. legal, technical, medical">
+      </div>
+    </div>
+
+    <!-- Drop Zone -->
+    <div id="drop-zone">
+      <div class="icon">📚</div>
+      <h3>Drop documents here to ingest</h3>
+      <p>PDF · EPUB · DOCX · TXT — parsed, chunked, embedded & stored locally</p>
+      <input type="file" id="file-input" accept=".pdf,.epub,.docx,.txt,.text" multiple>
+    </div>
+
+    <div id="file-info">
+      <div class="name" id="file-name"></div>
+      <div class="meta" id="file-meta"></div>
+    </div>
+
+    <!-- Collections -->
+    <div class="collections-row" id="collections-row"></div>
+
+    <!-- Vector Store Stats -->
+    <div class="store-stats">
+      <div class="stat-card">
+        <div class="stat-num" id="stat-docs">0</div>
+        <div class="stat-label">Documents</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num" id="stat-chunks">0</div>
+        <div class="stat-label">Chunks</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num" id="stat-pairs">0</div>
+        <div class="stat-label">Training Pairs</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-num" id="stat-collections">0</div>
+        <div class="stat-label">Collections</div>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-secondary" id="btn-clear-store" disabled>🗑 Clear Vector Store</button>
+    </div>
+
+    <!-- ═══════════════════ COLLAPSIBLE: REVIEW CHUNKS ═══════════════════ -->
+    <details class="section" style="margin-top: 2rem;">
+      <summary style="font-weight: 600; padding: 0.75rem; cursor: pointer; font-size: 1rem; color: var(--text);">
+        👁️ Review Chunks (Optional - Filter before generating)
+      </summary>
+
+      <div style="padding: 1rem; background: var(--surface2); border-radius: 10px; margin-top: 1rem;">
+        <p style="margin-bottom: 1rem; color: var(--text2); font-size: 0.9rem;">
+          Review and filter chunks before generating pairs to improve quality and reduce processing time.
+        </p>
+
+        <div class="settings-grid" style="margin-bottom: 1rem;">
+          <div class="setting-card">
+            <label>Sample Mode</label>
+            <input type="number" id="sample-rate" value="1" min="1" max="20" placeholder="Every N chunks">
+            <div style="font-size: .7rem; color: var(--text2); margin-top: .3rem;">Process every Nth chunk (1 = all)</div>
+          </div>
+          <div class="setting-card">
+            <label>Filter Junk</label>
+            <select id="review-filter">
+              <option value="all">Show all chunks</option>
+              <option value="clean" selected>Show clean only</option>
+              <option value="junk">Show filtered out</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: .5rem; margin-bottom: 1rem; flex-wrap: wrap;">
+          <button class="btn btn-secondary" id="btn-select-all">✓ Select All</button>
+          <button class="btn btn-secondary" id="btn-deselect-all">✗ Deselect All</button>
+          <button class="btn btn-secondary" id="btn-invert-selection">⇄ Invert</button>
+          <span id="selection-count" style="align-self: center; font-size: .85rem; color: var(--text2); font-family: var(--mono);">0 selected</span>
+        </div>
+
+        <div id="chunk-preview-area" style="max-height: 500px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: .8rem; background: var(--surface); margin-bottom: 1rem;">
+          <div style="text-align: center; color: var(--text2); padding: 2rem;">Ingest documents first to see chunks</div>
+        </div>
+
+        <div style="font-size: .78rem; color: var(--text2); margin-bottom: 1rem; padding: .6rem; background: var(--surface); border-radius: var(--radius); border-left: 3px solid var(--accent);">
+          <strong>Tip:</strong> Select the chunks you want to generate pairs from. Use "Sample Mode" to test with every Nth chunk first.
+        </div>
+
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btn-generate-selected" disabled>⚡ Generate from Selected</button>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <!-- ═══════════════════ TAB 2: GENERATE ═══════════════════ -->
+  <div class="tab-panel" id="panel-generate">
+
+    <div class="settings-grid">
+      <div class="setting-card">
+        <label>Content Domain</label>
+        <select id="domain-select">
+          <option value="generic">Generic (default)</option>
+          <option value="coding">Coding & APIs</option>
+          <option value="scientific">Scientific & Math</option>
+          <option value="literature">Literature & Humanities</option>
+          <option value="legal">Legal Documents</option>
+          <option value="business">Business & Economics</option>
+          <option value="researchpaper">Research Papers</option>
+        </select>
+        <div style="font-size: .7rem; color: var(--text2); margin-top: .3rem;">Adjusts system prompt for domain</div>
+      </div>
+      <div class="setting-card">
+        <label>Pairs Per Chunk</label>
+        <select id="pairs-per-chunk">
+          <option value="1">1 (fast)</option>
+          <option value="2" selected>2 (balanced)</option>
+          <option value="3">3 (thorough)</option>
+        </select>
+      </div>
+
+      <div class="setting-card wide">
+        <label>System Prompt</label>
+        <textarea id="system-prompt">You are a training data generator. Given text, create {N} high-quality instruction-output training pairs.
+
+Rules:
+- Each pair must teach a DIFFERENT aspect
+- Vary question types: definitional, procedural, analytical, comparative
+- NEVER provide surface-level answers
+- Include WHY and WHEN, not just WHAT
+- Show reasoning: "Because..." or "The reason is..."
+- Avoid generic statements; be specific and concrete
+- Instruction: Clear, specific question (1-2 sentences)
+- Output: Complete, detailed answer (minimum 2-3 sentences)
+- NEVER create trivial one-word or one-phrase answers
+
+Format EXACTLY as (repeat for each pair):
+INSTRUCTION: [your instruction here]
+OUTPUT: [your output here]</textarea>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btn-start" disabled>⚡ Generate Training Data</button>
+      <button class="btn btn-stop" id="btn-stop" disabled style="display:none">■ Stop</button>
+    </div>
+
+    <!-- Progress -->
+    <div id="progress-area">
+      <div class="progress-header">
+        <span id="progress-label">Processing...</span>
+        <span id="progress-pct">0%</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
+      <div id="progress-log"></div>
+    </div>
+
+    <!-- Results Preview -->
+    <div id="results">
+      <h2>Generated Pairs</h2>
+      <div id="results-count"></div>
+      <div id="results-list"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ TAB 3: TOOLS ═══════════════════ -->
+  <div class="tab-panel" id="panel-tools">
+    <h2 style="margin-bottom: 1.5rem;">🔧 Tools & Advanced Features</h2>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- CUSTOM DATA LOADING -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <div style="margin-bottom: 2rem; padding: 1.5rem; background: var(--surface2); border-radius: 10px;">
+      <h3 style="margin-bottom: 1rem;">📤 Load Custom Data</h3>
+      <p style="margin-bottom: 1rem; color: var(--text2); font-size: 0.9rem;">
+        Upload JSON or JSONL files to create custom data collections for RAG queries. Each file is automatically indexed and searchable.
+      </p>
+
+      <!-- File Upload Area -->
+      <div
+        id="data-upload-zone"
+        style="
+          border: 2px dashed var(--accent);
+          border-radius: 8px;
+          padding: 2rem;
+          text-align: center;
+          cursor: pointer;
+          background: var(--accent-dim);
+          transition: all 0.2s;
+          margin-bottom: 1rem;
+        "
+        onmouseover="this.style.borderColor='var(--accent2)'; this.style.background='rgba(0,229,160,0.15)';"
+        onmouseout="this.style.borderColor='var(--accent)'; this.style.background='var(--accent-dim)';"
+      >
+        <div style="font-size: 2rem; margin-bottom: 0.5rem;">📁</div>
+        <div style="font-weight: 600; margin-bottom: 0.3rem;">Drop JSON/JSONL files here</div>
+        <div style="font-size: 0.85rem; color: var(--text2);">or click to browse</div>
+        <input
+          type="file"
+          id="data-file-input"
+          multiple
+          accept=".json,.jsonl,.ndjson"
+          style="display: none;"
+          onchange="handleDataUpload(event)"
+        >
+      </div>
+
+      <!-- Loading/Preview Area -->
+      <div id="data-preview" style="margin-bottom: 1rem; display: none;">
+        <div style="padding: 1rem; background: var(--surface); border-radius: 6px; border-left: 3px solid var(--accent);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+            <strong id="data-filename">File</strong>
+            <span id="data-status" style="font-size: 0.8rem; color: var(--text2);">Loading...</span>
+          </div>
+          <div id="data-progress" style="height: 4px; background: var(--border); border-radius: 2px; overflow: hidden;">
+            <div style="height: 100%; background: var(--accent); width: 0%; transition: width 0.3s;" id="data-progress-bar"></div>
+          </div>
+          <div id="data-preview-text" style="margin-top: 1rem; font-size: 0.85rem; color: var(--text2); max-height: 200px; overflow-y: auto;"></div>
+        </div>
+      </div>
+
+      <!-- Collection Settings -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+        <div>
+          <label style="font-size: 0.75rem; color: var(--text2); display: block; margin-bottom: 0.3rem;">Collection Name</label>
+          <input
+            type="text"
+            id="data-collection-name"
+            placeholder="e.g., my-data"
+            value="custom"
+            style="width: 100%; padding: 0.5rem; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 0.85rem;"
+          >
+        </div>
+        <div>
+          <label style="font-size: 0.75rem; color: var(--text2); display: block; margin-bottom: 0.3rem;">Embedding Field</label>
+          <input
+            type="text"
+            id="data-text-field"
+            placeholder="e.g., text (default)"
+            value="text"
+            style="width: 100%; padding: 0.5rem; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 0.85rem;"
+          >
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div style="display: flex; gap: 0.5rem;">
+        <button class="btn btn-primary" id="btn-data-load" style="flex: 1;" onclick="loadDataFile()">
+          📤 Load File
+        </button>
+        <button class="btn btn-secondary" id="btn-data-clear" style="flex: 1;" onclick="clearCustomData()">
+          🗑️ Clear Custom Data
+        </button>
+      </div>
+
+      <!-- Stats -->
+      <div id="data-stats" style="margin-top: 1rem; font-size: 0.8rem; color: var(--text2); display: none;">
+        <div>✅ <strong id="data-items-loaded">0</strong> items loaded</div>
+        <div>📚 Collection: <strong id="data-collection-display">-</strong></div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- RAG CONVERSATION -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <div style="margin-bottom: 2rem; padding: 1.5rem; background: var(--surface2); border-radius: 10px; display: flex; flex-direction: column; gap: 1.5rem; height: 700px;">
+      <div>
+        <h3 style="margin-bottom: 0.5rem;">💬 RAG Conversation</h3>
+        <p style="color: var(--text2); font-size: 0.9rem;">
+          Have a multi-turn conversation with your documents. Ask follow-up questions to dive deeper.
+        </p>
+      </div>
+
+      <!-- Conversation History -->
+      <div id="rag-conversation" style="flex: 1; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; padding: 1rem; background: var(--surface); display: flex; flex-direction: column; gap: 1rem;">
+        <div style="color: var(--text3); text-align: center; font-size: 0.9rem; padding: 2rem 1rem;">
+          No conversation yet. Ask something to get started! 👋
+        </div>
+      </div>
+
+      <!-- Input Area -->
+      <div style="display: flex; gap: 0.5rem;">
+        <input
+          type="text"
+          id="rag-msg-input"
+          placeholder="Ask your documents anything..."
+          autocomplete="off"
+          style="flex: 1; padding: 0.75rem; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-family: var(--sans);"
+        >
+        <button class="btn btn-primary" id="btn-rag-send" title="Send message (Ctrl+Enter)">
+          📤 Send
+        </button>
+      </div>
+
+      <!-- Advanced Options (Collapsible) -->
+      <details style="border-top: 1px solid var(--border); padding-top: 1rem;">
+        <summary style="cursor: pointer; color: var(--accent); font-weight: 600; user-select: none;">
+          ⚙️ Advanced Options
+        </summary>
+        <div style="margin-top: 1rem; display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+          <div>
+            <label style="font-size: 0.75rem; color: var(--text2); display: block; margin-bottom: 0.3rem;">Temperature</label>
+            <input
+              type="range"
+              id="rag-temperature"
+              min="0.1"
+              max="1.0"
+              step="0.1"
+              value="0.7"
+              style="width: 100%;"
+            >
+            <div style="font-size: 0.7rem; color: var(--text3); text-align: center;" id="rag-temp-display">0.7</div>
+          </div>
+          <div>
+            <label style="font-size: 0.75rem; color: var(--text2); display: block; margin-bottom: 0.3rem;">Top-K Results</label>
+            <input
+              type="number"
+              id="rag-topk"
+              value="5"
+              min="1"
+              max="20"
+              style="width: 100%; padding: 0.4rem; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 0.85rem;"
+            >
+          </div>
+          <div>
+            <label style="font-size: 0.75rem; color: var(--text2); display: block; margin-bottom: 0.3rem;">Collection</label>
+            <select
+              id="rag-collection"
+              style="width: 100%; padding: 0.4rem; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 0.85rem;"
+            >
+              <option value="__all__">All Collections</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size: 0.75rem; color: var(--text2); display: block; margin-bottom: 0.3rem;">Sources</label>
+            <select
+              id="rag-include-sources"
+              style="width: 100%; padding: 0.4rem; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 0.85rem;"
+            >
+              <option value="yes">Show sources</option>
+              <option value="no">Hide sources</option>
+            </select>
+          </div>
+        </div>
+        <button
+          class="btn btn-secondary"
+          id="btn-rag-clear"
+          style="width: 100%; margin-top: 1rem;"
+          onclick="clearRAGConversation()"
+        >
+          🗑️ Clear Conversation
+        </button>
+      </details>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ TAB 4: EXPORT ═══════════════════ -->
+  <div class="tab-panel" id="panel-export">
+
+    <div class="settings-grid">
+      <div class="setting-card">
+        <label>Export Format</label>
+        <select id="export-format">
+          <option value="jsonl">JSONL (one pair per line)</option>
+          <option value="json">JSON (array)</option>
+          <option value="alpaca">Alpaca Format</option>
+          <option value="sharegpt">ShareGPT Format</option>
+          <option value="csv">CSV</option>
+        </select>
+      </div>
+      <div class="setting-card">
+        <label>Include Source Chunks</label>
+        <select id="export-sources">
+          <option value="no">No — instruction/output only</option>
+          <option value="yes">Yes — include source text</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btn-export" disabled>💾 Export Training Data</button>
+      <button class="btn btn-secondary" id="btn-export-vectors" disabled>📦 Export Vector Store</button>
+    </div>
+
+    <div id="export-stats" style="margin-top:.5rem; font-size:.78rem; color:var(--text2); font-family:var(--mono); display:none;"></div>
+  </div>
+
+  <!-- ═══════════════════ SETUP GUIDE ═══════════════════ -->
+  <div id="setup-guide">
+    <div class="setting-card wide" style="border-color: var(--warn); margin-top:1rem;">
+      <label style="color: var(--warn);">⚠ Setup Required</label>
+      <div style="font-size:.85rem; line-height:1.8; color: var(--text2);">
+        <strong style="color:var(--text)">Step 1:</strong> Install Ollama →
+        <a href="https://ollama.com/download" target="_blank" style="color:var(--accent)">ollama.com/download</a><br>
+        <strong style="color:var(--text)">Step 2:</strong> Pull models:<br>
+        &nbsp;&nbsp;<code>ollama pull llama3.2:3b</code> (LLM)<br>
+        &nbsp;&nbsp;<code>ollama pull nomic-embed-text</code> (Embeddings for RAG)<br>
+        <strong style="color:var(--text)">Step 3:</strong> Set CORS (one time):<br>
+        &nbsp;&nbsp;• <strong>Mac:</strong> <code>launchctl setenv OLLAMA_ORIGINS "*"</code> then restart Ollama<br>
+        &nbsp;&nbsp;• <strong>Windows:</strong> Set env variable <code>OLLAMA_ORIGINS=*</code> in System Properties<br>
+        &nbsp;&nbsp;• <strong>Linux:</strong> <code>OLLAMA_ORIGINS="*" ollama serve</code><br>
+        <strong style="color:var(--text)">Step 4:</strong> Refresh this page
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- TUTORIAL MODAL -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div id="tutorial-modal" class="modal" style="display: none;">
+  <div class="modal-overlay"></div>
+  <div class="modal-box tutorial-box">
+    <button class="modal-close" onclick="closeTutorial()">×</button>
+
+    <!-- Step 1: Welcome -->
+    <div class="tutorial-step" data-step="1" style="display: block;">
+      <h2>Welcome to know3 👋</h2>
+      <p>Turn your documents into AI training data in 3 simple steps</p>
+      <div class="tutorial-visual">
+        <span>📚</span>
+        <span style="font-size: 1.5rem;">→</span>
+        <span>⚡</span>
+        <span style="font-size: 1.5rem;">→</span>
+        <span>💾</span>
+      </div>
+      <button class="btn btn-primary" onclick="nextTutorialStep()">Get Started →</button>
+      <button class="btn btn-secondary" onclick="skipTutorial()">Skip Tutorial</button>
+    </div>
+
+    <!-- Step 2: Upload -->
+    <div class="tutorial-step" data-step="2" style="display: none;">
+      <h2>Step 1: Upload Documents</h2>
+      <p>Drag and drop your PDF, DOCX, EPUB, or TXT files</p>
+      <div class="tutorial-visual" style="font-size: 2rem;">📁</div>
+      <p style="font-size: 0.9rem; color: var(--text2);">
+        💡 know3 automatically extracts text and creates chunks
+      </p>
+      <button class="btn btn-primary" onclick="nextTutorialStep()">Next →</button>
+      <button class="btn btn-secondary" onclick="prevTutorialStep()">← Back</button>
+    </div>
+
+    <!-- Step 3: Generate -->
+    <div class="tutorial-step" data-step="3" style="display: none;">
+      <h2>Step 2: Generate Training Pairs</h2>
+      <p>Create instruction/output pairs for fine-tuning LLMs</p>
+      <div class="tutorial-visual" style="font-size: 2rem;">⚡</div>
+      <p style="font-size: 0.9rem; color: var(--text2);">
+        Choose a domain (Generic, Coding, Scientific, Legal, Business, Research Papers) then click Generate
+      </p>
+      <button class="btn btn-primary" onclick="nextTutorialStep()">Next →</button>
+      <button class="btn btn-secondary" onclick="prevTutorialStep()">← Back</button>
+    </div>
+
+    <!-- Step 4: Export -->
+    <div class="tutorial-step" data-step="4" style="display: none;">
+      <h2>Step 3: Export & Use</h2>
+      <p>Download in 5 formats (JSONL, JSON, Alpaca, ShareGPT, CSV)</p>
+      <div class="tutorial-visual" style="font-size: 2rem;">💾</div>
+      <p style="font-size: 0.9rem; color: var(--text2);">
+        ✅ Ready for HuggingFace, Ollama, LLaMA, and other frameworks
+      </p>
+      <button class="btn btn-primary" onclick="finishTutorial()">Start Using know3 ✓</button>
+      <button class="btn btn-secondary" onclick="prevTutorialStep()">← Back</button>
+    </div>
+
+    <div class="tutorial-progress">
+      <span id="tutorial-step-indicator">Step 1 of 4</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- HELP MODAL -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div id="help-modal" class="modal" style="display: none;">
+  <div class="modal-overlay"></div>
+  <div class="modal-box help-box">
+    <button class="modal-close" onclick="closeHelp()">×</button>
+
+    <h2>Help & FAQ</h2>
+
+    <div class="help-tabs">
+      <button class="help-tab active" data-section="faq" onclick="switchHelpSection('faq')">❓ FAQ</button>
+      <button class="help-tab" data-section="troubleshoot" onclick="switchHelpSection('troubleshoot')">🔧 Troubleshooting</button>
+      <button class="help-tab" data-section="domains" onclick="switchHelpSection('domains')">📋 Domains</button>
+      <button class="help-tab" data-section="formats" onclick="switchHelpSection('formats')">📦 Formats</button>
+    </div>
+
+    <!-- FAQ Section -->
+    <div id="help-faq" class="help-section active">
+      <details class="faq-item" open>
+        <summary>❓ What is know3?</summary>
+        <p>know3 is a local training data generation engine. Upload documents, and it creates instruction/output pairs perfect for fine-tuning language models.</p>
+      </details>
+
+      <details class="faq-item">
+        <summary>❓ Do I need internet?</summary>
+        <p>No! Everything runs locally. Your documents never leave your machine. No cloud APIs, no subscriptions.</p>
+      </details>
+
+      <details class="faq-item">
+        <summary>❓ What file formats are supported?</summary>
+        <p>PDF, DOCX, EPUB, and TXT files. Maximum 1GB per document.</p>
+      </details>
+
+      <details class="faq-item">
+        <summary>❓ How long does generation take?</summary>
+        <p>Depends on document size and your LLM model. A typical 100-page book takes 5-15 minutes.</p>
+      </details>
+
+      <details class="faq-item">
+        <summary>❓ What can I do with the pairs?</summary>
+        <p>Use them to fine-tune any language model (Llama, Mistral, Phi, GPT, etc.) on HuggingFace, Ollama, or your own infrastructure.</p>
+      </details>
+    </div>
+
+    <!-- Troubleshooting Section -->
+    <div id="help-troubleshoot" class="help-section">
+      <details class="faq-item" open>
+        <summary>🔧 Cannot connect to Ollama</summary>
+        <p>Make sure Ollama is running: <code>ollama serve</code></p>
+        <p>Also check CORS is enabled (see Setup Guide in the Ingest tab)</p>
+      </details>
+
+      <details class="faq-item">
+        <summary>🔧 Models not showing</summary>
+        <p>Pull the models first:</p>
+        <p><code>ollama pull llama3.2:3b</code></p>
+        <p><code>ollama pull nomic-embed-text</code></p>
+      </details>
+
+      <details class="faq-item">
+        <summary>🔧 Generation is very slow</summary>
+        <p>Try a smaller LLM (3B is faster than 7B). Or reduce "Pairs Per Chunk" to 1. Use the Review tab to limit chunks.</p>
+      </details>
+
+      <details class="faq-item">
+        <summary>🔧 Low quality pairs</summary>
+        <p>Make sure you selected the right domain for your content. Review chunks first (they affect output quality). Try 3 pairs per chunk for more depth.</p>
+      </details>
+    </div>
+
+    <!-- Domains Section -->
+    <div id="help-domains" class="help-section">
+      <table style="width: 100%; font-size: 0.9rem; border-collapse: collapse;">
+        <tr style="border-bottom: 1px solid var(--border);">
+          <td style="padding: 0.5rem; font-weight: 600;">Generic</td>
+          <td style="padding: 0.5rem; color: var(--text2);">Books, articles, general knowledge</td>
+        </tr>
+        <tr style="border-bottom: 1px solid var(--border);">
+          <td style="padding: 0.5rem; font-weight: 600;">Coding</td>
+          <td style="padding: 0.5rem; color: var(--text2);">Code docs, API references, tutorials</td>
+        </tr>
+        <tr style="border-bottom: 1px solid var(--border);">
+          <td style="padding: 0.5rem; font-weight: 600;">Scientific</td>
+          <td style="padding: 0.5rem; color: var(--text2);">Math, physics, chemistry textbooks</td>
+        </tr>
+        <tr style="border-bottom: 1px solid var(--border);">
+          <td style="padding: 0.5rem; font-weight: 600;">Literature</td>
+          <td style="padding: 0.5rem; color: var(--text2);">Novels, essays, humanities texts</td>
+        </tr>
+        <tr style="border-bottom: 1px solid var(--border);">
+          <td style="padding: 0.5rem; font-weight: 600;">Legal</td>
+          <td style="padding: 0.5rem; color: var(--text2);">Contracts, statutes, legal documents</td>
+        </tr>
+        <tr style="border-bottom: 1px solid var(--border);">
+          <td style="padding: 0.5rem; font-weight: 600;">Business</td>
+          <td style="padding: 0.5rem; color: var(--text2);">Case studies, financial reports</td>
+        </tr>
+        <tr>
+          <td style="padding: 0.5rem; font-weight: 600;">Research Papers</td>
+          <td style="padding: 0.5rem; color: var(--text2);">Academic papers, methodology-focused</td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- Formats Section -->
+    <div id="help-formats" class="help-section">
+      <div style="margin: 1rem 0;">
+        <h4 style="color: var(--accent); margin-bottom: 0.5rem;">📄 JSONL (Recommended)</h4>
+        <p style="font-size: 0.9rem; color: var(--text2);">One pair per line. Use with: HuggingFace, Ollama, LLaMA</p>
+      </div>
+      <div style="margin: 1rem 0;">
+        <h4 style="color: var(--accent); margin-bottom: 0.5rem;">📄 JSON</h4>
+        <p style="font-size: 0.9rem; color: var(--text2);">Array format. Use with: Custom pipelines, Python scripts</p>
+      </div>
+      <div style="margin: 1rem 0;">
+        <h4 style="color: var(--accent); margin-bottom: 0.5rem;">📄 Alpaca</h4>
+        <p style="font-size: 0.9rem; color: var(--text2);">Standard Alpaca format. Use with: Alpaca fine-tuning</p>
+      </div>
+      <div style="margin: 1rem 0;">
+        <h4 style="color: var(--accent); margin-bottom: 0.5rem;">💬 ShareGPT</h4>
+        <p style="font-size: 0.9rem; color: var(--text2);">Conversation format. Use with: Chat models, DPO training</p>
+      </div>
+      <div style="margin: 1rem 0;">
+        <h4 style="color: var(--accent); margin-bottom: 0.5rem;">📊 CSV</h4>
+        <p style="font-size: 0.9rem; color: var(--text2);">Spreadsheet format. Use with: Excel, data analysis, sheets</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════════════ -->
+<!-- ABOUT MODAL -->
+<!-- ═════════════════════════════════════════════════════════════════════ -->
+<div id="about-modal" class="modal" style="display: none;">
+  <div class="modal-overlay"></div>
+  <div class="modal-box about-box">
+    <button class="modal-close" onclick="closeAbout()">×</button>
+
+    <div style="text-align: center; margin-bottom: 2rem;">
+      <h1 style="font-size: 2.5rem; margin-bottom: 0.5rem;">🎨</h1>
+      <h2>know3</h2>
+      <p style="color: var(--text2); font-size: 1rem;">Local RAG + Training Data Engine</p>
+    </div>
+
+    <div style="margin: 1.5rem 0; padding: 1.5rem; background: var(--surface2); border-radius: 10px;">
+      <h3 style="margin-bottom: 0.75rem;">What is know3?</h3>
+      <p style="color: var(--text2); line-height: 1.6;">know3 generates production-ready training data from your documents. 100% local, 100% private. No cloud APIs, no subscriptions. Perfect for fine-tuning domain-specific LLMs.</p>
+    </div>
+
+    <div style="margin: 1.5rem 0;">
+      <h3 style="margin-bottom: 0.75rem;">Features</h3>
+      <ul style="list-style: none; padding: 0; color: var(--text2);">
+        <li style="margin: 0.5rem 0;">✅ Multiple documents simultaneously</li>
+        <li style="margin: 0.5rem 0;">✅ 7 domain-specific prompts</li>
+        <li style="margin: 0.5rem 0;">✅ Real-time progress tracking</li>
+        <li style="margin: 0.5rem 0;">✅ 5 export formats</li>
+        <li style="margin: 0.5rem 0;">✅ RAG query (search + ask documents)</li>
+        <li style="margin: 0.5rem 0;">✅ Quality-gated generation</li>
+        <li style="margin: 0.5rem 0;">✅ 100% offline</li>
+      </ul>
+    </div>
+
+    <div style="margin: 1.5rem 0; padding: 1.5rem; background: var(--surface2); border-radius: 10px;">
+      <h3 style="margin-bottom: 0.5rem;">Version</h3>
+      <p style="color: var(--text2);">know3 v3.1</p>
+      <p style="font-size: 0.85rem; color: var(--text3);">Updated March 2026</p>
+    </div>
+
+    <div style="text-align: center; margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
+      <p style="color: var(--text2); font-size: 0.9rem;">Built with ❤️ for local AI</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- SETTINGS DRAWER -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div id="settings-drawer" class="settings-drawer">
+  <div class="settings-overlay"></div>
+  <div class="settings-panel">
+    <div class="settings-header">
+      <h2>⚙️ Settings</h2>
+      <button class="close-settings" onclick="closeSettings()">×</button>
+    </div>
+
+    <div class="settings-content">
+
+      <!-- MODELS SECTION -->
+      <details class="settings-section" open>
+        <summary style="font-weight: 600; color: var(--accent); cursor: pointer;">🤖 Models</summary>
+        <div class="settings-category">
+          <div class="setting-item">
+            <label>LLM Model</label>
+            <select id="settings-model-select"><option>Loading...</option></select>
+            <div class="hint">Language model for generation</div>
+          </div>
+          <div class="setting-item">
+            <label>Embedding Model</label>
+            <select id="settings-embed-select"><option>Loading...</option></select>
+            <div class="hint">Vector embedding for search</div>
+          </div>
+        </div>
+      </details>
+
+      <!-- RAG SETTINGS SECTION -->
+      <details class="settings-section">
+        <summary style="font-weight: 600; color: var(--accent); cursor: pointer;">🔍 RAG Settings</summary>
+        <div class="settings-category">
+          <div class="setting-item">
+            <label>RAG Mode</label>
+            <select id="settings-rag-mode">
+              <option value="search">Search Only (find chunks)</option>
+              <option value="ask">Ask (search + generate)</option>
+            </select>
+            <div class="hint">How RAG queries work</div>
+          </div>
+          <div class="setting-item">
+            <label>Temperature</label>
+            <input type="range" id="settings-temperature" min="0.1" max="1.0" step="0.1" value="0.7">
+            <div class="hint-with-value"><span class="hint">Creativity (0.1=precise, 1.0=creative)</span> <span id="temp-value">0.7</span></div>
+          </div>
+          <div class="setting-item">
+            <label>Top-K Results</label>
+            <input type="number" id="settings-topk" min="1" max="20" value="5">
+            <div class="hint">How many chunks to retrieve</div>
+          </div>
+          <div class="setting-item">
+            <label>Include Source Citations</label>
+            <select id="settings-include-sources">
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+            <div class="hint">Show sources in RAG responses</div>
+          </div>
+        </div>
+      </details>
+
+      <!-- GENERATION SECTION -->
+      <details class="settings-section">
+        <summary style="font-weight: 600; color: var(--accent); cursor: pointer;">⚡ Generation</summary>
+        <div class="settings-category">
+          <div class="setting-item">
+            <label>Domain</label>
+            <select id="settings-domain">
+              <option value="generic">Generic</option>
+              <option value="coding">Coding & APIs</option>
+              <option value="scientific">Scientific & Math</option>
+              <option value="literature">Literature & Humanities</option>
+              <option value="legal">Legal Documents</option>
+              <option value="business">Business & Economics</option>
+              <option value="researchpaper">Research Papers</option>
+            </select>
+            <div class="hint">Content type (adjusts prompts)</div>
+          </div>
+          <div class="setting-item">
+            <label>Pairs Per Chunk</label>
+            <select id="settings-pairs-per-chunk">
+              <option value="1">1 (fast)</option>
+              <option value="2" selected>2 (balanced)</option>
+              <option value="3">3 (thorough)</option>
+            </select>
+            <div class="hint">Training pairs to generate</div>
+          </div>
+        </div>
+      </details>
+
+      <!-- ADVANCED SECTION -->
+      <details class="settings-section">
+        <summary style="font-weight: 600; color: var(--accent); cursor: pointer;">🔧 Advanced</summary>
+        <div class="settings-category">
+          <div class="setting-item">
+            <label>Chunk Size (characters)</label>
+            <input type="number" id="settings-chunk-size" min="200" max="3000" step="100" value="800">
+            <div class="hint">Text split size (200-3000)</div>
+          </div>
+          <div class="setting-item">
+            <label>Default Collection</label>
+            <input type="text" id="settings-collection-name" value="default" placeholder="Collection name">
+            <div class="hint">Where new chunks are stored</div>
+          </div>
+          <div class="setting-item">
+            <button class="btn btn-secondary" style="width: 100%; margin-top: 0.5rem;" onclick="clearAllData()">🗑️ Clear All Data</button>
+            <div class="hint">Remove all chunks and pairs</div>
+          </div>
+        </div>
+      </details>
+
+    </div>
+
+    <div class="settings-footer">
+      <button class="btn btn-primary" onclick="applySettings()">✓ Apply Settings</button>
+      <button class="btn btn-secondary" onclick="closeSettings()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- MODAL FUNCTIONS - MUST BE IN GLOBAL SCOPE (NOT MODULE) -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<script>
+let tutorialStep = 1;
+
+// ── Tutorial Functions ──
+function openTutorial() {
+  console.log('🎓 Opening tutorial...');
+  const modal = document.getElementById('tutorial-modal');
+  if (modal) {
+    modal.style.display = 'flex';
+    modal.style.visibility = 'visible';
+    tutorialStep = 1;
+    showTutorialStep(1);
+    console.log('✅ Tutorial opened');
+  } else {
+    console.error('❌ Tutorial modal not found!');
+  }
+}
+
+function closeTutorial() {
+  console.log('🚪 Closing tutorial...');
+  const modal = document.getElementById('tutorial-modal');
+  if (modal) {
+    modal.style.display = 'none';
+    localStorage.setItem('know3_tutorial_seen', 'true');
+    console.log('✅ Tutorial closed');
+  }
+}
+
+function skipTutorial() {
+  console.log('⏭️ Skipping tutorial...');
+  localStorage.setItem('know3_tutorial_seen', 'true');
+  closeTutorial();
+}
+
+function nextTutorialStep() {
+  console.log(`⏭️ Next step (from ${tutorialStep} to ${tutorialStep + 1})`);
+  if (tutorialStep < 4) {
+    tutorialStep++;
+    showTutorialStep(tutorialStep);
+    console.log(`✅ Now on step ${tutorialStep}`);
+  }
+}
+
+function prevTutorialStep() {
+  console.log(`⏮️ Previous step (from ${tutorialStep} to ${tutorialStep - 1})`);
+  if (tutorialStep > 1) {
+    tutorialStep--;
+    showTutorialStep(tutorialStep);
+    console.log(`✅ Now on step ${tutorialStep}`);
+  }
+}
+
+function finishTutorial() {
+  console.log('✅ Finishing tutorial...');
+  skipTutorial();
+}
+
+function showTutorialStep(step) {
+  console.log(`📍 Showing step ${step}`);
+  document.querySelectorAll('.tutorial-step').forEach(s => s.style.display = 'none');
+  const stepEl = document.querySelector(`.tutorial-step[data-step="${step}"]`);
+  if (stepEl) {
+    stepEl.style.display = 'block';
+    console.log(`✅ Step ${step} displayed`);
+  } else {
+    console.warn(`⚠️ Step ${step} element not found!`);
+  }
+  const indicator = document.getElementById('tutorial-step-indicator');
+  if (indicator) {
+    indicator.textContent = `Step ${step} of 4`;
+  }
+}
+
+// ── Help Functions ──
+function openHelp() {
+  console.log('❓ Opening help...');
+  document.getElementById('help-modal').style.display = 'flex';
+}
+
+function closeHelp() {
+  console.log('❓ Closing help...');
+  document.getElementById('help-modal').style.display = 'none';
+}
+
+function switchHelpSection(section) {
+  console.log(`📋 Switching to help section: ${section}`);
+  // Hide all sections
+  document.querySelectorAll('.help-section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.help-tab').forEach(t => t.classList.remove('active'));
+
+  // Show selected section
+  const sectionEl = document.getElementById(`help-${section}`);
+  if (sectionEl) sectionEl.classList.add('active');
+
+  // Mark tab as active
+  const tabEl = document.querySelector(`.help-tab[data-section="${section}"]`);
+  if (tabEl) tabEl.classList.add('active');
+}
+
+// ── About Functions ──
+function openAbout() {
+  console.log('ℹ️ Opening about...');
+  document.getElementById('about-modal').style.display = 'flex';
+}
+
+function closeAbout() {
+  console.log('ℹ️ Closing about...');
+  document.getElementById('about-modal').style.display = 'none';
+}
+
+// ── Settings Drawer Functions ──
+function openSettings() {
+  console.log('⚙️ Opening settings...');
+  const drawer = document.getElementById('settings-drawer');
+  if (drawer) {
+    drawer.classList.add('open');
+    syncSettingsFromDOM();  // Populate drawer with current DOM values
+    console.log('✅ Settings opened');
+  } else {
+    console.error('❌ Settings drawer not found!');
+  }
+}
+
+function closeSettings() {
+  console.log('⚙️ Closing settings...');
+  const drawer = document.getElementById('settings-drawer');
+  if (drawer) {
+    drawer.classList.remove('open');
+    console.log('✅ Settings closed (changes discarded)');
+  }
+}
+
+function syncSettingsFromDOM() {
+  // Read current DOM values and populate drawer
+  console.log('📍 Syncing settings from DOM...');
+
+  // Models
+  const modelSelect = document.getElementById('modelSelect');
+  const embedSelect = document.getElementById('embedSelect');
+  const settingsModelSelect = document.getElementById('settings-model-select');
+  const settingsEmbedSelect = document.getElementById('settings-embed-select');
+
+  if (modelSelect && settingsModelSelect) {
+    settingsModelSelect.value = modelSelect.value;
+  }
+  if (embedSelect && settingsEmbedSelect) {
+    settingsEmbedSelect.value = embedSelect.value;
+  }
+
+  // Generation settings
+  const domainSelect = document.getElementById('domainSelect');
+  const pairsSelect = document.getElementById('pairsPerChunkSelect');
+  const settingsDomain = document.getElementById('settings-domain');
+  const settingsPairs = document.getElementById('settings-pairs-per-chunk');
+
+  if (domainSelect && settingsDomain) {
+    settingsDomain.value = domainSelect.value;
+  }
+  if (pairsSelect && settingsPairs) {
+    settingsPairs.value = pairsSelect.value;
+  }
+
+  // Advanced settings
+  const chunkSizeInput = document.getElementById('chunkSizeInput');
+  const settingsChunkSize = document.getElementById('settings-chunk-size');
+
+  if (chunkSizeInput && settingsChunkSize) {
+    settingsChunkSize.value = chunkSizeInput.value;
+  }
+
+  // RAG settings from localStorage
+  const ragSettings = JSON.parse(localStorage.getItem('ragSettings') || '{}');
+  const settingsRagMode = document.getElementById('settings-rag-mode');
+  const settingsTemp = document.getElementById('settings-temperature');
+  const settingsTempValue = document.getElementById('temp-value');
+  const settingsTopK = document.getElementById('settings-topk');
+  const settingsSources = document.getElementById('settings-include-sources');
+
+  if (settingsRagMode) settingsRagMode.value = ragSettings.ragMode || 'ask';
+  if (settingsTemp) settingsTemp.value = ragSettings.temperature || 0.7;
+  if (settingsTempValue) settingsTempValue.textContent = ragSettings.temperature || 0.7;
+  if (settingsTopK) settingsTopK.value = ragSettings.topK || 5;
+  if (settingsSources) settingsSources.value = ragSettings.includeSources !== false ? 'yes' : 'no';
+
+  console.log('✅ Settings synced from DOM');
+}
+
+function applySettings() {
+  console.log('💾 Applying settings...');
+
+  // Get all values from drawer
+  const modelSelect = document.getElementById('modelSelect');
+  const embedSelect = document.getElementById('embedSelect');
+  const settingsModelSelect = document.getElementById('settings-model-select');
+  const settingsEmbedSelect = document.getElementById('settings-embed-select');
+
+  if (modelSelect && settingsModelSelect && settingsModelSelect.value) {
+    modelSelect.value = settingsModelSelect.value;
+  }
+  if (embedSelect && settingsEmbedSelect && settingsEmbedSelect.value) {
+    embedSelect.value = settingsEmbedSelect.value;
+  }
+
+  // Generation settings
+  const domainSelect = document.getElementById('domainSelect');
+  const pairsSelect = document.getElementById('pairsPerChunkSelect');
+  const settingsDomain = document.getElementById('settings-domain');
+  const settingsPairs = document.getElementById('settings-pairs-per-chunk');
+
+  if (domainSelect && settingsDomain && settingsDomain.value) {
+    domainSelect.value = settingsDomain.value;
+  }
+  if (pairsSelect && settingsPairs && settingsPairs.value) {
+    pairsSelect.value = settingsPairs.value;
+  }
+
+  // Advanced settings
+  const chunkSizeInput = document.getElementById('chunkSizeInput');
+  const settingsChunkSize = document.getElementById('settings-chunk-size');
+
+  if (chunkSizeInput && settingsChunkSize && settingsChunkSize.value) {
+    chunkSizeInput.value = settingsChunkSize.value;
+  }
+
+  // RAG settings to localStorage
+  const ragSettings = {
+    ragMode: document.getElementById('settings-rag-mode').value || 'ask',
+    temperature: parseFloat(document.getElementById('settings-temperature').value) || 0.7,
+    topK: parseInt(document.getElementById('settings-topk').value) || 5,
+    includeSources: document.getElementById('settings-include-sources').value === 'yes'
+  };
+
+  localStorage.setItem('ragSettings', JSON.stringify(ragSettings));
+
+  console.log('✅ Settings applied:', ragSettings);
+  closeSettings();
+}
+
+function loadSettingsFromStorage() {
+  console.log('📂 Loading settings from storage...');
+  const ragSettings = JSON.parse(localStorage.getItem('ragSettings') || '{}');
+
+  const settingsRagMode = document.getElementById('settings-rag-mode');
+  const settingsTemp = document.getElementById('settings-temperature');
+  const settingsTempValue = document.getElementById('temp-value');
+  const settingsTopK = document.getElementById('settings-topk');
+  const settingsSources = document.getElementById('settings-include-sources');
+
+  if (settingsRagMode) settingsRagMode.value = ragSettings.ragMode || 'ask';
+  if (settingsTemp) settingsTemp.value = ragSettings.temperature || 0.7;
+  if (settingsTempValue) settingsTempValue.textContent = ragSettings.temperature || 0.7;
+  if (settingsTopK) settingsTopK.value = ragSettings.topK || 5;
+  if (settingsSources) settingsSources.value = ragSettings.includeSources !== false ? 'yes' : 'no';
+
+  console.log('✅ Settings loaded:', ragSettings);
+}
+
+function clearAllData() {
+  console.log('🗑️ Clearing all data...');
+  const confirmed = confirm('⚠️ Are you sure? This will delete ALL chunks, embeddings, and training pairs. This cannot be undone.');
+
+  if (confirmed) {
+    // Clear vector store
+    if (typeof vectorStore !== 'undefined') {
+      vectorStore.collections = {};
+      console.log('✅ Vector store cleared');
+    }
+
+    // Clear UI elements
+    const chunksList = document.getElementById('chunksList');
+    const pairsList = document.getElementById('pairsList');
+    const resultsDiv = document.getElementById('results');
+
+    if (chunksList) chunksList.innerHTML = '<div style="color: var(--text3); padding: 1rem;">No chunks loaded</div>';
+    if (pairsList) pairsList.innerHTML = '<div style="color: var(--text3); padding: 1rem;">No pairs generated</div>';
+    if (resultsDiv) resultsDiv.innerHTML = '';
+
+    // Update counts
+    const chunksCount = document.getElementById('chunksCount');
+    const pairsCount = document.getElementById('pairsCount');
+    if (chunksCount) chunksCount.textContent = '0';
+    if (pairsCount) pairsCount.textContent = '0';
+
+    alert('✅ All data cleared successfully!');
+    console.log('✅ All data cleared');
+  } else {
+    console.log('❌ Clear cancelled');
+  }
+}
+
+// ── Close modals on overlay click ──
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.modal').forEach(modal => {
+    modal.addEventListener('click', function(e) {
+      // Only close if clicking the overlay area (not inside modal-box)
+      if (e.target === this || e.target.classList.contains('modal-overlay')) {
+        this.style.display = 'none';
+      }
+    });
+  });
+
+  // ── Event Listeners for Top Bar ──
+  const btnTutorial = document.getElementById('btn-tutorial');
+  const btnHelp = document.getElementById('btn-help');
+  const btnAbout = document.getElementById('btn-about');
+
+  if (btnTutorial) btnTutorial.addEventListener('click', openTutorial);
+  if (btnHelp) btnHelp.addEventListener('click', openHelp);
+  if (btnAbout) btnAbout.addEventListener('click', openAbout);
+
+  // ── Show tutorial on first visit ──
+  const seen = localStorage.getItem('know3_tutorial_seen');
+  if (!seen) {
+    setTimeout(openTutorial, 500);
+  }
+
+  // ── Event Listeners for Settings ──
+  const btnSettings = document.getElementById('btn-settings');
+  if (btnSettings) btnSettings.addEventListener('click', openSettings);
+
+  // ── Settings Drawer overlay click ──
+  const settingsDrawer = document.getElementById('settings-drawer');
+  if (settingsDrawer) {
+    const overlay = settingsDrawer.querySelector('.settings-overlay');
+    if (overlay) overlay.addEventListener('click', closeSettings);
+  }
+
+  // ── Temperature slider live update ──
+  const tempSlider = document.getElementById('settings-temperature');
+  const tempValue = document.getElementById('temp-value');
+  if (tempSlider && tempValue) {
+    tempSlider.addEventListener('input', function() {
+      tempValue.textContent = this.value;
+    });
+  }
+
+  // Load saved settings from localStorage
+  loadSettingsFromStorage();
+
+  // Initialize RAG conversation
+  setTimeout(() => {
+    if (typeof initRAGConversation === 'function') {
+      initRAGConversation();
+    }
+  }, 500);
+
+  // Initialize data loading drag-drop
+  const uploadZone = document.getElementById('data-upload-zone');
+  const fileInput = document.getElementById('data-file-input');
+
+  if (uploadZone && fileInput) {
+    uploadZone.addEventListener('click', () => fileInput.click());
+
+    // Prevent default drag-drop behavior
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+      uploadZone.addEventListener(eventName, preventDefaults, false);
+    });
+
+    function preventDefaults(e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    // Handle drop
+    uploadZone.addEventListener('drop', (e) => {
+      const dt = e.dataTransfer;
+      const files = dt.files;
+      fileInput.files = files;
+      handleDataUpload({ target: { files: files } });
+    }, false);
+
+    console.log('✅ Data upload initialized');
+  }
+});
+</script>
+
+<script type="module">
+// ╔═══════════════════════════════════════════════════════════════════════════╗
+// ║  know3 — Local RAG + Training Data Engine                               ║
+// ║  100% Offline · Ollama LLM + Embeddings · In-Memory Vector Store        ║
+// ╚═══════════════════════════════════════════════════════════════════════════╝
+
+// ── PDF.js setup ──
+let pdfjsLib = null;
+try {
+  pdfjsLib = await import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs';
+} catch(e) {
+  console.warn('PDF.js import failed:', e);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════════════════════════════
+const OLLAMA = 'http://localhost:11434';
+
+// ── DOMAIN-SPECIFIC PROMPTS ──
+const DOMAIN_PROMPTS = {
+  generic: `You are a training data generator. Given text, create {N} high-quality instruction-output training pairs.
+
+Rules:
+- Each pair must teach a DIFFERENT aspect
+- Vary question types: definitional, procedural, analytical, comparative
+- NEVER provide surface-level answers
+- Include WHY and WHEN, not just WHAT
+- Show reasoning: "Because..." or "The reason is..."
+- Avoid generic statements; be specific and concrete
+- Instruction: Clear, specific question (1-2 sentences)
+- Output: Complete, detailed answer (minimum 2-3 sentences)
+
+Format EXACTLY (repeat for each pair):
+INSTRUCTION: [question or task]
+OUTPUT: [complete answer]`,
+
+  coding: `You are a software engineer training data generator. Given code documentation or technical text, create {N} instruction-output pairs.
+
+Rules:
+- INSTRUCTION types: How to use X? What does Y do? Fix this bug? Explain Z?
+- Include code examples in outputs when relevant
+- Use actual API names, method signatures, parameters
+- Explain WHY not just WHAT
+- Cover both theory and practical usage
+- For APIs: include method names, parameters, return types
+- Show edge cases and common mistakes
+- Instruction: Clear, actionable question about code/APIs
+- Output: Complete explanation with code example if applicable
+
+Format EXACTLY (repeat for each pair):
+INSTRUCTION: [specific, actionable question about code/APIs]
+OUTPUT: [complete explanation with code example if applicable]`,
+
+  scientific: `You are a scientific/mathematical training data generator. Given academic or technical text with equations, create {N} pairs.
+
+Rules:
+- INSTRUCTION types: Derive this formula? What does this equation mean? Solve for X? When would you use this?
+- Preserve mathematical notation exactly (use ^, _, sqrt(), pi, etc.)
+- Explain derivations step-by-step
+- Include physical/practical meaning, not just algebra
+- Handle units and dimensions
+- Show assumptions and approximations
+- Instruction: Specific question about concept, derivation, or application
+- Output: Detailed explanation with notation preserved and steps shown
+
+Format EXACTLY (repeat for each pair):
+INSTRUCTION: [question about concept, derivation, or application]
+OUTPUT: [detailed explanation with notation preserved]`,
+
+  literature: `You are a literature/humanities training data generator. Given novels, essays, or literary text, create {N} pairs.
+
+Rules:
+- INSTRUCTION types: What does this passage reveal? Compare X and Y? Analyze the symbolism? How does character develop?
+- Include textual evidence (quotes)
+- Discuss themes, motifs, writing style, tone
+- Connect to broader literary context
+- Avoid superficial plot summary — focus on analysis
+- Show interpretation, not just description
+- Instruction: Analytical question about text, themes, or craft
+- Output: Critical analysis with textual evidence and interpretation
+
+Format EXACTLY (repeat for each pair):
+INSTRUCTION: [analytical question about text, themes, or craft]
+OUTPUT: [critical analysis with textual evidence]`,
+
+  legal: `You are a legal document training data generator. Given contracts, statutes, or legal text, create {N} pairs.
+
+Rules:
+- INSTRUCTION types: What does this clause mean? When does this apply? What are obligations? What are risks?
+- Use precise legal terminology
+- Cite specific sections/articles
+- Explain practical implications, not just definitions
+- Cover both letter (exact words) and spirit (intent)
+- Show real-world applications
+- Instruction: Specific legal question about interpretation or application
+- Output: Precise explanation with references and practical implications
+
+Format EXACTLY (repeat for each pair):
+INSTRUCTION: [specific legal question about interpretation or application]
+OUTPUT: [precise explanation with references]`,
+
+  business: `You are a business/economics training data generator. Given business books, case studies, or reports, create {N} pairs.
+
+Rules:
+- INSTRUCTION types: What's the business model? How does X apply to Y? What are risks/opportunities? Why did this strategy work?
+- Use metrics and financial reasoning
+- Connect to real-world examples
+- Include both strategic and tactical insights
+- Explain assumptions and tradeoffs
+- Show competitive context
+- Instruction: Business question about strategy, operations, or analysis
+- Output: Detailed explanation with examples and reasoning
+
+Format EXACTLY (repeat for each pair):
+INSTRUCTION: [business question about strategy, operations, or analysis]
+OUTPUT: [detailed explanation with examples]`,
+
+  researchpaper: `You are a research paper training data generator. Given academic research papers (abstracts, methods, results, discussion), create {N} pairs.
+
+Rules:
+- INSTRUCTION types: What's the research question? What methodology was used? What are the key findings? How do results support the hypothesis? What are implications?
+- Preserve technical accuracy and domain-specific terminology
+- Include quantitative results, statistical significance, effect sizes
+- Explain practical implications and limitations
+- Show connections between hypothesis, methodology, and findings
+- Avoid oversimplification — maintain academic rigor
+- Instruction: Specific research question about methodology, findings, or implications
+- Output: Detailed explanation grounded in the paper's evidence and findings
+
+Format EXACTLY (repeat for each pair):
+INSTRUCTION: [specific research question about methodology, findings, or implications]
+OUTPUT: [detailed explanation grounded in evidence and findings]`
+};
+
+// Review tab state: selected chunks for generation
+let selectedChunks = new Set();
+let allChunks = [];
+
+// Vector Store — in-memory, schema-aware (like Weaviate, but free)
+const vectorStore = {
+  collections: {},  // { name: { chunks: [], embeddings: [], metadata: [] } }
+  
+  addCollection(name) {
+    if (!this.collections[name]) {
+      this.collections[name] = { chunks: [], embeddings: [], metadata: [] };
+    }
+  },
+  
+  addChunk(collection, text, embedding, meta = {}) {
+    this.addCollection(collection);
+    const c = this.collections[collection];
+    c.chunks.push(text);
+    c.embeddings.push(embedding);
+    c.metadata.push({ ...meta, timestamp: Date.now(), id: c.chunks.length - 1 });
+  },
+
+  // Cosine similarity search — same math as Weaviate, but in-browser
+  search(queryEmbedding, topK = 5, collectionFilter = null) {
+    const results = [];
+    const collections = collectionFilter && collectionFilter !== '__all__'
+      ? [collectionFilter]
+      : Object.keys(this.collections);
+
+    for (const colName of collections) {
+      const col = this.collections[colName];
+      if (!col) continue;
+      
+      for (let i = 0; i < col.embeddings.length; i++) {
+        const score = cosineSim(queryEmbedding, col.embeddings[i]);
+        results.push({
+          score,
+          text: col.chunks[i],
+          collection: colName,
+          meta: col.metadata[i]
+        });
+      }
+    }
+
+    // Sort by score descending, return top K
+    results.sort((a, b) => b.score - a.score);
+    return results.slice(0, topK);
+  },
+
+  getStats() {
+    const colNames = Object.keys(this.collections);
+    let totalChunks = 0;
+    for (const c of colNames) totalChunks += this.collections[c].chunks.length;
+    return {
+      collections: colNames.length,
+      chunks: totalChunks,
+      collectionNames: colNames
+    };
+  },
+
+  clear() {
+    this.collections = {};
+  },
+
+  // Export entire vector store as JSON
+  export() {
+    const out = {};
+    for (const [name, col] of Object.entries(this.collections)) {
+      out[name] = col.chunks.map((text, i) => ({
+        text,
+        metadata: col.metadata[i],
+        embedding: col.embeddings[i]
+      }));
+    }
+    return out;
+  }
+};
+
+// Training pairs store
+let allPairs = [];
+let running = false;
+let abortCtrl = null;
+let currentFileName = '';
+let documentsIngested = 0;
+
+// ════════════════════════════════════════════════════════════════════════════
+// DOM HELPERS
+// ════════════════════════════════════════════════════════════════════════════
+const $ = id => document.getElementById(id);
+const statusDot = $('status-dot');
+const statusText = $('status-text');
+const modelSelect = $('model-select');
+const embedSelect = $('embed-model-select');
+const dropZone = $('drop-zone');
+const fileInput = $('file-input');
+const fileInfo = $('file-info');
+const btnStart = $('btn-start');
+const btnStop = $('btn-stop');
+const progressArea = $('progress-area');
+const progressFill = $('progress-fill');
+const progressLabel = $('progress-label');
+const progressPct = $('progress-pct');
+const progressLog = $('progress-log');
+const resultsDiv = $('results');
+const resultsList = $('results-list');
+const resultsCount = $('results-count');
+const setupGuide = $('setup-guide');
+
+// ════════════════════════════════════════════════════════════════════════════
+// MATH: Cosine Similarity (the core of vector search)
+// ════════════════════════════════════════════════════════════════════════════
+function cosineSim(a, b) {
+  if (!a || !b || a.length !== b.length) return 0;
+  let dot = 0, magA = 0, magB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    magA += a[i] * a[i];
+    magB += b[i] * b[i];
+  }
+  const denom = Math.sqrt(magA) * Math.sqrt(magB);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// OLLAMA CONNECTION
+// ════════════════════════════════════════════════════════════════════════════
+async function checkOllama() {
+  try {
+    const r = await fetch(`${OLLAMA}/api/tags`, { signal: AbortSignal.timeout(3000) });
+    if (!r.ok) throw new Error('Not OK');
+    const data = await r.json();
+    const models = data.models || [];
+
+    // Separate LLM models and embedding models
+    const llmModels = [];
+    const embedModels = [];
+    
+    for (const m of models) {
+      const name = m.name || m.model;
+      // Heuristic: embedding models usually have "embed" in name
+      if (name.includes('embed') || name.includes('bge') || name.includes('minilm') || name.includes('gte')) {
+        embedModels.push(name);
+      }
+      llmModels.push(name); // All models can be LLMs
+    }
+
+    // Populate LLM select
+    modelSelect.innerHTML = llmModels.map(m =>
+      `<option value="${m}">${m}</option>`
+    ).join('');
+
+    // Populate embed select
+    if (embedModels.length > 0) {
+      embedSelect.innerHTML = embedModels.map(m =>
+        `<option value="${m}">${m}</option>`
+      ).join('');
+    } else {
+      // If no explicit embed model found, add first available + hint
+      embedSelect.innerHTML = `<option value="${llmModels[0]}">${llmModels[0]} (LLM fallback)</option>`;
+      embedSelect.innerHTML += `<option value="__none__">⚠ No embed model — pull nomic-embed-text</option>`;
+    }
+
+    setStatus('ok', `Ollama connected · ${models.length} model${models.length !== 1 ? 's' : ''}`);
+    $('model-info').textContent = models.length + ' models loaded';
+    setupGuide.style.display = 'none';
+    btnStart.disabled = !currentFileName;
+    $('btn-clear-store').disabled = false;
+    return true;
+  } catch(e) {
+    setStatus('err', 'Ollama not found — see setup below');
+    setupGuide.style.display = 'block';
+    return false;
+  }
+}
+
+function setStatus(state, text) {
+  statusDot.className = 'status-dot ' + state;
+  statusText.textContent = text;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// OLLAMA API CALLS
+// ════════════════════════════════════════════════════════════════════════════
+async function ollamaGenerate(prompt, model, temperature = 0.7) {
+  const r = await fetch(`${OLLAMA}/api/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model, prompt, stream: false,
+      options: { temperature: temperature, num_predict: 800 },
+      keep_alive: '30m'
+    }),
+    signal: abortCtrl?.signal,
+  });
+  if (!r.ok) throw new Error(`Ollama error: ${r.status}`);
+  const data = await r.json();
+  return data.response || '';
+}
+
+async function ollamaEmbed(text, model) {
+  const r = await fetch(`${OLLAMA}/api/embed`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, input: text }),
+    signal: abortCtrl?.signal,
+  });
+  if (!r.ok) throw new Error(`Embedding error: ${r.status}`);
+  const data = await r.json();
+  // Ollama returns { embeddings: [[...]] } for single input
+  return data.embeddings?.[0] || data.embedding || [];
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// FILE PARSERS
+// ════════════════════════════════════════════════════════════════════════════
+async function parseFile(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  log(`Parsing ${file.name} (${(file.size/1024).toFixed(0)} KB)...`, 'info');
+
+  switch (ext) {
+    case 'txt': case 'text':
+      return await file.text();
+    case 'pdf':
+      return await parsePDF(file);
+    case 'docx':
+      return await parseDOCX(file);
+    case 'epub':
+      return await parseEPUB(file);
+    default:
+      throw new Error(`Unsupported format: .${ext}`);
+  }
+}
+
+async function parsePDF(file) {
+  if (!pdfjsLib) throw new Error('PDF.js not loaded');
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  let text = '';
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const pageText = content.items.map(item => item.str).join(' ');
+    text += pageText + '\n\n';
+  }
+  log(`PDF: ${pdf.numPages} pages extracted`, 'ok');
+  return text;
+}
+
+async function parseDOCX(file) {
+  const buf = await file.arrayBuffer();
+  const result = await mammoth.extractRawText({ arrayBuffer: buf });
+  return result.value;
+}
+
+async function parseEPUB(file) {
+  const buf = await file.arrayBuffer();
+  const zip = await JSZip.loadAsync(buf);
+  let text = '';
+
+  const htmlFiles = Object.keys(zip.files)
+    .filter(f => f.match(/\.(x?html?)$/i))
+    .sort();
+
+  for (const path of htmlFiles) {
+    const html = await zip.file(path).async('string');
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    text += doc.body?.textContent || '';
+    text += '\n\n';
+  }
+  return text;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TEXT PROCESSING
+// ════════════════════════════════════════════════════════════════════════════
+function chunkText(text, maxLen) {
+  const chunks = [];
+  let current = '';
+
+  const paragraphs = text.split(/\n\n+/);
+
+  for (const para of paragraphs) {
+    const cleaned = para.replace(/\s+/g, ' ').trim();
+    if (!cleaned || cleaned.length < 30) continue; // Skip tiny fragments
+
+    if (current.length + cleaned.length > maxLen && current.length > 100) {
+      chunks.push(current.trim());
+      current = '';
+    }
+    current += cleaned + '\n\n';
+  }
+  if (current.trim().length > 100) chunks.push(current.trim());
+  return chunks;
+}
+
+// Smart content filter — skip junk before processing
+function isJunkChunk(text) {
+  const lower = text.toLowerCase();
+  // Table of contents patterns
+  if ((lower.match(/\.\.\./g) || []).length > 5) return true;
+  // Page numbers only
+  if (/^\d+\s*$/.test(text.trim())) return true;
+  // Copyright/legal boilerplate
+  if (lower.includes('all rights reserved') && text.length < 200) return true;
+  if (lower.includes('isbn') && text.length < 200) return true;
+  // Bibliography/references (heavy citation patterns)
+  if ((text.match(/\(\d{4}\)/g) || []).length > 5 && text.length < 500) return true;
+  return false;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// MULTI-PAIR PARSER (beats single-pair approach)
+// ════════════════════════════════════════════════════════════════════════════
+function parsePairResponse(response) {
+  const pairs = [];
+  const parts = response.split(/INSTRUCTION:\s*/i).filter(s => s.trim());
+
+  for (const part of parts) {
+    if (!part.includes('OUTPUT:')) continue;
+    const segments = part.split(/OUTPUT:\s*/i);
+    let instruction = (segments[0] || '').trim();
+    let output = (segments[1] || '').trim();
+
+    // Clean: remove next pair's content leaking
+    if (output.includes('INSTRUCTION:')) {
+      output = output.split('INSTRUCTION:')[0].trim();
+    }
+
+    // Clean quotes and artifacts
+    instruction = instruction.replace(/^["'\s]+|["'\s]+$/g, '').trim();
+    output = output.replace(/^["'\s]+|["'\s]+$/g, '').trim();
+
+    // ──── QUALITY GATE ────
+    if (instruction.length < 10) continue;      // Question too short
+    if (output.length < 50) continue;            // Answer too shallow
+    if (output.split(/\s+/).length < 8) continue; // Fewer than 8 words
+
+    pairs.push({ instruction, output });
+  }
+  return pairs;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// INGESTION PIPELINE: Parse → Chunk → Embed → Store
+// ════════════════════════════════════════════════════════════════════════════
+async function ingestFile(file) {
+  const collection = $('collection-name').value.trim() || 'default';
+  const embedModel = embedSelect.value;
+  const chunkSize = parseInt($('chunk-size').value) || 800;
+
+  currentFileName = file.name;
+  $('file-name').textContent = file.name;
+  fileInfo.style.display = 'block';
+  $('file-meta').textContent = `Ingesting... (${(file.size / 1024).toFixed(0)} KB)`;
+
+  progressArea.style.display = 'block';
+  progressLog.innerHTML = '';
+  
+  abortCtrl = new AbortController();
+
+  try {
+    // Step 1: Parse
+    const text = await parseFile(file);
+    const words = text.split(/\s+/).length;
+    log(`Extracted ${words.toLocaleString()} words`, 'ok');
+
+    // Step 2: Chunk
+    const chunks = chunkText(text, chunkSize);
+    const filteredChunks = chunks.filter(c => !isJunkChunk(c));
+    log(`${chunks.length} chunks → ${filteredChunks.length} after filtering (${chunks.length - filteredChunks.length} junk removed)`, 'info');
+
+    // Step 3: Embed each chunk and store
+    if (embedModel === '__none__') {
+      log(`⚠ No embedding model — storing text only (no vector search)`, 'warn');
+      for (let i = 0; i < filteredChunks.length; i++) {
+        vectorStore.addChunk(collection, filteredChunks[i], [], {
+          file: file.name,
+          chunkIndex: i,
+          totalChunks: filteredChunks.length
+        });
+      }
+    } else {
+      log(`Embedding ${filteredChunks.length} chunks with ${embedModel}...`, 'info');
+      
+      for (let i = 0; i < filteredChunks.length; i++) {
+        if (!running && abortCtrl?.signal.aborted) break;
+
+        const pct = ((i + 1) / filteredChunks.length * 100).toFixed(0);
+        progressFill.style.width = pct + '%';
+        progressPct.textContent = pct + '%';
+        progressLabel.textContent = `Embedding chunk ${i + 1}/${filteredChunks.length}`;
+
+        try {
+          const embedding = await ollamaEmbed(filteredChunks[i], embedModel);
+          vectorStore.addChunk(collection, filteredChunks[i], embedding, {
+            file: file.name,
+            chunkIndex: i,
+            totalChunks: filteredChunks.length
+          });
+        } catch(e) {
+          log(`⚠ Embed failed for chunk ${i+1}: ${e.message}`, 'warn');
+          // Store without embedding as fallback
+          vectorStore.addChunk(collection, filteredChunks[i], [], {
+            file: file.name,
+            chunkIndex: i,
+            totalChunks: filteredChunks.length
+          });
+        }
+
+        // Small yield to prevent UI freeze
+        if (i % 5 === 0) await new Promise(r => setTimeout(r, 10));
+      }
+    }
+
+    documentsIngested++;
+    log(`✨ Ingested "${file.name}" → collection "${collection}" (${filteredChunks.length} chunks)`, 'ok');
+    $('file-meta').textContent = `${(file.size / 1024).toFixed(0)} KB · ${words.toLocaleString()} words · ${filteredChunks.length} chunks → "${collection}"`;
+    
+    updateStoreUI();
+    btnStart.disabled = false;
+    
+    progressFill.style.width = '100%';
+    progressPct.textContent = '✓';
+    progressLabel.textContent = 'Ingestion complete';
+
+  } catch(e) {
+    log(`✗ Ingestion failed: ${e.message}`, 'err');
+    $('file-meta').textContent = `Error: ${e.message}`;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TRAINING DATA GENERATION (Multi-pair + Quality Gate)
+// ════════════════════════════════════════════════════════════════════════════
+async function generatePairsFromSelected() {
+  if (selectedChunks.size === 0) {
+    alert('Please select at least one chunk in the Review tab');
+    return;
+  }
+
+  running = true;
+  abortCtrl = new AbortController();
+  const model = modelSelect.value;
+  const systemPrompt = $('system-prompt').value;
+
+  progressArea.style.display = 'block';
+  progressLog.innerHTML = '';
+  resultsList.innerHTML = '';
+  resultsDiv.style.display = 'none';
+  btnStart.disabled = true;
+  btnStop.disabled = false;
+  btnStop.style.display = '';
+
+  // Use only selected chunks
+  const chunksToProcess = [];
+  selectedChunks.forEach(idx => {
+    if (allChunks[idx]) {
+      chunksToProcess.push(allChunks[idx]);
+    }
+  });
+
+  log(`⚡ Processing ${chunksToProcess.length} selected chunks (selective mode)`, 'info');
+  log(`Model: ${model}`, 'info');
+
+  const startTime = Date.now();
+  let newPairsCount = 0;
+
+  for (let i = 0; i < chunksToProcess.length; i++) {
+    if (!running) { log('Stopped by user', 'err'); break; }
+
+    const pct = ((i + 1) / chunksToProcess.length * 100).toFixed(0);
+    progressFill.style.width = pct + '%';
+    progressPct.textContent = pct + '%';
+
+    const elapsed = (Date.now() - startTime) / 1000;
+    const rate = (i + 1) / elapsed;
+    const remaining = rate > 0 ? ((chunksToProcess.length - i - 1) / rate).toFixed(0) : '?';
+    progressLabel.textContent = `Chunk ${i + 1}/${chunksToProcess.length} · ~${remaining}s left · ${newPairsCount} pairs`;
+
+    try {
+      const chunk = chunksToProcess[i];
+      const prompt = `${systemPrompt}\n\nText:\n${chunk.text}`;
+      const response = await ollamaGenerate(prompt, model);
+      const parsedPairs = parsePairResponse(response);
+
+      if (parsedPairs.length > 0) {
+        for (const pair of parsedPairs) {
+          pair.source = chunk.text.substring(0, 150) + '...';
+          pair.collection = chunk.collection;
+          pair.file = chunk.meta?.file || '';
+          allPairs.push(pair);
+          newPairsCount++;
+          addPairToUI(pair, allPairs.length);
+          log(`✓ #${allPairs.length}: "${pair.instruction.substring(0, 55)}..."`, 'ok');
+        }
+      } else {
+        log(`⚠ Chunk ${i+1}: no quality pairs (gate filter)`, 'warn');
+      }
+    } catch(e) {
+      if (e.name === 'AbortError') { log('Stopped', 'err'); break; }
+      log(`✗ Chunk ${i+1}: ${e.message}`, 'err');
+    }
+  }
+
+  // Done
+  running = false;
+  const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+  progressLabel.textContent = `Done! ${newPairsCount} new pairs in ${totalTime}s (${allPairs.length} total)`;
+  progressFill.style.width = '100%';
+  progressPct.textContent = '✓';
+  btnStart.disabled = false;
+  btnStop.disabled = true;
+  btnStop.style.display = 'none';
+
+  if (allPairs.length > 0) {
+    resultsDiv.style.display = 'block';
+    resultsCount.textContent = `${allPairs.length} total pairs generated`;
+    log(`\n✨ Complete! ${newPairsCount} pairs from selection, ${allPairs.length} total.`, 'ok');
+    $('btn-export').disabled = false;
+  }
+
+  updateStoreUI();
+}
+
+async function generatePairs() {
+  running = true;
+  abortCtrl = new AbortController();
+  const model = modelSelect.value;
+  const systemPrompt = $('system-prompt').value;
+
+  progressArea.style.display = 'block';
+  progressLog.innerHTML = '';
+  resultsList.innerHTML = '';
+  resultsDiv.style.display = 'none';
+  btnStart.disabled = true;
+  btnStop.disabled = false;
+  btnStop.style.display = '';
+
+  // Collect all chunks from all collections for training
+  const chunksToProcess = [];
+  allChunks = []; // Reset global chunk list
+  for (const [colName, col] of Object.entries(vectorStore.collections)) {
+    for (let i = 0; i < col.chunks.length; i++) {
+      const chunkObj = { text: col.chunks[i], collection: colName, meta: col.metadata[i], filtered: false, filterReason: '' };
+      allChunks.push(chunkObj);
+      chunksToProcess.push(chunkObj);
+    }
+  }
+
+  if (chunksToProcess.length === 0) {
+    log('⚠ No chunks in vector store. Ingest documents first!', 'err');
+    running = false;
+    btnStart.disabled = false;
+    btnStop.style.display = 'none';
+    return;
+  }
+
+  log(`Processing ${chunksToProcess.length} chunks from ${Object.keys(vectorStore.collections).length} collection(s)`, 'info');
+  log(`Model: ${model} · Multi-pair mode (2-3 per chunk)`, 'info');
+
+  const startTime = Date.now();
+  let newPairsCount = 0;
+
+  for (let i = 0; i < chunksToProcess.length; i++) {
+    if (!running) { log('Stopped by user', 'err'); break; }
+
+    const pct = ((i + 1) / chunksToProcess.length * 100).toFixed(0);
+    progressFill.style.width = pct + '%';
+    progressPct.textContent = pct + '%';
+
+    const elapsed = (Date.now() - startTime) / 1000;
+    const rate = (i + 1) / elapsed;
+    const remaining = ((chunksToProcess.length - i - 1) / rate / 60).toFixed(1);
+    progressLabel.textContent = `Chunk ${i + 1}/${chunksToProcess.length} · ~${remaining} min left · ${newPairsCount} pairs`;
+
+    try {
+      const chunk = chunksToProcess[i];
+      const prompt = `${systemPrompt}\n\nText:\n${chunk.text}`;
+      const response = await ollamaGenerate(prompt, model);
+      const parsedPairs = parsePairResponse(response);
+
+      if (parsedPairs.length > 0) {
+        for (const pair of parsedPairs) {
+          pair.source = chunk.text.substring(0, 150) + '...';
+          pair.collection = chunk.collection;
+          pair.file = chunk.meta?.file || '';
+          allPairs.push(pair);
+          newPairsCount++;
+          addPairToUI(pair, allPairs.length);
+          log(`✓ #${allPairs.length}: "${pair.instruction.substring(0, 55)}..."`, 'ok');
+        }
+      } else {
+        log(`⚠ Chunk ${i+1}: no quality pairs (filtered by gate)`, 'warn');
+      }
+    } catch(e) {
+      if (e.name === 'AbortError') { log('Stopped', 'err'); break; }
+      log(`✗ Chunk ${i+1}: ${e.message}`, 'err');
+    }
+  }
+
+  // Done
+  running = false;
+  const totalTime = ((Date.now() - startTime) / 1000 / 60).toFixed(1);
+  progressLabel.textContent = `Done! ${newPairsCount} new pairs in ${totalTime} min (${allPairs.length} total)`;
+  progressFill.style.width = '100%';
+  progressPct.textContent = '✓';
+  btnStart.disabled = false;
+  btnStop.disabled = true;
+  btnStop.style.display = 'none';
+
+  if (allPairs.length > 0) {
+    resultsDiv.style.display = 'block';
+    resultsCount.textContent = `${allPairs.length} total pairs generated`;
+    log(`\n✨ Complete! ${newPairsCount} new pairs this run, ${allPairs.length} total.`, 'ok');
+    $('btn-export').disabled = false;
+  }
+
+  updateStoreUI();
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// RAG QUERY: Search → Retrieve → Generate (like Weaviate Query Agent)
+// ════════════════════════════════════════════════════════════════════════════
+async function ragSearch(mode = 'search') {
+  const query = $('rag-input').value.trim();
+  if (!query) return;
+
+  const topK = parseInt($('rag-topk').value) || 5;
+  const collection = $('rag-collection').value;
+  const embedModel = embedSelect.value;
+  const ragResults = $('rag-results');
+  const ragAnswer = $('rag-answer');
+
+  ragResults.innerHTML = '<div style="color:var(--text3); font-size:.82rem;">Searching...</div>';
+  ragAnswer.style.display = 'none';
+
+  try {
+    // Step 1: Embed the query
+    let queryEmbedding = [];
+    if (embedModel !== '__none__') {
+      queryEmbedding = await ollamaEmbed(query, embedModel);
+    }
+
+    // Step 2: Vector search
+    let results;
+    if (queryEmbedding.length > 0) {
+      results = vectorStore.search(queryEmbedding, topK, collection);
+    } else {
+      // Fallback: basic keyword search
+      results = keywordSearch(query, topK, collection);
+    }
+
+    // Step 3: Display search results
+    if (results.length === 0) {
+      ragResults.innerHTML = '<div style="color:var(--warn); font-size:.82rem;">No results found. Try ingesting documents first.</div>';
+      return;
+    }
+
+    ragResults.innerHTML = results.map((r, i) => `
+      <div class="pair-card">
+        <div class="pair-num">#${i+1} · Score: ${(r.score * 100).toFixed(1)}% · Collection: ${r.collection}</div>
+        <div class="pair-a">${escHtml(r.text.substring(0, 400))}${r.text.length > 400 ? '...' : ''}</div>
+        <div class="pair-source">📄 ${r.meta?.file || 'unknown'} · chunk ${(r.meta?.chunkIndex || 0) + 1}/${r.meta?.totalChunks || '?'}</div>
+      </div>
+    `).join('');
+
+    // Step 4: If "Ask" mode, generate an answer from context (like Weaviate Ask Mode)
+    if (mode === 'ask') {
+      ragAnswer.style.display = 'block';
+      $('rag-answer-text').innerHTML = '<span style="color:var(--text3);">Generating answer...</span>';
+
+      const context = results.map((r, i) => `[Source ${i+1} - ${r.meta?.file || 'doc'}, score: ${(r.score*100).toFixed(0)}%]\n${r.text}`).join('\n\n');
+
+      const answerPrompt = `You are a precise assistant. Answer the question using ONLY the provided context. If the context doesn't contain enough information, say so. Always cite which source(s) you used.
+
+Context:
+${context}
+
+Question: ${query}
+
+Answer:`;
+
+      const answer = await ollamaGenerate(answerPrompt, modelSelect.value);
+      
+      $('rag-answer-text').innerHTML = escHtml(answer).replace(/\n/g, '<br>');
+      $('rag-sources').innerHTML = `<span>📚 Sources:</span> ${results.map((r, i) => 
+        `[${i+1}] ${r.meta?.file || 'doc'} (${(r.score*100).toFixed(0)}%)`
+      ).join(' · ')}`;
+    }
+
+  } catch(e) {
+    ragResults.innerHTML = `<div style="color:var(--err); font-size:.82rem;">Error: ${e.message}</div>`;
+  }
+}
+
+// Fallback keyword search (when no embedding model available)
+function keywordSearch(query, topK, collectionFilter) {
+  const terms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+  const results = [];
+  const collections = collectionFilter && collectionFilter !== '__all__'
+    ? [collectionFilter]
+    : Object.keys(vectorStore.collections);
+
+  for (const colName of collections) {
+    const col = vectorStore.collections[colName];
+    if (!col) continue;
+    for (let i = 0; i < col.chunks.length; i++) {
+      const lower = col.chunks[i].toLowerCase();
+      let score = 0;
+      for (const term of terms) {
+        const count = (lower.match(new RegExp(term, 'g')) || []).length;
+        score += count;
+      }
+      if (score > 0) {
+        results.push({
+          score: score / terms.length / 10, // Normalize
+          text: col.chunks[i],
+          collection: colName,
+          meta: col.metadata[i]
+        });
+      }
+    }
+  }
+  results.sort((a, b) => b.score - a.score);
+  return results.slice(0, topK);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// RAG CONVERSATION: ChatGPT-style multi-turn conversation
+// ════════════════════════════════════════════════════════════════════════════
+
+let ragConversationHistory = []; // Array of { role: 'user'|'assistant', content: string, sources?: array }
+
+function initRAGConversation() {
+  console.log('🤖 Initializing RAG conversation...');
+
+  // Load conversation from localStorage
+  const saved = localStorage.getItem('know3_rag_conversation');
+  if (saved) {
+    ragConversationHistory = JSON.parse(saved);
+    renderConversation();
+  }
+
+  // Event listeners
+  const sendBtn = document.getElementById('btn-rag-send');
+  const msgInput = document.getElementById('rag-msg-input');
+  const tempSlider = document.getElementById('rag-temperature');
+  const tempDisplay = document.getElementById('rag-temp-display');
+
+  if (sendBtn) sendBtn.addEventListener('click', () => sendRAGMessage());
+  if (msgInput) {
+    msgInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendRAGMessage();
+      }
+    });
+  }
+
+  if (tempSlider && tempDisplay) {
+    tempSlider.addEventListener('input', (e) => {
+      tempDisplay.textContent = e.target.value;
+    });
+  }
+
+  console.log('✅ RAG conversation initialized');
+}
+
+async function sendRAGMessage() {
+  console.log('📤 Sending RAG message...');
+
+  const msgInput = document.getElementById('rag-msg-input');
+  const message = msgInput.value.trim();
+  if (!message) return;
+
+  // Add user message to history
+  addMessageToHistory('user', message);
+  msgInput.value = '';
+
+  // Get settings
+  const topK = parseInt(document.getElementById('rag-topk').value) || 5;
+  const collection = document.getElementById('rag-collection').value;
+  const includeSources = document.getElementById('rag-include-sources').value === 'yes';
+  const embedModel = embedSelect.value;
+
+  try {
+    // Embed the query
+    let queryEmbedding = [];
+    if (embedModel !== '__none__') {
+      queryEmbedding = await ollamaEmbed(message, embedModel);
+    }
+
+    // Search for relevant chunks
+    let results = [];
+    if (queryEmbedding.length > 0) {
+      results = vectorStore.search(queryEmbedding, topK, collection);
+    } else {
+      results = keywordSearch(message, topK, collection);
+    }
+
+    // Check RAG mode from settings
+    const ragSettings = JSON.parse(localStorage.getItem('ragSettings') || '{}');
+    const ragMode = ragSettings.ragMode || 'ask';
+
+    let assistantMessage = '';
+    let sources = [];
+
+    if (results.length === 0) {
+      assistantMessage = '❌ No relevant documents found. Try ingesting documents first.';
+    } else if (ragMode === 'search') {
+      // Search-only mode: return chunks
+      assistantMessage = `📚 Found ${results.length} relevant chunks:\n\n`;
+      assistantMessage += results.map((r, i) =>
+        `${i+1}. (Score: ${(r.score * 100).toFixed(0)}%) ${r.text.substring(0, 200)}${r.text.length > 200 ? '...' : ''}`
+      ).join('\n\n');
+      sources = results.map((r, i) => ({
+        index: i + 1,
+        file: r.meta?.file || 'unknown',
+        score: (r.score * 100).toFixed(0)
+      }));
+    } else {
+      // Ask mode: generate answer with context
+      const context = results.map((r, i) =>
+        `[Source ${i+1} - ${r.meta?.file || 'doc'}, score: ${(r.score*100).toFixed(0)}%]\n${r.text}`
+      ).join('\n\n');
+
+      // Build conversation context (last 3 messages for context window)
+      const recentContext = ragConversationHistory.slice(-6).map(m =>
+        `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`
+      ).join('\n');
+
+      const answerPrompt = `You are a helpful assistant. Answer the question using ONLY the provided context. If the context doesn't contain enough information, say so honestly. Always cite which source(s) you used.
+
+Recent conversation context:
+${recentContext}
+
+Current context:
+${context}
+
+User question: ${message}
+
+Answer:`;
+
+      const temperature = parseFloat(ragSettings.temperature) || 0.7;
+      assistantMessage = await ollamaGenerate(answerPrompt, modelSelect.value, temperature);
+      sources = results.map((r, i) => ({
+        index: i + 1,
+        file: r.meta?.file || 'unknown',
+        score: (r.score * 100).toFixed(0)
+      }));
+    }
+
+    // Add assistant message with sources
+    addMessageToHistory('assistant', assistantMessage, includeSources ? sources : null);
+
+  } catch(e) {
+    console.error('❌ RAG error:', e);
+    addMessageToHistory('assistant', `⚠️ Error: ${e.message}`);
+  }
+}
+
+function addMessageToHistory(role, content, sources = null) {
+  console.log(`💬 Adding ${role} message to history`);
+
+  const msg = { role, content };
+  if (sources) msg.sources = sources;
+
+  ragConversationHistory.push(msg);
+
+  // Save to localStorage
+  localStorage.setItem('know3_rag_conversation', JSON.stringify(ragConversationHistory));
+
+  // Render
+  renderConversation();
+}
+
+function renderConversation() {
+  console.log('🎨 Rendering conversation...');
+
+  const container = document.getElementById('rag-conversation');
+  if (!container) return;
+
+  if (ragConversationHistory.length === 0) {
+    container.innerHTML = `
+      <div style="color: var(--text3); text-align: center; font-size: 0.9rem; padding: 2rem 1rem;">
+        No conversation yet. Ask something to get started! 👋
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = ragConversationHistory.map((msg, idx) => {
+    const isUser = msg.role === 'user';
+    const bgColor = isUser ? 'var(--blue-dim)' : 'var(--accent-dim)';
+    const borderColor = isUser ? 'var(--blue)' : 'var(--accent)';
+    const align = isUser ? 'flex-end' : 'flex-start';
+
+    let html = `
+      <div style="display: flex; justify-content: ${align}; gap: 0.5rem;">
+        <div style="
+          max-width: 85%;
+          padding: 0.8rem 1rem;
+          background: ${bgColor};
+          border-left: 3px solid ${borderColor};
+          border-radius: 8px;
+          word-wrap: break-word;
+        ">
+          <div style="color: var(--text); line-height: 1.5; white-space: pre-wrap;">
+            ${escHtml(msg.content)}
+          </div>
+    `;
+
+    // Add sources if present
+    if (msg.sources && msg.sources.length > 0) {
+      html += `
+        <div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border); font-size: 0.75rem; color: var(--text2);">
+          📚 Sources: ${msg.sources.map(s =>
+            `[${s.index}] ${s.file} (${s.score}%)`
+          ).join(' · ')}
+        </div>
+      `;
+    }
+
+    html += `
+        </div>
+      </div>
+    `;
+
+    return html;
+  }).join('');
+
+  // Scroll to bottom
+  setTimeout(() => {
+    container.scrollTop = container.scrollHeight;
+  }, 0);
+}
+
+function clearRAGConversation() {
+  console.log('🗑️ Clearing RAG conversation...');
+
+  const confirmed = confirm('Clear conversation history? This cannot be undone.');
+  if (!confirmed) return;
+
+  ragConversationHistory = [];
+  localStorage.removeItem('know3_rag_conversation');
+  renderConversation();
+
+  console.log('✅ Conversation cleared');
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// CUSTOM DATA LOADING: JSON/JSONL file upload and indexing
+// ════════════════════════════════════════════════════════════════════════════
+
+let customDataFile = null;
+let customDataContent = [];
+
+function handleDataUpload(event) {
+  console.log('📁 Data file selected...');
+  const files = event.target.files;
+  if (files.length === 0) return;
+
+  customDataFile = files[0];
+  const reader = new FileReader();
+
+  reader.onload = (e) => {
+    const content = e.target.result;
+    console.log(`📄 File loaded: ${customDataFile.name} (${content.length} bytes)`);
+
+    // Show preview
+    const previewDiv = document.getElementById('data-preview');
+    const previewText = document.getElementById('data-preview-text');
+    const filenameEl = document.getElementById('data-filename');
+    const statusEl = document.getElementById('data-status');
+
+    previewDiv.style.display = 'block';
+    filenameEl.textContent = customDataFile.name;
+    statusEl.textContent = 'Ready to load';
+    previewText.innerHTML = `<pre>${escHtml(content.substring(0, 500))}${content.length > 500 ? '...' : ''}</pre>`;
+  };
+
+  reader.readAsText(customDataFile);
+}
+
+function loadDataFile() {
+  if (!customDataFile) {
+    alert('⚠️ Please select a file first');
+    return;
+  }
+
+  console.log('🔄 Loading data file...');
+  const reader = new FileReader();
+
+  reader.onload = async (e) => {
+    try {
+      const content = e.target.result;
+      const extension = customDataFile.name.split('.').pop().toLowerCase();
+      const collectionName = document.getElementById('data-collection-name').value || 'custom';
+      const textField = document.getElementById('data-text-field').value || 'text';
+
+      console.log(`📊 Parsing ${extension} file...`);
+
+      let items = [];
+      if (extension === 'json') {
+        items = parseJSON(content, textField);
+      } else if (extension === 'jsonl' || extension === 'ndjson') {
+        items = parseJSONL(content, textField);
+      } else {
+        throw new Error('Unsupported format. Use JSON or JSONL.');
+      }
+
+      if (items.length === 0) {
+        throw new Error('No items found in file');
+      }
+
+      console.log(`✅ Parsed ${items.length} items`);
+
+      // Index the data
+      await indexCustomData(items, collectionName, textField, customDataFile.name);
+
+      // Update UI
+      const statsDiv = document.getElementById('data-stats');
+      const itemsEl = document.getElementById('data-items-loaded');
+      const collectionEl = document.getElementById('data-collection-display');
+
+      statsDiv.style.display = 'block';
+      itemsEl.textContent = items.length;
+      collectionEl.textContent = collectionName;
+
+      // Update collection dropdown
+      updateCollectionDropdown();
+
+      alert(`✅ Successfully loaded ${items.length} items into collection "${collectionName}"`);
+      console.log(`✅ Custom data loaded successfully`);
+
+    } catch (err) {
+      console.error('❌ Error loading data:', err);
+      alert(`❌ Error: ${err.message}`);
+    }
+  };
+
+  reader.readAsText(customDataFile);
+}
+
+function parseJSON(content, textField) {
+  console.log('📘 Parsing JSON...');
+  try {
+    const data = JSON.parse(content);
+    const items = Array.isArray(data) ? data : [data];
+
+    return items.filter(item => item && item[textField]).map(item => ({
+      text: String(item[textField]),
+      metadata: { ...item }
+    }));
+  } catch (err) {
+    throw new Error(`Invalid JSON: ${err.message}`);
+  }
+}
+
+function parseJSONL(content, textField) {
+  console.log('📗 Parsing JSONL...');
+  const lines = content.trim().split('\n').filter(line => line.length > 0);
+  const items = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    try {
+      const item = JSON.parse(lines[i]);
+      if (item && item[textField]) {
+        items.push({
+          text: String(item[textField]),
+          metadata: { ...item, lineNumber: i + 1 }
+        });
+      }
+    } catch (err) {
+      console.warn(`⚠️ Skipping line ${i + 1}: ${err.message}`);
+    }
+  }
+
+  return items;
+}
+
+async function indexCustomData(items, collectionName, textField, filename) {
+  console.log(`🔍 Indexing ${items.length} items into collection "${collectionName}"...`);
+
+  const progressBar = document.getElementById('data-progress-bar');
+  const embedModel = embedSelect.value;
+
+  vectorStore.addCollection(collectionName);
+
+  for (let i = 0; i < items.length; i++) {
+    try {
+      // Show progress
+      const progress = ((i + 1) / items.length) * 100;
+      progressBar.style.width = `${progress}%`;
+
+      // Embed the text
+      let embedding = [];
+      if (embedModel !== '__none__') {
+        embedding = await ollamaEmbed(items[i].text, embedModel);
+      }
+
+      // Store in vector store
+      vectorStore.addChunk(
+        collectionName,
+        items[i].text,
+        embedding,
+        {
+          ...items[i].metadata,
+          file: filename,
+          chunkIndex: i,
+          totalChunks: items.length,
+          customData: true
+        }
+      );
+
+      // Small delay to avoid overwhelming the system
+      if (i % 10 === 0) await new Promise(resolve => setTimeout(resolve, 100));
+
+    } catch (err) {
+      console.warn(`⚠️ Error embedding item ${i + 1}:`, err);
+    }
+  }
+
+  progressBar.style.width = '100%';
+  console.log(`✅ Indexing complete`);
+}
+
+function updateCollectionDropdown() {
+  console.log('🔄 Updating collection dropdowns...');
+
+  // Update RAG conversation dropdown
+  const ragCollectionSelect = document.getElementById('rag-collection');
+  if (ragCollectionSelect) {
+    const collections = Object.keys(vectorStore.collections);
+    const existingValue = ragCollectionSelect.value;
+
+    ragCollectionSelect.innerHTML = '<option value="__all__">All Collections</option>' +
+      collections.map(col => `<option value="${col}">${col}</option>`).join('');
+
+    if (collections.includes(existingValue)) {
+      ragCollectionSelect.value = existingValue;
+    }
+  }
+
+  console.log('✅ Dropdowns updated');
+}
+
+function clearCustomData() {
+  console.log('🗑️ Clearing custom data...');
+
+  const confirmed = confirm('⚠️ Delete all custom data? This cannot be undone.');
+  if (!confirmed) return;
+
+  // Find and remove all custom collections
+  const collections = Object.keys(vectorStore.collections);
+  let removed = 0;
+
+  for (const colName of collections) {
+    const col = vectorStore.collections[colName];
+    // Check if any chunks in this collection are custom data
+    if (col.metadata.some(m => m.customData)) {
+      delete vectorStore.collections[colName];
+      removed++;
+    }
+  }
+
+  // Reset UI
+  customDataFile = null;
+  customDataContent = [];
+  document.getElementById('data-preview').style.display = 'none';
+  document.getElementById('data-stats').style.display = 'none';
+  document.getElementById('data-file-input').value = '';
+
+  // Update dropdowns
+  updateCollectionDropdown();
+
+  alert(`✅ Removed ${removed} custom data collection(s)`);
+  console.log('✅ Custom data cleared');
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// EXPORT
+// ════════════════════════════════════════════════════════════════════════════
+function exportTrainingData() {
+  if (allPairs.length === 0) return;
+
+  const format = $('export-format').value;
+  const includeSources = $('export-sources').value === 'yes';
+  let content, filename, type;
+
+  const pairsData = allPairs.map(p => {
+    const base = { instruction: p.instruction, output: p.output };
+    if (includeSources) {
+      base.source = p.source;
+      base.collection = p.collection;
+      base.file = p.file;
+    }
+    return base;
+  });
+
+  switch (format) {
+    case 'jsonl':
+      content = pairsData.map(p => JSON.stringify(p)).join('\n');
+      filename = `know3_training_data.jsonl`;
+      type = 'application/jsonl';
+      break;
+
+    case 'json':
+      content = JSON.stringify(pairsData, null, 2);
+      filename = `know3_training_data.json`;
+      type = 'application/json';
+      break;
+
+    case 'alpaca':
+      content = JSON.stringify(pairsData.map(p => ({
+        instruction: p.instruction,
+        input: '',
+        output: p.output
+      })), null, 2);
+      filename = `know3_alpaca_format.json`;
+      type = 'application/json';
+      break;
+
+    case 'sharegpt':
+      content = JSON.stringify(pairsData.map(p => ({
+        conversations: [
+          { from: 'human', value: p.instruction },
+          { from: 'gpt', value: p.output }
+        ]
+      })), null, 2);
+      filename = `know3_sharegpt_format.json`;
+      type = 'application/json';
+      break;
+
+    case 'csv':
+      const csvRows = ['instruction,output'];
+      for (const p of pairsData) {
+        csvRows.push(`"${p.instruction.replace(/"/g, '""')}","${p.output.replace(/"/g, '""')}"`);
+      }
+      content = csvRows.join('\n');
+      filename = `know3_training_data.csv`;
+      type = 'text/csv';
+      break;
+  }
+
+  downloadFile(content, filename, type);
+  $('export-stats').style.display = 'block';
+  $('export-stats').textContent = `✓ Exported ${allPairs.length} pairs as ${format.toUpperCase()} (${(content.length/1024).toFixed(1)} KB)`;
+}
+
+function exportVectorStore() {
+  const data = vectorStore.export();
+  const content = JSON.stringify(data, null, 2);
+  downloadFile(content, 'know3_vector_store.json', 'application/json');
+  $('export-stats').style.display = 'block';
+  $('export-stats').textContent = `✓ Exported vector store (${(content.length/1024).toFixed(1)} KB)`;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// UI HELPERS
+// ════════════════════════════════════════════════════════════════════════════
+function log(msg, cls = '') {
+  const line = document.createElement('div');
+  line.className = cls;
+  line.textContent = msg;
+  progressLog.appendChild(line);
+  progressLog.scrollTop = progressLog.scrollHeight;
+}
+
+function addPairToUI(pair, idx) {
+  resultsDiv.style.display = 'block';
+  const card = document.createElement('div');
+  card.className = 'pair-card';
+  card.innerHTML = `
+    <div class="pair-num">#${idx} · ${pair.collection || ''} · ${pair.file || ''}</div>
+    <div class="pair-q">Q: ${escHtml(pair.instruction)}</div>
+    <div class="pair-a">${escHtml(pair.output)}</div>
+    ${pair.source ? `<div class="pair-source">📄 ${escHtml(pair.source)}</div>` : ''}
+  `;
+  resultsList.prepend(card);
+  resultsCount.textContent = `${idx} pairs generated`;
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function updateStoreUI() {
+  const stats = vectorStore.getStats();
+  $('stat-docs').textContent = documentsIngested;
+  $('stat-chunks').textContent = stats.chunks;
+  $('stat-pairs').textContent = allPairs.length;
+  $('stat-collections').textContent = stats.collections;
+
+  // Update collection badges
+  const row = $('collections-row');
+  const colors = ['c1', 'c2', 'c3', 'c4'];
+  row.innerHTML = stats.collectionNames.map((name, i) => {
+    const count = vectorStore.collections[name].chunks.length;
+    return `<div class="collection-badge ${colors[i % colors.length]}">
+      📁 ${name} <span class="count">(${count})</span>
+    </div>`;
+  }).join('');
+
+  // Update RAG collection filter
+  const ragCol = $('rag-collection');
+  ragCol.innerHTML = '<option value="__all__">All Collections</option>';
+  for (const name of stats.collectionNames) {
+    ragCol.innerHTML += `<option value="${name}">${name}</option>`;
+  }
+
+  // Enable export buttons
+  $('btn-export').disabled = allPairs.length === 0;
+  $('btn-export-vectors').disabled = stats.chunks === 0;
+}
+
+function downloadFile(content, name, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// REVIEW TAB: Chunk Preview & Selection
+// ════════════════════════════════════════════════════════════════════════════
+function renderChunkPreview() {
+  const preview = $('chunk-preview-area');
+  const sampleRate = parseInt($('sample-rate').value) || 1;
+  const filterMode = $('review-filter').value;
+
+  if (allChunks.length === 0) {
+    preview.innerHTML = '<div style="text-align: center; color: var(--text2); padding: 2rem;">Ingest documents first to see chunks</div>';
+    return;
+  }
+
+  // Build chunk list with filtering
+  const chunks = [];
+  allChunks.forEach((chunk, idx) => {
+    // Apply sample rate
+    if ((idx + 1) % sampleRate !== 0) return;
+
+    const isClean = chunk.filtered !== true;
+
+    // Apply filter mode
+    if (filterMode === 'clean' && !isClean) return;
+    if (filterMode === 'junk' && isClean) return;
+
+    chunks.push({ ...chunk, originalIdx: idx });
+  });
+
+  if (chunks.length === 0) {
+    preview.innerHTML = '<div style="text-align: center; color: var(--text2); padding: 2rem;">No chunks match filter criteria</div>';
+    return;
+  }
+
+  preview.innerHTML = chunks.map(chunk => `
+    <div class="chunk-item ${chunk.filtered ? 'filtered' : ''} ${selectedChunks.has(chunk.originalIdx) ? 'selected' : ''}" data-idx="${chunk.originalIdx}">
+      <input type="checkbox" ${selectedChunks.has(chunk.originalIdx) ? 'checked' : ''} onchange="toggleChunkSelection(${chunk.originalIdx})">
+      <div style="flex: 1;">
+        <div class="chunk-content">${chunk.text.substring(0, 150)}${chunk.text.length > 150 ? '...' : ''}</div>
+        <div class="chunk-meta">
+          <span class="chunk-badge ${chunk.filtered ? 'filtered' : 'clean'}">${chunk.filtered ? 'Filtered (' + (chunk.filterReason || 'unknown') + ')' : 'Clean'}</span>
+          <span>${chunk.text.length} chars</span>
+          <span>${chunk.text.split(/\s+/).length} words</span>
+        </div>
+      </div>
+    </div>
+  `).join('');
+
+  updateSelectionCount();
+}
+
+function toggleChunkSelection(idx) {
+  if (selectedChunks.has(idx)) {
+    selectedChunks.delete(idx);
+  } else {
+    selectedChunks.add(idx);
+  }
+  updateSelectionCount();
+  renderChunkPreview();
+}
+
+function updateSelectionCount() {
+  const count = selectedChunks.size;
+  $('selection-count').textContent = `${count} selected`;
+  $('btn-generate-selected').disabled = count === 0;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TAB SWITCHING
+// ════════════════════════════════════════════════════════════════════════════
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    $('panel-' + tab.dataset.tab).classList.add('active');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// EVENT LISTENERS
+// ════════════════════════════════════════════════════════════════════════════
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', async e => {
+  const files = Array.from(e.target.files);
+  for (const file of files) {
+    await ingestFile(file);
+  }
+});
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', async e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  const files = Array.from(e.dataTransfer.files);
+  for (const file of files) {
+    await ingestFile(file);
+  }
+});
+
+btnStart.addEventListener('click', generatePairs);
+btnStop.addEventListener('click', () => { running = false; abortCtrl?.abort(); });
+
+// ── Review Tab: Chunk Preview & Selection ──
+document.querySelectorAll('.tab').forEach(tab => {
+  if (tab.dataset.tab === 'review') {
+    tab.addEventListener('click', () => {
+      setTimeout(renderChunkPreview, 100); // Render after tab switch
+    });
+  }
+});
+
+$('sample-rate').addEventListener('change', renderChunkPreview);
+$('review-filter').addEventListener('change', renderChunkPreview);
+
+$('btn-select-all').addEventListener('click', () => {
+  allChunks.forEach((_, idx) => selectedChunks.add(idx));
+  updateSelectionCount();
+  renderChunkPreview();
+});
+
+$('btn-deselect-all').addEventListener('click', () => {
+  selectedChunks.clear();
+  updateSelectionCount();
+  renderChunkPreview();
+});
+
+$('btn-invert-selection').addEventListener('click', () => {
+  allChunks.forEach((_, idx) => {
+    if (selectedChunks.has(idx)) selectedChunks.delete(idx);
+    else selectedChunks.add(idx);
+  });
+  updateSelectionCount();
+  renderChunkPreview();
+});
+
+$('btn-generate-selected').addEventListener('click', generatePairsFromSelected);
+
+// ── Domain Selector ──
+$('domain-select').addEventListener('change', (e) => {
+  const domain = e.target.value;
+  const prompt = DOMAIN_PROMPTS[domain] || DOMAIN_PROMPTS.generic;
+  const pairsN = $('pairs-per-chunk').value;
+  $('system-prompt').value = prompt.replace('{N}', pairsN);
+});
+
+$('btn-rag-search').addEventListener('click', () => ragSearch('search'));
+$('btn-rag-ask').addEventListener('click', () => ragSearch('ask'));
+$('rag-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') ragSearch('ask');
+});
+
+$('btn-export').addEventListener('click', exportTrainingData);
+$('btn-export-vectors').addEventListener('click', exportVectorStore);
+
+$('btn-clear-store').addEventListener('click', () => {
+  if (confirm('Clear all ingested data and training pairs?')) {
+    vectorStore.clear();
+    allPairs = [];
+    documentsIngested = 0;
+    updateStoreUI();
+    resultsList.innerHTML = '';
+    resultsDiv.style.display = 'none';
+    $('rag-results').innerHTML = '';
+    $('rag-answer').style.display = 'none';
+    log('🗑 Vector store cleared', 'warn');
+  }
+});
+
+$('chunk-size').addEventListener('change', () => {
+  // Update estimate if a file was already shown
+  if (currentFileName) {
+    const stats = vectorStore.getStats();
+    $('file-meta').textContent = $('file-meta').textContent;
+  }
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════════════════════════
+checkOllama();
+setInterval(() => {
+  if (!statusDot.classList.contains('ok') && !running) checkOllama();
+}, 10000);
+
+updateStoreUI();
+
+</script>
+</body>
+</html>
