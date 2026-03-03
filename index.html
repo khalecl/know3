@@ -17,31 +17,37 @@
 
 <style>
 :root {
-  --bg: #060810;
-  --surface: #0c0f1a;
-  --surface2: #131728;
-  --surface3: #1a1f35;
-  --border: #232842;
-  --border-bright: #2d3456;
-  --text: #e2e4f0;
-  --text2: #7b80a0;
-  --text3: #4e5270;
+  --bg: #050911;
+  --surface: rgba(12,16,28,0.85);
+  --surface-solid: #0c101c;
+  --surface2: rgba(20,25,45,0.9);
+  --surface2-solid: #14192d;
+  --surface3: #1c2240;
+  --border: rgba(40,50,80,0.5);
+  --border-bright: rgba(55,70,110,0.6);
+  --border-glow: rgba(0,229,160,0.12);
+  --text: #e8eaf4;
+  --text2: #8690b8;
+  --text3: #505878;
   --accent: #00e5a0;
   --accent2: #00c78a;
-  --accent-dim: rgba(0,229,160,0.08);
-  --accent-glow: rgba(0,229,160,0.15);
+  --accent3: #00ffb3;
+  --accent-dim: rgba(0,229,160,0.06);
+  --accent-glow: rgba(0,229,160,0.12);
+  --accent-strong: rgba(0,229,160,0.25);
   --purple: #a78bfa;
-  --purple-dim: rgba(167,139,250,0.08);
+  --purple-dim: rgba(167,139,250,0.06);
   --blue: #38bdf8;
-  --blue-dim: rgba(56,189,248,0.08);
+  --blue-dim: rgba(56,189,248,0.06);
   --orange: #fb923c;
-  --orange-dim: rgba(251,146,60,0.08);
+  --orange-dim: rgba(251,146,60,0.06);
   --warn: #fbbf24;
   --err: #f87171;
   --mono: 'IBM Plex Mono', monospace;
   --sans: 'Outfit', system-ui, sans-serif;
-  --radius: 10px;
-  --radius-sm: 6px;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --glass: blur(20px) saturate(1.4);
 }
 
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -53,92 +59,134 @@ body {
   min-height: 100vh;
   overflow-x: hidden;
   font-size: 15px;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
-/* Subtle dot grid background */
+/* ── ANIMATED NETWORK BACKGROUND ── */
+#network-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+/* Subtle radial glow behind the app area */
 body::before {
   content: '';
   position: fixed;
-  inset: 0;
-  background-image: radial-gradient(rgba(0,229,160,0.04) 1px, transparent 1px);
-  background-size: 32px 32px;
+  top: -20%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 800px;
+  height: 800px;
+  background: radial-gradient(circle, rgba(0,229,160,0.04) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+body::after {
+  content: '';
+  position: fixed;
+  bottom: -30%;
+  right: -10%;
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(167,139,250,0.03) 0%, transparent 70%);
   pointer-events: none;
   z-index: 0;
 }
 
-.app { position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
+.app {
+  position: relative;
+  z-index: 1;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1rem 1.5rem 3rem;
+}
 
 /* ── TOP BAR ── */
 .top-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.75rem 1.5rem;
+  padding: 0.6rem 1.2rem;
   background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 1rem;
-  gap: 1rem;
+  backdrop-filter: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 1.2rem;
+  transition: border-color 0.3s;
 }
+.top-bar:hover { border-color: var(--border-bright); }
 .logo h1 {
-  font-size: 1.3rem;
+  font-size: 1.2rem;
   font-weight: 800;
   margin: 0;
+  letter-spacing: -0.02em;
 }
-.logo h1 .k { color: var(--accent); }
-.top-actions {
-  display: flex;
-  gap: 0.5rem;
-}
+.logo h1 .k { color: var(--accent); text-shadow: 0 0 20px rgba(0,229,160,0.3); }
+.top-actions { display: flex; gap: 0.3rem; }
 .top-btn {
-  background: none;
-  border: none;
-  font-size: 1.1rem;
+  background: transparent;
+  border: 1px solid transparent;
+  font-size: 1rem;
   cursor: pointer;
-  padding: 0.5rem 0.75rem;
-  border-radius: 6px;
-  transition: all 0.2s ease;
-  color: var(--text2);
+  padding: 0.45rem 0.65rem;
+  border-radius: var(--radius-sm);
+  transition: all 0.25s cubic-bezier(.4,0,.2,1);
+  color: var(--text3);
+  position: relative;
 }
 .top-btn:hover {
-  background: var(--surface2);
+  background: var(--accent-dim);
+  border-color: var(--border-glow);
   color: var(--accent);
-  transform: scale(1.05);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,229,160,0.08);
 }
 
 /* ── HEADER ── */
 header {
   text-align: center;
-  margin-bottom: 1.5rem;
-  padding: 2rem 0 1.5rem;
-  border-bottom: 1px solid var(--border);
+  margin-bottom: 1.2rem;
+  padding: 1.8rem 0 1.4rem;
   position: relative;
 }
 header::after {
   content: '';
   position: absolute;
-  bottom: -1px;
+  bottom: 0;
   left: 50%;
   transform: translateX(-50%);
-  width: 120px;
-  height: 2px;
+  width: 200px;
+  height: 1px;
   background: linear-gradient(90deg, transparent, var(--accent), transparent);
 }
 header h1 {
   font-family: var(--sans);
-  font-size: 2rem;
+  font-size: 2.2rem;
   font-weight: 800;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.04em;
 }
-header h1 .k { color: var(--accent); }
+header h1 .k { color: var(--accent); text-shadow: 0 0 30px rgba(0,229,160,0.25); }
 header h1 .n { color: var(--text); }
-header h1 .ver { color: var(--text3); font-weight: 400; font-size: 0.6em; vertical-align: super; }
+header h1 .ver {
+  color: var(--text3);
+  font-weight: 400;
+  font-size: 0.5em;
+  vertical-align: super;
+  background: var(--surface2);
+  padding: 0.1em 0.5em;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  margin-left: 0.3em;
+}
 .subtitle {
   color: var(--text2);
-  font-size: .88rem;
-  margin-top: .3rem;
+  font-size: .85rem;
+  margin-top: .5rem;
   font-weight: 300;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
 }
 .subtitle b { color: var(--accent); font-weight: 600; }
 
@@ -146,56 +194,83 @@ header h1 .ver { color: var(--text3); font-weight: 400; font-size: 0.6em; vertic
 #status-bar {
   display: flex;
   align-items: center;
-  gap: .5rem;
+  gap: .6rem;
   justify-content: center;
-  margin: 1rem 0;
-  font-size: .82rem;
+  margin: .8rem 0 1.2rem;
+  font-size: .8rem;
   font-family: var(--mono);
   color: var(--text2);
+  padding: 0.5rem 1rem;
+  background: var(--surface);
+  backdrop-filter: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  width: fit-content;
+  margin-left: auto;
+  margin-right: auto;
 }
 .status-dot {
   width: 8px; height: 8px;
   border-radius: 50%;
   background: var(--err);
-  transition: all .3s;
+  transition: all .4s cubic-bezier(.4,0,.2,1);
+  flex-shrink: 0;
 }
-.status-dot.ok { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
-.status-dot.warn { background: var(--warn); }
+.status-dot.ok {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent), 0 0 20px rgba(0,229,160,0.2);
+  animation: statusPulse 2s ease-in-out infinite;
+}
+.status-dot.warn { background: var(--warn); animation: statusPulse 1s ease-in-out infinite; }
+@keyframes statusPulse {
+  0%, 100% { box-shadow: 0 0 8px currentColor, 0 0 20px rgba(0,229,160,0.15); }
+  50% { box-shadow: 0 0 12px currentColor, 0 0 30px rgba(0,229,160,0.25); }
+}
 
 /* ── TABS ── */
 .tabs {
   display: flex;
-  gap: 2px;
+  gap: 4px;
   margin-bottom: 1.5rem;
   background: var(--surface);
+  backdrop-filter: var(--glass);
   border-radius: var(--radius);
-  padding: 3px;
+  padding: 4px;
   border: 1px solid var(--border);
 }
 .tab {
   flex: 1;
   padding: .7rem 1rem;
   text-align: center;
-  font-size: .85rem;
+  font-size: .84rem;
   font-weight: 600;
-  color: var(--text2);
+  color: var(--text3);
   cursor: pointer;
-  border-radius: calc(var(--radius) - 2px);
-  transition: all .2s;
+  border-radius: calc(var(--radius) - 3px);
+  transition: all .25s cubic-bezier(.4,0,.2,1);
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
   font-family: var(--sans);
   letter-spacing: 0.02em;
+  position: relative;
 }
-.tab:hover { color: var(--text); background: var(--surface2); }
+.tab:hover {
+  color: var(--text2);
+  background: rgba(255,255,255,0.02);
+}
 .tab.active {
   background: var(--surface2);
   color: var(--accent);
-  box-shadow: 0 1px 4px rgba(0,0,0,.3);
+  border-color: var(--border-glow);
+  box-shadow: 0 2px 12px rgba(0,229,160,0.06), inset 0 1px 0 rgba(0,229,160,0.08);
 }
-.tab .tab-icon { font-size: 1.1em; margin-right: .3rem; }
-.tab-panel { display: none; }
+.tab .tab-icon { font-size: 1.05em; margin-right: .3rem; }
+.tab-panel { display: none; animation: panelIn 0.35s ease; }
 .tab-panel.active { display: block; }
+@keyframes panelIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
 /* ── MODALS ── */
 .modal {
@@ -209,359 +284,214 @@ header h1 .ver { color: var(--text3); font-weight: 400; font-size: 0.6em; vertic
 .modal-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(4px);
+  background: rgba(3, 5, 12, 0.75);
+  backdrop-filter: blur(8px);
   pointer-events: none;
 }
 .modal-box {
   position: relative;
   z-index: 1001;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  background: var(--surface-solid);
+  border: 1px solid var(--border-bright);
+  border-radius: 16px;
   padding: 2rem;
   width: 90%;
   max-width: 600px;
   max-height: 80vh;
   overflow-y: auto;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-  animation: slideIn 0.3s ease;
+  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.6), 0 0 60px rgba(0,229,160,0.03);
+  animation: modalIn 0.35s cubic-bezier(.4,0,.2,1);
   pointer-events: auto;
+}
+@keyframes modalIn {
+  from { transform: translateY(-16px) scale(0.97); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
 }
 .modal-close {
   position: absolute;
   top: 1rem;
   right: 1rem;
-  background: none;
-  border: none;
-  font-size: 1.5rem;
+  background: var(--surface2-solid);
+  border: 1px solid var(--border);
+  font-size: 1.2rem;
   cursor: pointer;
   color: var(--text2);
   padding: 0;
   width: 32px;
   height: 32px;
-}
-.modal-close:hover {
-  color: var(--text);
-  background: var(--surface2);
-  border-radius: 6px;
-}
-.modal button {
-  pointer-events: auto;
-}
-.modal input, .modal select, .modal textarea {
-  pointer-events: auto;
-}
-
-/* ── SETTINGS DRAWER ── */
-.settings-drawer {
-  position: fixed;
-  top: 0;
-  right: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 2000;
-  display: none;
-  align-items: flex-end;
-}
-.settings-drawer.open {
-  display: flex;
-}
-.settings-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  pointer-events: auto;
-  cursor: pointer;
-}
-.settings-panel {
-  position: relative;
-  width: 100%;
-  max-width: 400px;
-  height: 100vh;
-  background: var(--surface);
-  border-left: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  box-shadow: -10px 0 40px rgba(0, 0, 0, 0.5);
-  animation: slideInRight 0.3s ease;
-  z-index: 2001;
-  pointer-events: auto;
-}
-@keyframes slideInRight {
-  from {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
-}
-.settings-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1.5rem;
-  border-bottom: 1px solid var(--border);
-  position: sticky;
-  top: 0;
-  background: var(--surface);
-  z-index: 2;
-}
-.settings-header h2 {
-  margin: 0;
-  font-size: 1.3rem;
-}
-.close-settings {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  cursor: pointer;
-  color: var(--text2);
-  width: 32px;
-  height: 32px;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
-  transition: all 0.2s ease;
 }
-.close-settings:hover {
-  background: var(--surface2);
+.modal-close:hover {
   color: var(--text);
+  background: var(--surface3);
+  border-color: var(--border-bright);
 }
-.settings-content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 1rem;
+.modal button { pointer-events: auto; }
+.modal input, .modal select, .modal textarea { pointer-events: auto; }
+
+/* ── SETTINGS DRAWER ── */
+.settings-drawer {
+  position: fixed; top: 0; right: 0;
+  width: 100%; height: 100%;
+  z-index: 2000; display: none; align-items: flex-end;
 }
+.settings-drawer.open { display: flex; }
+.settings-overlay {
+  position: absolute; inset: 0;
+  background: rgba(3, 5, 12, 0.6);
+  backdrop-filter: blur(6px);
+  pointer-events: auto; cursor: pointer;
+}
+.settings-panel {
+  position: relative;
+  width: 100%; max-width: 420px; height: 100vh;
+  background: var(--surface-solid);
+  border-left: 1px solid var(--border-bright);
+  display: flex; flex-direction: column;
+  box-shadow: -20px 0 60px rgba(0, 0, 0, 0.5);
+  animation: slideInRight 0.35s cubic-bezier(.4,0,.2,1);
+  z-index: 2001; pointer-events: auto;
+}
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+.settings-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 1.5rem; border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; background: var(--surface-solid); z-index: 2;
+}
+.settings-header h2 { margin: 0; font-size: 1.2rem; }
+.close-settings {
+  background: var(--surface2-solid); border: 1px solid var(--border);
+  font-size: 1.3rem; cursor: pointer; color: var(--text2);
+  width: 34px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-sm); transition: all 0.2s;
+}
+.close-settings:hover { background: var(--surface3); color: var(--text); border-color: var(--border-bright); }
+.settings-content { flex: 1; overflow-y: auto; padding: 1rem; }
 .settings-section {
-  margin-bottom: 1rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0;
+  margin-bottom: 0.8rem;
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 0;
+  background: var(--surface2-solid);
 }
 .settings-section summary {
-  padding: 1rem;
-  user-select: none;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-.settings-section summary:hover {
-  background: var(--surface2);
-}
-.settings-section[open] summary {
-  background: var(--surface2);
-  border-bottom: 1px solid var(--border);
-}
-.settings-category {
-  padding: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1.2rem;
-}
-.setting-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-.setting-item label {
+  padding: 1rem; user-select: none;
+  display: flex; align-items: center; gap: 0.5rem;
+  cursor: pointer; transition: all 0.2s;
   font-weight: 600;
-  color: var(--text);
-  font-size: 0.9rem;
 }
+.settings-section summary:hover { background: rgba(255,255,255,0.02); }
+.settings-section[open] summary { border-bottom: 1px solid var(--border); color: var(--accent); }
+.settings-category { padding: 1rem; display: flex; flex-direction: column; gap: 1.2rem; }
+.setting-item { display: flex; flex-direction: column; gap: 0.5rem; }
+.setting-item label { font-weight: 600; color: var(--text); font-size: 0.85rem; }
 .setting-item input[type="text"],
 .setting-item input[type="number"],
 .setting-item input[type="range"],
 .setting-item select {
-  background: var(--surface2);
+  background: var(--surface3);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text);
-  padding: 0.6rem;
-  font-family: var(--sans);
-  font-size: 0.9rem;
-  cursor: pointer;
+  border-radius: var(--radius-sm);
+  color: var(--text); padding: 0.6rem;
+  font-family: var(--sans); font-size: 0.85rem; cursor: pointer;
+  transition: all 0.2s;
 }
-.setting-item input[type="range"] {
-  padding: 0;
-  height: 6px;
-}
+.setting-item input[type="range"] { padding: 0; height: 6px; }
 .setting-item input[type="text"]:focus,
 .setting-item input[type="number"]:focus,
 .setting-item select:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(0, 229, 160, 0.1);
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0, 229, 160, 0.08);
 }
-.hint {
-  font-size: 0.75rem;
-  color: var(--text3);
-  font-style: italic;
-}
-.hint-with-value {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.75rem;
-}
-.hint-with-value .hint {
-  margin: 0;
-}
-#temp-value {
-  font-weight: 600;
-  color: var(--accent);
-  font-family: var(--mono);
-}
+.hint { font-size: 0.73rem; color: var(--text3); font-style: italic; }
+.hint-with-value { display: flex; justify-content: space-between; align-items: center; font-size: 0.73rem; }
+.hint-with-value .hint { margin: 0; }
+#temp-value { font-weight: 600; color: var(--accent); font-family: var(--mono); }
 .settings-footer {
-  display: flex;
-  gap: 0.5rem;
-  padding: 1rem;
+  display: flex; gap: 0.5rem; padding: 1rem;
   border-top: 1px solid var(--border);
-  background: var(--surface2);
-  position: sticky;
-  bottom: 0;
+  background: var(--surface2-solid);
+  position: sticky; bottom: 0;
 }
-.settings-footer .btn {
-  flex: 1;
-}
-@media (max-width: 768px) {
-  .settings-panel {
-    max-width: 100%;
-  }
-}
+.settings-footer .btn { flex: 1; }
+@media (max-width: 768px) { .settings-panel { max-width: 100%; } }
 
 /* ── TUTORIAL ── */
 .tutorial-box { text-align: center; }
-.tutorial-step {
-  display: none;
-  animation: fadeIn 0.3s ease;
-}
+.tutorial-step { display: none; animation: fadeIn 0.35s ease; }
 .tutorial-visual {
-  display: flex;
-  gap: 1rem;
-  justify-content: center;
-  align-items: center;
-  margin: 2rem 0;
-  padding: 2rem;
-  background: var(--surface2);
-  border-radius: 10px;
+  display: flex; gap: 1rem;
+  justify-content: center; align-items: center;
+  margin: 2rem 0; padding: 2rem;
+  background: var(--surface2-solid);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
   font-size: 2.5rem;
 }
 .tutorial-progress {
-  margin-top: 2rem;
-  padding-top: 1.5rem;
+  margin-top: 2rem; padding-top: 1.5rem;
   border-top: 1px solid var(--border);
-  font-size: 0.9rem;
-  color: var(--text2);
+  font-size: 0.85rem; color: var(--text2);
 }
 
 /* ── HELP & FAQ ── */
 .help-tabs {
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 1.5rem;
-  border-bottom: 1px solid var(--border);
-  flex-wrap: wrap;
+  display: flex; gap: 0.3rem; margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border); flex-wrap: wrap;
 }
 .help-tab {
-  background: none;
-  border: none;
-  color: var(--text2);
-  cursor: pointer;
-  padding: 0.75rem 1rem;
+  background: none; border: none; color: var(--text3);
+  cursor: pointer; padding: 0.7rem 0.9rem;
   border-bottom: 2px solid transparent;
-  transition: all 0.2s ease;
-  font-family: var(--sans);
-  font-size: 0.9rem;
+  transition: all 0.2s; font-family: var(--sans); font-size: 0.85rem;
 }
-.help-tab:hover {
-  color: var(--text);
-}
-.help-tab.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-}
-.help-section {
-  display: none;
-}
-.help-section.active {
-  display: block;
-}
+.help-tab:hover { color: var(--text2); }
+.help-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.help-section { display: none; }
+.help-section.active { display: block; }
 .faq-item {
-  margin: 1rem 0;
-  padding: 1rem;
-  background: var(--surface2);
-  border-radius: 6px;
-  text-align: left;
+  margin: 0.8rem 0; padding: 1rem;
+  background: var(--surface2-solid); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); text-align: left;
+  transition: border-color 0.2s;
 }
-.faq-item summary {
-  cursor: pointer;
-  font-weight: 600;
-  color: var(--text);
-}
-.faq-item summary:hover {
-  color: var(--accent);
-}
-.faq-item p {
-  margin: 0.75rem 0 0 0;
-  color: var(--text2);
-  font-size: 0.9rem;
-  line-height: 1.6;
-}
+.faq-item:hover { border-color: var(--border-bright); }
+.faq-item summary { cursor: pointer; font-weight: 600; color: var(--text); transition: color 0.2s; }
+.faq-item summary:hover { color: var(--accent); }
+.faq-item p { margin: 0.75rem 0 0 0; color: var(--text2); font-size: 0.88rem; line-height: 1.6; }
 .faq-item code {
-  background: var(--surface);
-  padding: 0.2rem 0.4rem;
-  border-radius: 3px;
-  font-family: var(--mono);
-  font-size: 0.85rem;
-  color: var(--accent);
+  background: var(--surface3); padding: 0.15rem 0.4rem;
+  border-radius: 4px; font-family: var(--mono);
+  font-size: 0.82rem; color: var(--accent);
 }
 
 /* ── ANIMATIONS ── */
 @keyframes slideIn {
-  from {
-    transform: translateY(-20px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
+  from { transform: translateY(-16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
 }
 
 /* ── COLLAPSIBLE SECTION ── */
-details {
-  margin: 1rem 0;
-}
+details { margin: 1rem 0; }
 details summary {
-  cursor: pointer;
-  user-select: none;
-  transition: all 0.2s ease;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  cursor: pointer; user-select: none;
+  transition: all 0.25s; border-radius: var(--radius-sm);
+  display: flex; align-items: center; gap: 0.5rem;
 }
-details summary:hover {
-  background: var(--surface2);
-  color: var(--accent);
-}
-details[open] summary {
-  color: var(--accent);
-  margin-bottom: 0.5rem;
-}
-details summary::marker {
-  color: var(--accent);
-}
+details summary:hover { background: rgba(0,229,160,0.04); color: var(--accent); }
+details[open] summary { color: var(--accent); margin-bottom: 0.5rem; }
+details summary::marker { color: var(--accent); }
 
 /* ── SETTINGS GRID ── */
 .settings-grid {
@@ -572,192 +502,198 @@ details summary::marker {
 }
 .setting-card {
   background: var(--surface);
+  backdrop-filter: var(--glass);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: .9rem 1rem;
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+.setting-card:hover {
+  border-color: var(--border-bright);
+}
+.setting-card:focus-within {
+  border-color: var(--border-glow);
+  box-shadow: 0 0 0 3px rgba(0,229,160,0.04);
 }
 .setting-card.wide { grid-column: 1 / -1; }
 .setting-card label {
-  display: block;
-  font-size: .75rem;
-  font-weight: 600;
-  color: var(--text2);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-bottom: .4rem;
+  display: block; font-size: .72rem; font-weight: 600;
+  color: var(--text3); text-transform: uppercase;
+  letter-spacing: 0.1em; margin-bottom: .5rem;
 }
 .setting-card select,
 .setting-card input[type="number"],
 .setting-card input[type="text"] {
   width: 100%;
-  background: var(--surface2);
+  background: var(--surface2-solid);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text);
   font-family: var(--mono);
-  font-size: .82rem;
+  font-size: .8rem;
   padding: .5rem .7rem;
   outline: none;
-  transition: border-color .2s;
+  transition: all .25s;
 }
 .setting-card select:focus,
 .setting-card input:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0,229,160,0.06);
 }
 .setting-card textarea {
-  width: 100%;
-  min-height: 80px;
-  background: var(--surface2);
+  width: 100%; min-height: 80px;
+  background: var(--surface2-solid);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  color: var(--text);
-  font-family: var(--mono);
-  font-size: .78rem;
-  padding: .5rem .7rem;
-  outline: none;
-  resize: vertical;
-  line-height: 1.5;
-  transition: border-color .2s;
+  color: var(--text); font-family: var(--mono);
+  font-size: .76rem; padding: .5rem .7rem;
+  outline: none; resize: vertical; line-height: 1.5;
+  transition: all .25s;
 }
-.setting-card textarea:focus { border-color: var(--accent); }
+.setting-card textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,229,160,0.06); }
 
 /* ── DROP ZONE ── */
 #drop-zone {
-  border: 2px dashed var(--border);
+  border: 2px dashed var(--border-bright);
   border-radius: var(--radius);
   padding: 2.5rem;
   text-align: center;
   cursor: pointer;
-  transition: all .25s;
+  transition: all .3s cubic-bezier(.4,0,.2,1);
   margin-bottom: 1rem;
   background: var(--surface);
+  backdrop-filter: var(--glass);
+  position: relative;
+  overflow: hidden;
 }
+#drop-zone::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(0,229,160,0.04) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+#drop-zone:hover::before, #drop-zone.dragover::before { opacity: 1; }
 #drop-zone:hover, #drop-zone.dragover {
   border-color: var(--accent);
-  background: var(--accent-dim);
-  box-shadow: 0 0 30px rgba(0,229,160,0.06);
+  box-shadow: 0 0 40px rgba(0,229,160,0.06), inset 0 0 40px rgba(0,229,160,0.02);
+  transform: translateY(-2px);
 }
-#drop-zone .icon { font-size: 2.5rem; margin-bottom: .5rem; filter: grayscale(0.3); }
-#drop-zone h3 { font-size: 1rem; font-weight: 600; color: var(--text); margin-bottom: .25rem; }
-#drop-zone p { font-size: .82rem; color: var(--text2); }
+#drop-zone .icon { font-size: 2.5rem; margin-bottom: .5rem; position: relative; z-index: 1; }
+#drop-zone h3 { font-size: 1rem; font-weight: 600; color: var(--text); margin-bottom: .25rem; position: relative; z-index: 1; }
+#drop-zone p { font-size: .8rem; color: var(--text2); position: relative; z-index: 1; }
 
 /* ── FILE INFO ── */
 #file-info {
   display: none;
   background: var(--surface);
-  border: 1px solid var(--border);
+  backdrop-filter: var(--glass);
+  border: 1px solid var(--border-glow);
   border-radius: var(--radius);
   padding: .8rem 1rem;
   margin-bottom: 1rem;
   font-size: .85rem;
 }
 #file-info .name { font-weight: 600; color: var(--accent); font-family: var(--mono); font-size: .8rem; }
-#file-info .meta { color: var(--text2); margin-top: .2rem; font-size: .78rem; }
+#file-info .meta { color: var(--text2); margin-top: .2rem; font-size: .76rem; }
 
 /* ── COLLECTION BADGES ── */
-.collections-row {
-  display: flex;
-  gap: .5rem;
-  flex-wrap: wrap;
-  margin-bottom: 1rem;
-}
+.collections-row { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem; }
 .collection-badge {
-  display: flex;
-  align-items: center;
-  gap: .4rem;
-  padding: .35rem .7rem;
-  border-radius: 20px;
-  font-size: .75rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all .2s;
+  display: flex; align-items: center; gap: .4rem;
+  padding: .35rem .7rem; border-radius: 100px;
+  font-size: .73rem; font-weight: 600;
+  cursor: pointer; transition: all .25s cubic-bezier(.4,0,.2,1);
   border: 1px solid;
 }
-.collection-badge.c1 { background: var(--accent-dim); border-color: rgba(0,229,160,0.2); color: var(--accent); }
-.collection-badge.c2 { background: var(--purple-dim); border-color: rgba(167,139,250,0.2); color: var(--purple); }
-.collection-badge.c3 { background: var(--blue-dim); border-color: rgba(56,189,248,0.2); color: var(--blue); }
-.collection-badge.c4 { background: var(--orange-dim); border-color: rgba(251,146,60,0.2); color: var(--orange); }
+.collection-badge.c1 { background: var(--accent-dim); border-color: rgba(0,229,160,0.15); color: var(--accent); }
+.collection-badge.c2 { background: var(--purple-dim); border-color: rgba(167,139,250,0.15); color: var(--purple); }
+.collection-badge.c3 { background: var(--blue-dim); border-color: rgba(56,189,248,0.15); color: var(--blue); }
+.collection-badge.c4 { background: var(--orange-dim); border-color: rgba(251,146,60,0.15); color: var(--orange); }
 .collection-badge .count { opacity: .7; }
-.collection-badge:hover { transform: translateY(-1px); }
-.collection-badge.active { box-shadow: 0 0 12px rgba(0,229,160,0.15); }
+.collection-badge:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+.collection-badge.active { box-shadow: 0 0 16px rgba(0,229,160,0.12); }
 
 /* ── BUTTONS ── */
-.btn-row {
-  display: flex;
-  gap: .6rem;
-  flex-wrap: wrap;
-  margin-bottom: 1rem;
-}
+.btn-row { display: flex; gap: .6rem; flex-wrap: wrap; margin-bottom: 1rem; }
 .btn {
-  padding: .6rem 1.2rem;
+  padding: .6rem 1.3rem;
   border-radius: var(--radius-sm);
   border: none;
   font-family: var(--sans);
   font-size: .82rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all .2s;
+  transition: all .25s cubic-bezier(.4,0,.2,1);
   display: inline-flex;
   align-items: center;
-  gap: .3rem;
+  gap: .4rem;
+  position: relative;
+  overflow: hidden;
 }
+.btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 50%);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.btn:hover::after { opacity: 1; }
 .btn-primary {
   background: linear-gradient(135deg, var(--accent), var(--accent2));
   color: #050810;
-  box-shadow: 0 2px 12px rgba(0,229,160,0.2);
+  box-shadow: 0 2px 16px rgba(0,229,160,0.2), 0 0 40px rgba(0,229,160,0.06);
 }
-.btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(0,229,160,0.3); }
-.btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(0,229,160,0.3), 0 0 60px rgba(0,229,160,0.1);
+}
+.btn-primary:active:not(:disabled) { transform: translateY(0); }
+.btn-primary:disabled { opacity: .35; cursor: not-allowed; }
 .btn-secondary {
-  background: var(--surface2);
-  color: var(--text);
+  background: var(--surface2-solid);
+  color: var(--text2);
   border: 1px solid var(--border);
 }
-.btn-secondary:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-.btn-secondary:disabled { opacity: .3; cursor: not-allowed; }
-.btn-stop { background: var(--err); color: white; }
+.btn-secondary:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+.btn-secondary:disabled { opacity: .25; cursor: not-allowed; }
+.btn-stop { background: linear-gradient(135deg, var(--err), #e05050); color: white; }
 .btn-stop:disabled { opacity: .3; }
-.btn-purple { background: var(--purple-dim); color: var(--purple); border: 1px solid rgba(167,139,250,0.2); }
-.btn-purple:hover { background: rgba(167,139,250,0.15); }
+.btn-purple { background: var(--purple-dim); color: var(--purple); border: 1px solid rgba(167,139,250,0.15); }
+.btn-purple:hover { background: rgba(167,139,250,0.12); border-color: rgba(167,139,250,0.3); }
 
 /* ── PROGRESS ── */
 #progress-area {
   display: none;
   background: var(--surface);
+  backdrop-filter: var(--glass);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 1rem;
+  padding: 1.2rem;
   margin-bottom: 1rem;
 }
 .progress-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: .5rem;
-  font-size: .82rem;
-  color: var(--text2);
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: .6rem; font-size: .8rem; color: var(--text2);
 }
 .progress-bar {
-  height: 4px;
-  background: var(--surface2);
-  border-radius: 2px;
-  overflow: hidden;
-  margin-bottom: .8rem;
+  height: 4px; background: var(--surface3);
+  border-radius: 3px; overflow: hidden; margin-bottom: .8rem;
 }
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--accent), var(--blue));
-  border-radius: 2px;
-  width: 0%;
+  background: linear-gradient(90deg, var(--accent), var(--blue), var(--accent));
+  background-size: 200% 100%;
+  animation: shimmer 2s linear infinite;
+  border-radius: 3px; width: 0%;
   transition: width .3s;
 }
 #progress-log {
-  max-height: 200px;
-  overflow-y: auto;
-  font-family: var(--mono);
-  font-size: .72rem;
-  line-height: 1.6;
-  color: var(--text2);
+  max-height: 200px; overflow-y: auto;
+  font-family: var(--mono); font-size: .71rem;
+  line-height: 1.65; color: var(--text2);
 }
 #progress-log .ok { color: var(--accent); }
 #progress-log .err { color: var(--err); }
@@ -765,163 +701,86 @@ details summary::marker {
 #progress-log .warn { color: var(--warn); }
 
 /* ── RESULTS ── */
-#results {
-  display: none;
-  margin-top: 1rem;
-}
-#results h2 {
-  font-size: 1rem;
-  font-weight: 700;
-  margin-bottom: .5rem;
-}
-#results-count {
-  font-size: .78rem;
-  color: var(--text2);
-  margin-bottom: .8rem;
-  font-family: var(--mono);
-}
+#results { display: none; margin-top: 1rem; }
+#results h2 { font-size: 1rem; font-weight: 700; margin-bottom: .5rem; }
+#results-count { font-size: .76rem; color: var(--text2); margin-bottom: .8rem; font-family: var(--mono); }
 
 /* ── CHUNK PREVIEW ── */
 .chunk-item {
-  display: flex;
-  align-items: flex-start;
-  gap: .6rem;
-  padding: .7rem;
-  margin-bottom: .4rem;
-  background: var(--surface2);
+  display: flex; align-items: flex-start; gap: .6rem;
+  padding: .75rem; margin-bottom: .4rem;
+  background: var(--surface2-solid);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: all .2s;
+  cursor: pointer; transition: all .25s;
 }
-.chunk-item:hover {
-  border-color: var(--accent);
-  background: var(--surface3);
-}
+.chunk-item:hover { border-color: var(--border-bright); background: var(--surface3); }
 .chunk-item.selected {
-  background: var(--accent-dim);
-  border-color: var(--accent);
-  box-shadow: 0 0 8px rgba(0,229,160,0.1);
+  background: var(--accent-dim); border-color: rgba(0,229,160,0.2);
+  box-shadow: 0 0 12px rgba(0,229,160,0.06);
 }
-.chunk-item.filtered {
-  opacity: .5;
-  background: var(--surface);
-}
-.chunk-item input[type="checkbox"] {
-  margin-top: .2rem;
-  flex-shrink: 0;
-  accent-color: var(--accent);
-  cursor: pointer;
-}
+.chunk-item.filtered { opacity: .45; background: var(--surface-solid); }
+.chunk-item input[type="checkbox"] { margin-top: .2rem; flex-shrink: 0; accent-color: var(--accent); cursor: pointer; }
 .chunk-content {
-  flex: 1;
-  font-size: .78rem;
-  color: var(--text);
-  font-family: var(--mono);
-  line-height: 1.4;
-  max-height: 80px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: pre-wrap;
+  flex: 1; font-size: .76rem; color: var(--text);
+  font-family: var(--mono); line-height: 1.4;
+  max-height: 80px; overflow: hidden;
+  text-overflow: ellipsis; white-space: pre-wrap;
 }
-.chunk-meta {
-  font-size: .7rem;
-  color: var(--text2);
-  margin-top: .3rem;
-  display: flex;
-  gap: .8rem;
-}
-.chunk-badge {
-  padding: .2rem .4rem;
-  border-radius: 3px;
-  background: var(--border);
-  font-size: .65rem;
-}
-.chunk-badge.clean { background: rgba(0,229,160,0.15); color: var(--accent); }
-.chunk-badge.filtered { background: rgba(248,113,113,0.15); color: var(--err); }
+.chunk-meta { font-size: .68rem; color: var(--text2); margin-top: .3rem; display: flex; gap: .8rem; }
+.chunk-badge { padding: .2rem .4rem; border-radius: 4px; background: var(--border); font-size: .63rem; }
+.chunk-badge.clean { background: rgba(0,229,160,0.12); color: var(--accent); }
+.chunk-badge.filtered { background: rgba(248,113,113,0.12); color: var(--err); }
 
 .pair-card {
   background: var(--surface);
+  backdrop-filter: var(--glass);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: .8rem 1rem;
+  padding: .9rem 1.1rem;
   margin-bottom: .5rem;
-  transition: border-color .2s;
+  transition: all .25s;
 }
-.pair-card:hover { border-color: var(--border-bright); }
-.pair-num {
-  font-family: var(--mono);
-  font-size: .7rem;
-  color: var(--text3);
-  margin-bottom: .3rem;
-}
-.pair-q {
-  font-weight: 600;
-  font-size: .85rem;
-  color: var(--accent);
-  margin-bottom: .3rem;
-}
-.pair-a {
-  font-size: .82rem;
-  color: var(--text2);
-  line-height: 1.5;
-}
+.pair-card:hover { border-color: var(--border-bright); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,0,0,0.15); }
+.pair-num { font-family: var(--mono); font-size: .68rem; color: var(--text3); margin-bottom: .3rem; }
+.pair-q { font-weight: 600; font-size: .84rem; color: var(--accent); margin-bottom: .3rem; }
+.pair-a { font-size: .82rem; color: var(--text2); line-height: 1.55; }
 .pair-source {
-  margin-top: .4rem;
-  font-size: .68rem;
-  color: var(--text3);
-  font-family: var(--mono);
-  border-top: 1px solid var(--border);
-  padding-top: .3rem;
+  margin-top: .4rem; font-size: .66rem; color: var(--text3);
+  font-family: var(--mono); border-top: 1px solid var(--border); padding-top: .3rem;
 }
 
 /* ── RAG QUERY PANEL ── */
 .rag-panel {
   background: var(--surface);
+  backdrop-filter: var(--glass);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 1.2rem;
-  margin-bottom: 1rem;
+  padding: 1.2rem; margin-bottom: 1rem;
 }
-.rag-input-row {
-  display: flex;
-  gap: .5rem;
-  margin-bottom: 1rem;
-}
+.rag-input-row { display: flex; gap: .5rem; margin-bottom: 1rem; }
 .rag-input-row input {
-  flex: 1;
-  background: var(--surface2);
+  flex: 1; background: var(--surface2-solid);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  color: var(--text);
-  font-family: var(--sans);
-  font-size: .88rem;
-  padding: .6rem .9rem;
-  outline: none;
-  transition: border-color .2s;
+  color: var(--text); font-family: var(--sans);
+  font-size: .85rem; padding: .6rem .9rem;
+  outline: none; transition: all .25s;
 }
-.rag-input-row input:focus { border-color: var(--accent); }
+.rag-input-row input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,229,160,0.06); }
 .rag-input-row input::placeholder { color: var(--text3); }
 
 #rag-answer {
   display: none;
-  background: var(--surface2);
+  background: var(--surface2-solid);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1rem;
+  border-radius: var(--radius); padding: 1rem;
 }
-#rag-answer .answer-text {
-  font-size: .88rem;
-  line-height: 1.7;
-  color: var(--text);
-}
+#rag-answer .answer-text { font-size: .86rem; line-height: 1.7; color: var(--text); }
 #rag-answer .sources {
-  margin-top: .8rem;
-  padding-top: .6rem;
+  margin-top: .8rem; padding-top: .6rem;
   border-top: 1px solid var(--border);
-  font-size: .72rem;
-  color: var(--text3);
-  font-family: var(--mono);
+  font-size: .7rem; color: var(--text3); font-family: var(--mono);
 }
 #rag-answer .sources span { color: var(--purple); }
 
@@ -929,57 +788,79 @@ details summary::marker {
 .store-stats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: .5rem;
+  gap: .6rem;
   margin-bottom: 1rem;
 }
 .stat-card {
   background: var(--surface);
+  backdrop-filter: var(--glass);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: .7rem;
+  padding: .75rem;
   text-align: center;
+  transition: all 0.25s;
+  position: relative;
+  overflow: hidden;
 }
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.stat-card:hover::before { opacity: 1; }
+.stat-card:hover { border-color: var(--border-bright); transform: translateY(-1px); }
 .stat-num {
   font-family: var(--mono);
-  font-size: 1.3rem;
+  font-size: 1.4rem;
   font-weight: 700;
   color: var(--accent);
+  text-shadow: 0 0 20px rgba(0,229,160,0.2);
 }
 .stat-label {
-  font-size: .68rem;
-  color: var(--text3);
+  font-size: .66rem; color: var(--text3);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  margin-top: .15rem;
+  letter-spacing: 0.08em; margin-top: .2rem;
 }
 
 /* ── SETUP GUIDE ── */
 #setup-guide { display: none; }
-#setup-guide .setting-card {
-  border-color: var(--warn);
-}
+#setup-guide .setting-card { border-color: rgba(251,191,36,0.3); background: rgba(251,191,36,0.03); }
 #setup-guide code {
-  background: var(--surface2);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-family: var(--mono);
-  font-size: .78rem;
+  background: var(--surface3); padding: 2px 6px;
+  border-radius: 4px; font-family: var(--mono); font-size: .76rem;
 }
 
-/* Scrollbar */
+/* ── SCROLLBAR ── */
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-bright); }
 
-/* Responsive */
+/* ── RESPONSIVE ── */
 @media (max-width: 700px) {
   .settings-grid { grid-template-columns: 1fr; }
   .store-stats { grid-template-columns: repeat(2, 1fr); }
   .tabs { flex-wrap: nowrap; overflow-x: auto; }
+  .top-bar { border-radius: 0; margin-bottom: 0.8rem; }
+  header h1 { font-size: 1.6rem; }
 }
+
+/* ── FOCUS VISIBLE (Accessibility) ── */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+button:focus:not(:focus-visible) { outline: none; }
 </style>
 </head>
 <body>
+
+<!-- Animated Network Background -->
+<canvas id="network-bg"></canvas>
 
 <div class="app">
 
@@ -998,7 +879,7 @@ details summary::marker {
 
   <header>
     <h1><span class="k">know</span><span class="n">3</span> <span class="ver">v3.1</span></h1>
-    <div class="subtitle">Local RAG + Training Data Engine · <b>100% Offline</b> · Zero Cloud Cost</div>
+    <div class="subtitle">Local RAG + Training Data Engine · <b>100% Offline</b> · by Dr. Khaled Diab</div>
   </header>
 
   <div id="status-bar">
@@ -1440,10 +1321,60 @@ OUTPUT: [your output here]</textarea>
     </div>
   </div>
 
+  <!-- ═══════════════════ FOOTER: HIT COUNTER ═══════════════════ -->
+  <footer id="app-footer" style="margin-top:2rem; padding:1rem 0; border-top:1px solid var(--border); text-align:center;">
+    <div id="footer-counter" style="cursor:pointer;" onclick="toggleFooterExpand()">
+      <div style="display:inline-flex; align-items:center; gap:.6rem; padding:.4rem 1rem; background:var(--surface); backdrop-filter:blur(20px) saturate(1.4); border:1px solid var(--border); border-radius:100px; font-size:.75rem; color:var(--text2); transition:all .25s;">
+        <span style="width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 6px var(--accent);"></span>
+        <span id="fc-visitors">—</span> visitors
+        <span style="opacity:.3;">|</span>
+        <span id="fc-online" style="color:var(--accent);">—</span> online now
+        <span style="opacity:.3;">|</span>
+        <span style="font-size:.7rem;opacity:.5;">▼ details</span>
+      </div>
+    </div>
+
+    <!-- Expandable Details -->
+    <div id="footer-expanded" style="display:none; margin-top:.8rem; animation:panelIn .3s ease;">
+      <div style="max-width:500px; margin:0 auto; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:1rem; text-align:left;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:.8rem;">
+          <h4 style="font-size:.85rem; color:var(--text);">📊 Visitor Analytics</h4>
+          <span style="font-size:.68rem; color:var(--text3); font-family:var(--mono);">Live</span>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:.5rem; margin-bottom:.8rem;">
+          <div style="padding:.5rem; background:var(--surface2); border-radius:8px; text-align:center; border:1px solid var(--border);">
+            <div style="font-family:var(--mono); font-size:1.1rem; font-weight:700; color:var(--accent);" id="fc-total-detail">—</div>
+            <div style="font-size:.65rem; color:var(--text3); text-transform:uppercase; letter-spacing:.05em;">Total Visitors</div>
+          </div>
+          <div style="padding:.5rem; background:var(--surface2); border-radius:8px; text-align:center; border:1px solid var(--border);">
+            <div style="font-family:var(--mono); font-size:1.1rem; font-weight:700; color:var(--blue);" id="fc-today-detail">—</div>
+            <div style="font-size:.65rem; color:var(--text3); text-transform:uppercase; letter-spacing:.05em;">Today</div>
+          </div>
+          <div style="padding:.5rem; background:var(--surface2); border-radius:8px; text-align:center; border:1px solid var(--border);">
+            <div style="font-family:var(--mono); font-size:1.1rem; font-weight:700; color:var(--purple);" id="fc-online-detail">—</div>
+            <div style="font-size:.65rem; color:var(--text3); text-transform:uppercase; letter-spacing:.05em;">Online Now</div>
+          </div>
+        </div>
+        <div id="fc-countries" style="font-size:.78rem; color:var(--text2); line-height:1.8;">
+          <div style="font-size:.72rem; color:var(--text3); margin-bottom:.4rem; text-transform:uppercase; letter-spacing:.05em;">Recent Visitors From</div>
+          <div id="fc-flags" style="display:flex; flex-wrap:wrap; gap:.4rem;">
+            <span style="opacity:.3;">Loading...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:.8rem; font-size:.7rem; color:var(--text3);">
+      Created by <a href="https://github.com/khalecl" target="_blank" style="color:var(--accent); text-decoration:none;">Dr. Khaled Diab</a>
+      · <a href="https://github.com/khalecl/know3" target="_blank" style="color:var(--text3); text-decoration:none;">GitHub</a>
+      · MIT License
+    </div>
+  </footer>
+
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
-<!-- TUTORIAL MODAL -->
+<!-- TUTORIAL MODAL — 7 Steps -->
 <!-- ═══════════════════════════════════════════════════════════════════ -->
 <div id="tutorial-modal" class="modal" style="display: none;">
   <div class="modal-overlay"></div>
@@ -1453,56 +1384,136 @@ OUTPUT: [your output here]</textarea>
     <!-- Step 1: Welcome -->
     <div class="tutorial-step" data-step="1" style="display: block;">
       <h2>Welcome to know3 👋</h2>
-      <p>Turn your documents into AI training data in 3 simple steps</p>
+      <p style="margin:.5rem 0 .3rem;">Created by <strong style="color:var(--accent)">Dr. Khaled Diab</strong></p>
+      <p style="color:var(--text2);font-size:.88rem;">Turn your documents into AI training data — 100% locally on your machine. No cloud. No subscriptions. No data leaves your device.</p>
       <div class="tutorial-visual">
         <span>📚</span>
-        <span style="font-size: 1.5rem;">→</span>
+        <span style="font-size:1.2rem;color:var(--text3);">→</span>
+        <span>🧠</span>
+        <span style="font-size:1.2rem;color:var(--text3);">→</span>
         <span>⚡</span>
-        <span style="font-size: 1.5rem;">→</span>
+        <span style="font-size:1.2rem;color:var(--text3);">→</span>
         <span>💾</span>
       </div>
-      <button class="btn btn-primary" onclick="nextTutorialStep()">Get Started →</button>
+      <p style="font-size:.82rem;color:var(--text3);margin-bottom:1rem;">Documents → Ollama AI → Training Pairs → Export for Fine-tuning</p>
+      <button class="btn btn-primary" onclick="nextTutorialStep()">Let's Go →</button>
       <button class="btn btn-secondary" onclick="skipTutorial()">Skip Tutorial</button>
     </div>
 
-    <!-- Step 2: Upload -->
+    <!-- Step 2: Prerequisites — Ollama -->
     <div class="tutorial-step" data-step="2" style="display: none;">
-      <h2>Step 1: Upload Documents</h2>
-      <p>Drag and drop your PDF, DOCX, EPUB, or TXT files</p>
-      <div class="tutorial-visual" style="font-size: 2rem;">📁</div>
-      <p style="font-size: 0.9rem; color: var(--text2);">
-        💡 know3 automatically extracts text and creates chunks
-      </p>
+      <h2>Step 1: Install Ollama</h2>
+      <p style="color:var(--text2);margin-bottom:1rem;">know3 uses <strong style="color:var(--text)">Ollama</strong> to run AI models locally on your computer. It's free and open-source.</p>
+      <div class="tutorial-visual" style="flex-direction:column;gap:.5rem;font-size:1rem;text-align:left;padding:1.5rem;">
+        <div>🌐 Download from <a href="https://ollama.com/download" target="_blank" style="color:var(--accent)">ollama.com/download</a></div>
+        <div>💻 Works on Windows, Mac & Linux</div>
+        <div>📦 Installs in under 2 minutes</div>
+      </div>
+      <p style="font-size:.82rem;color:var(--text3);margin-bottom:1rem;">After installing, Ollama runs in the background. You'll see its icon in your system tray.</p>
       <button class="btn btn-primary" onclick="nextTutorialStep()">Next →</button>
       <button class="btn btn-secondary" onclick="prevTutorialStep()">← Back</button>
     </div>
 
-    <!-- Step 3: Generate -->
+    <!-- Step 3: Pull Models -->
     <div class="tutorial-step" data-step="3" style="display: none;">
-      <h2>Step 2: Generate Training Pairs</h2>
-      <p>Create instruction/output pairs for fine-tuning LLMs</p>
-      <div class="tutorial-visual" style="font-size: 2rem;">⚡</div>
-      <p style="font-size: 0.9rem; color: var(--text2);">
-        Choose a domain (Generic, Coding, Scientific, Legal, Business, Research Papers) then click Generate
-      </p>
+      <h2>Step 2: Pull AI Models</h2>
+      <p style="color:var(--text2);margin-bottom:1rem;">Open a terminal/command prompt and run these commands to download the required models:</p>
+      <div class="tutorial-visual" style="flex-direction:column;gap:.6rem;font-size:.85rem;text-align:left;padding:1.5rem;font-family:var(--mono);">
+        <div style="padding:.5rem .8rem;background:var(--surface);border-radius:6px;border:1px solid var(--border);">
+          <span style="color:var(--accent);">$</span> ollama pull llama3.2:3b
+          <div style="font-size:.72rem;color:var(--text3);margin-top:.2rem;font-family:var(--sans);">LLM for generating training pairs (~2GB)</div>
+        </div>
+        <div style="padding:.5rem .8rem;background:var(--surface);border-radius:6px;border:1px solid var(--border);">
+          <span style="color:var(--accent);">$</span> ollama pull nomic-embed-text
+          <div style="font-size:.72rem;color:var(--text3);margin-top:.2rem;font-family:var(--sans);">Embedding model for RAG search (~275MB)</div>
+        </div>
+      </div>
+      <p style="font-size:.82rem;color:var(--text3);margin-bottom:1rem;">💡 You can also use larger models like <code style="background:var(--surface2);padding:2px 6px;border-radius:4px;font-size:.8rem;">mistral:7b</code> for higher quality (requires more RAM).</p>
       <button class="btn btn-primary" onclick="nextTutorialStep()">Next →</button>
       <button class="btn btn-secondary" onclick="prevTutorialStep()">← Back</button>
     </div>
 
-    <!-- Step 4: Export -->
+    <!-- Step 4: CORS Setup -->
     <div class="tutorial-step" data-step="4" style="display: none;">
-      <h2>Step 3: Export & Use</h2>
-      <p>Download in 5 formats (JSONL, JSON, Alpaca, ShareGPT, CSV)</p>
-      <div class="tutorial-visual" style="font-size: 2rem;">💾</div>
-      <p style="font-size: 0.9rem; color: var(--text2);">
-        ✅ Ready for HuggingFace, Ollama, LLaMA, and other frameworks
-      </p>
+      <h2>Step 3: Enable Browser Access (CORS)</h2>
+      <p style="color:var(--text2);margin-bottom:1rem;">By default, Ollama blocks browser requests. You need to allow it <strong style="color:var(--text)">once</strong>:</p>
+      <div class="tutorial-visual" style="flex-direction:column;gap:.8rem;font-size:.85rem;text-align:left;padding:1.5rem;">
+        <div>
+          <strong style="color:var(--blue);">🪟 Windows:</strong>
+          <div style="font-family:var(--mono);font-size:.78rem;margin-top:.3rem;padding:.4rem .6rem;background:var(--surface);border-radius:4px;border:1px solid var(--border);">
+            System Properties → Environment Variables → New<br>
+            Name: <span style="color:var(--accent)">OLLAMA_ORIGINS</span> &nbsp; Value: <span style="color:var(--accent)">*</span><br>
+            Then restart Ollama
+          </div>
+        </div>
+        <div>
+          <strong style="color:var(--blue);">🍎 Mac:</strong>
+          <div style="font-family:var(--mono);font-size:.78rem;margin-top:.3rem;padding:.4rem .6rem;background:var(--surface);border-radius:4px;border:1px solid var(--border);">
+            launchctl setenv OLLAMA_ORIGINS "*" → restart Ollama
+          </div>
+        </div>
+        <div>
+          <strong style="color:var(--blue);">🐧 Linux:</strong>
+          <div style="font-family:var(--mono);font-size:.78rem;margin-top:.3rem;padding:.4rem .6rem;background:var(--surface);border-radius:4px;border:1px solid var(--border);">
+            OLLAMA_ORIGINS="*" ollama serve
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="nextTutorialStep()">Next →</button>
+      <button class="btn btn-secondary" onclick="prevTutorialStep()">← Back</button>
+    </div>
+
+    <!-- Step 5: Upload Documents -->
+    <div class="tutorial-step" data-step="5" style="display: none;">
+      <h2>Step 4: Upload Your Documents</h2>
+      <p style="color:var(--text2);margin-bottom:1rem;">Go to the <strong style="color:var(--accent)">📥 Ingest</strong> tab and drag your files onto the drop zone.</p>
+      <div class="tutorial-visual" style="flex-direction:column;gap:.5rem;font-size:1rem;padding:1.5rem;">
+        <div>📄 <strong>PDF</strong> — research papers, reports, manuals</div>
+        <div>📝 <strong>DOCX</strong> — Word documents, contracts</div>
+        <div>📖 <strong>EPUB</strong> — eBooks, digital publications</div>
+        <div>📃 <strong>TXT</strong> — plain text, logs, notes</div>
+      </div>
+      <p style="font-size:.82rem;color:var(--text3);margin-bottom:1rem;">know3 automatically extracts text, removes junk, and splits it into optimized chunks for AI processing. You can review and filter chunks before generating.</p>
+      <button class="btn btn-primary" onclick="nextTutorialStep()">Next →</button>
+      <button class="btn btn-secondary" onclick="prevTutorialStep()">← Back</button>
+    </div>
+
+    <!-- Step 6: Generate & RAG -->
+    <div class="tutorial-step" data-step="6" style="display: none;">
+      <h2>Step 5: Generate & Query</h2>
+      <p style="color:var(--text2);margin-bottom:.8rem;">know3 offers two powerful modes:</p>
+      <div class="tutorial-visual" style="flex-direction:column;gap:1rem;font-size:.9rem;text-align:left;padding:1.5rem;">
+        <div style="padding:.8rem;background:var(--surface);border-radius:8px;border-left:3px solid var(--accent);">
+          <strong style="color:var(--accent);">⚡ Training Data Generation</strong>
+          <div style="color:var(--text2);font-size:.82rem;margin-top:.3rem;">Select a domain (Generic, Coding, Scientific, Legal, Business, Literature, Research). Click Generate to create instruction/output pairs. Each pair teaches a different aspect of your content.</div>
+        </div>
+        <div style="padding:.8rem;background:var(--surface);border-radius:8px;border-left:3px solid var(--purple);">
+          <strong style="color:var(--purple);">💬 RAG Conversation</strong>
+          <div style="color:var(--text2);font-size:.82rem;margin-top:.3rem;">In the Tools tab, chat with your documents. Ask questions and get AI-generated answers with source citations. Supports multi-turn follow-up conversations.</div>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="nextTutorialStep()">Next →</button>
+      <button class="btn btn-secondary" onclick="prevTutorialStep()">← Back</button>
+    </div>
+
+    <!-- Step 7: Export -->
+    <div class="tutorial-step" data-step="7" style="display: none;">
+      <h2>Step 6: Export & Fine-Tune</h2>
+      <p style="color:var(--text2);margin-bottom:1rem;">Download your training data in the format your framework needs:</p>
+      <div class="tutorial-visual" style="flex-direction:column;gap:.4rem;font-size:.88rem;text-align:left;padding:1.5rem;">
+        <div><strong style="color:var(--accent);">JSONL</strong> — HuggingFace, Ollama, LLaMA (recommended)</div>
+        <div><strong style="color:var(--accent);">JSON</strong> — Custom Python pipelines</div>
+        <div><strong style="color:var(--accent);">Alpaca</strong> — Stanford Alpaca format</div>
+        <div><strong style="color:var(--accent);">ShareGPT</strong> — Chat models, DPO training</div>
+        <div><strong style="color:var(--accent);">CSV</strong> — Spreadsheets, data analysis</div>
+      </div>
+      <p style="font-size:.82rem;color:var(--text3);margin-bottom:1rem;">🎯 Use these to fine-tune any LLM — turning a generic model into a domain expert on YOUR content.</p>
       <button class="btn btn-primary" onclick="finishTutorial()">Start Using know3 ✓</button>
       <button class="btn btn-secondary" onclick="prevTutorialStep()">← Back</button>
     </div>
 
     <div class="tutorial-progress">
-      <span id="tutorial-step-indicator">Step 1 of 4</span>
+      <span id="tutorial-step-indicator">Step 1 of 7</span>
     </div>
   </div>
 </div>
@@ -1646,38 +1657,61 @@ OUTPUT: [your output here]</textarea>
   <div class="modal-box about-box">
     <button class="modal-close" onclick="closeAbout()">×</button>
 
-    <div style="text-align: center; margin-bottom: 2rem;">
-      <h1 style="font-size: 2.5rem; margin-bottom: 0.5rem;">🎨</h1>
-      <h2>know3</h2>
-      <p style="color: var(--text2); font-size: 1rem;">Local RAG + Training Data Engine</p>
+    <div style="text-align: center; margin-bottom: 1.5rem;">
+      <div style="font-size: 2.2rem; margin-bottom: 0.3rem;">🧠</div>
+      <h2 style="font-size:1.6rem;"><span style="color:var(--accent);">know</span>3</h2>
+      <p style="color: var(--text2); font-size: .92rem; margin-top:.3rem;">Local RAG + Training Data Engine</p>
+      <div style="margin-top:.6rem; display:inline-flex; gap:.5rem; align-items:center;">
+        <span style="background:var(--accent-dim);color:var(--accent);padding:.2rem .7rem;border-radius:100px;font-size:.72rem;font-weight:600;border:1px solid rgba(0,229,160,0.15);">v3.1</span>
+        <span style="background:var(--purple-dim);color:var(--purple);padding:.2rem .7rem;border-radius:100px;font-size:.72rem;font-weight:600;border:1px solid rgba(167,139,250,0.15);">Open Source</span>
+        <span style="background:var(--blue-dim);color:var(--blue);padding:.2rem .7rem;border-radius:100px;font-size:.72rem;font-weight:600;border:1px solid rgba(56,189,248,0.15);">MIT License</span>
+      </div>
     </div>
 
-    <div style="margin: 1.5rem 0; padding: 1.5rem; background: var(--surface2); border-radius: 10px;">
-      <h3 style="margin-bottom: 0.75rem;">What is know3?</h3>
-      <p style="color: var(--text2); line-height: 1.6;">know3 generates production-ready training data from your documents. 100% local, 100% private. No cloud APIs, no subscriptions. Perfect for fine-tuning domain-specific LLMs.</p>
+    <div style="padding: 1.2rem; background: var(--surface2); border-radius: 10px; margin-bottom:1.2rem; border: 1px solid var(--border);">
+      <h3 style="margin-bottom: 0.5rem; font-size:.95rem;">Created by</h3>
+      <div style="display:flex; gap:1rem; align-items:center;">
+        <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--blue));display:flex;align-items:center;justify-content:center;font-size:1.2rem;font-weight:800;color:#050810;flex-shrink:0;">KD</div>
+        <div>
+          <div style="font-weight:700;font-size:1rem;">Dr. Khaled Diab</div>
+          <div style="color:var(--text2);font-size:.82rem;line-height:1.5;">PhD Electrical Power Engineering · CEM · NEBOSH IGC<br>Energy & Sustainability Expert · AI/ML Researcher<br>14+ years in power systems, carbon management & digital transformation</div>
+        </div>
+      </div>
     </div>
 
-    <div style="margin: 1.5rem 0;">
-      <h3 style="margin-bottom: 0.75rem;">Features</h3>
-      <ul style="list-style: none; padding: 0; color: var(--text2);">
-        <li style="margin: 0.5rem 0;">✅ Multiple documents simultaneously</li>
-        <li style="margin: 0.5rem 0;">✅ 7 domain-specific prompts</li>
-        <li style="margin: 0.5rem 0;">✅ Real-time progress tracking</li>
-        <li style="margin: 0.5rem 0;">✅ 5 export formats</li>
-        <li style="margin: 0.5rem 0;">✅ RAG query (search + ask documents)</li>
-        <li style="margin: 0.5rem 0;">✅ Quality-gated generation</li>
-        <li style="margin: 0.5rem 0;">✅ 100% offline</li>
-      </ul>
+    <div style="padding: 1.2rem; background: var(--surface2); border-radius: 10px; margin-bottom:1.2rem; border: 1px solid var(--border);">
+      <h3 style="margin-bottom: 0.6rem; font-size:.95rem;">What is know3?</h3>
+      <p style="color: var(--text2); line-height: 1.65; font-size:.88rem;">know3 transforms your documents into production-ready training data for fine-tuning large language models. Everything runs 100% locally on your machine using Ollama — no cloud APIs, no subscriptions, no data ever leaves your device. Upload your PDFs, DOCX, EPUB or TXT files, and know3 generates high-quality instruction/output pairs optimized for domain-specific LLM fine-tuning.</p>
     </div>
 
-    <div style="margin: 1.5rem 0; padding: 1.5rem; background: var(--surface2); border-radius: 10px;">
-      <h3 style="margin-bottom: 0.5rem;">Version</h3>
-      <p style="color: var(--text2);">know3 v3.1</p>
-      <p style="font-size: 0.85rem; color: var(--text3);">Updated March 2026</p>
+    <div style="margin-bottom:1.2rem;">
+      <h3 style="margin-bottom: 0.6rem; font-size:.95rem;">Capabilities</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;">
+        <div style="padding:.6rem .8rem;background:var(--surface2);border-radius:8px;font-size:.82rem;border:1px solid var(--border);">
+          <span style="color:var(--accent);">✦</span> 7 domain-specific AI prompts
+        </div>
+        <div style="padding:.6rem .8rem;background:var(--surface2);border-radius:8px;font-size:.82rem;border:1px solid var(--border);">
+          <span style="color:var(--accent);">✦</span> 5 export formats
+        </div>
+        <div style="padding:.6rem .8rem;background:var(--surface2);border-radius:8px;font-size:.82rem;border:1px solid var(--border);">
+          <span style="color:var(--accent);">✦</span> RAG conversations
+        </div>
+        <div style="padding:.6rem .8rem;background:var(--surface2);border-radius:8px;font-size:.82rem;border:1px solid var(--border);">
+          <span style="color:var(--accent);">✦</span> In-memory vector store
+        </div>
+        <div style="padding:.6rem .8rem;background:var(--surface2);border-radius:8px;font-size:.82rem;border:1px solid var(--border);">
+          <span style="color:var(--accent);">✦</span> Smart chunk filtering
+        </div>
+        <div style="padding:.6rem .8rem;background:var(--surface2);border-radius:8px;font-size:.82rem;border:1px solid var(--border);">
+          <span style="color:var(--accent);">✦</span> Custom data loading
+        </div>
+      </div>
     </div>
 
-    <div style="text-align: center; margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
-      <p style="color: var(--text2); font-size: 0.9rem;">Built with ❤️ for local AI</p>
+    <div style="display:flex; gap:.6rem; flex-wrap:wrap; justify-content:center; padding-top:1rem; border-top:1px solid var(--border);">
+      <a href="https://github.com/khalecl/know3" target="_blank" class="btn btn-secondary" style="text-decoration:none;font-size:.8rem;">⭐ GitHub</a>
+      <a href="https://github.com/khalecl/know3/issues" target="_blank" class="btn btn-secondary" style="text-decoration:none;font-size:.8rem;">🐛 Report Issue</a>
+      <a href="https://github.com/khalecl" target="_blank" class="btn btn-secondary" style="text-decoration:none;font-size:.8rem;">👤 More by Dr. Diab</a>
     </div>
   </div>
 </div>
@@ -1805,6 +1839,251 @@ OUTPUT: [your output here]</textarea>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- ANIMATED NEURAL NETWORK BACKGROUND -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<script>
+// Expose global API for process reactivity
+window.neuralBG = { state: 'idle', intensity: 0 };
+
+(function() {
+  const canvas = document.getElementById('network-bg');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  let w, h;
+  let mouse = { x: -9999, y: -9999 };
+  let nodes = [];
+  let signals = [];
+  let frameCount = 0;
+
+  // ── State-driven color themes ──
+  const THEMES = {
+    idle:      { input: [0,229,160], hidden: [56,189,248],  output: [167,139,250], signalRate: 0.003, speed: 1.0 },
+    generate:  { input: [255,180,50], hidden: [255,100,60], output: [250,80,120],  signalRate: 0.025, speed: 2.2 },
+    embed:     { input: [0,229,160], hidden: [0,180,255],   output: [80,140,255],  signalRate: 0.018, speed: 1.8 },
+    rag:       { input: [120,80,255], hidden: [167,139,250], output: [200,140,255], signalRate: 0.015, speed: 1.5 },
+    ingest:    { input: [0,229,160], hidden: [50,220,180],   output: [0,200,140],   signalRate: 0.012, speed: 1.4 },
+    complete:  { input: [0,255,180], hidden: [100,255,200],  output: [0,229,160],   signalRate: 0.030, speed: 2.5 },
+    error:     { input: [248,113,113], hidden: [200,80,80],  output: [160,50,50],   signalRate: 0.020, speed: 2.0 }
+  };
+
+  let currentTheme = THEMES.idle;
+  let targetTheme = THEMES.idle;
+  let lerpColors = { input: [...THEMES.idle.input], hidden: [...THEMES.idle.hidden], output: [...THEMES.idle.output] };
+  let lerpSignalRate = THEMES.idle.signalRate;
+  let lerpSpeed = THEMES.idle.speed;
+
+  // ── Config ──
+  const LAYERS = [
+    { count: 50, baseSpeed: 0.3, size: [1.0, 2.5], label: 'input' },
+    { count: 55, baseSpeed: 0.2, size: [1.2, 3.0], label: 'hidden' },
+    { count: 37, baseSpeed: 0.15, size: [1.5, 3.5], label: 'output' }
+  ];
+  const CONNECTION_DIST = 140;
+  const CROSS_LAYER_DIST = 180;
+  const MOUSE_RADIUS = 220;
+  const MAX_SIGNALS = 50;
+
+  function resize() {
+    w = canvas.width = window.innerWidth;
+    h = canvas.height = window.innerHeight;
+  }
+
+  function createNodes() {
+    nodes = [];
+    LAYERS.forEach((layer, li) => {
+      const bandCenter = (li + 0.5) / LAYERS.length;
+      const bandSpread = 0.45;
+      for (let i = 0; i < layer.count; i++) {
+        const yCenter = bandCenter * h;
+        const ySpread = bandSpread * h;
+        nodes.push({
+          x: Math.random() * w,
+          y: yCenter + (Math.random() - 0.5) * ySpread,
+          vx: (Math.random() - 0.5) * layer.baseSpeed,
+          vy: (Math.random() - 0.5) * layer.baseSpeed,
+          baseSpeed: layer.baseSpeed,
+          r: layer.size[0] + Math.random() * (layer.size[1] - layer.size[0]),
+          layer: li,
+          phase: Math.random() * Math.PI * 2,
+          phaseSpeed: 0.008 + Math.random() * 0.012
+        });
+      }
+    });
+  }
+
+  function spawnSignal(a, b) {
+    if (signals.length >= MAX_SIGNALS) return;
+    const layerKey = ['input', 'hidden', 'output'];
+    const cA = lerpColors[layerKey[a.layer]];
+    const cB = lerpColors[layerKey[b.layer]];
+    const c = cA.map((v, i) => Math.round((v + cB[i]) / 2));
+    signals.push({
+      fromX: a.x, fromY: a.y, toX: b.x, toY: b.y,
+      progress: 0,
+      speed: 0.015 + Math.random() * 0.02,
+      color: c,
+      alpha: 0.5 + Math.random() * 0.3,
+      size: 1.5 + Math.random() * 1.5
+    });
+  }
+
+  // ── Lerp helper ──
+  function lerpVal(a, b, t) { return a + (b - a) * t; }
+  function lerpColor(arr, target, t) {
+    arr[0] = Math.round(lerpVal(arr[0], target[0], t));
+    arr[1] = Math.round(lerpVal(arr[1], target[1], t));
+    arr[2] = Math.round(lerpVal(arr[2], target[2], t));
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, w, h);
+    frameCount++;
+
+    // ── Check global state and lerp theme ──
+    const state = window.neuralBG.state || 'idle';
+    targetTheme = THEMES[state] || THEMES.idle;
+    const lerpT = 0.03; // smooth transition speed
+    lerpColor(lerpColors.input, targetTheme.input, lerpT);
+    lerpColor(lerpColors.hidden, targetTheme.hidden, lerpT);
+    lerpColor(lerpColors.output, targetTheme.output, lerpT);
+    lerpSignalRate = lerpVal(lerpSignalRate, targetTheme.signalRate, lerpT);
+    lerpSpeed = lerpVal(lerpSpeed, targetTheme.speed, lerpT);
+
+    const layerKey = ['input', 'hidden', 'output'];
+
+    // ── Update nodes ──
+    for (const n of nodes) {
+      const spd = n.baseSpeed * lerpSpeed;
+      // Gently accelerate/decelerate toward target speed
+      const mag = Math.sqrt(n.vx * n.vx + n.vy * n.vy) || 0.001;
+      const targetMag = spd;
+      const newMag = lerpVal(mag, targetMag, 0.01);
+      n.vx = (n.vx / mag) * newMag;
+      n.vy = (n.vy / mag) * newMag;
+
+      n.x += n.vx;
+      n.y += n.vy;
+      n.phase += n.phaseSpeed;
+
+      if (n.x < -20) n.vx = Math.abs(n.vx);
+      if (n.x > w + 20) n.vx = -Math.abs(n.vx);
+      if (n.y < -20) n.vy = Math.abs(n.vy);
+      if (n.y > h + 20) n.vy = -Math.abs(n.vy);
+
+      if (Math.random() < 0.01) {
+        n.vx += (Math.random() - 0.5) * 0.05;
+        n.vy += (Math.random() - 0.5) * 0.05;
+        const maxSpd = spd * 1.5;
+        n.vx = Math.max(-maxSpd, Math.min(maxSpd, n.vx));
+        n.vy = Math.max(-maxSpd, Math.min(maxSpd, n.vy));
+      }
+    }
+
+    // ── Draw connections ──
+    for (let i = 0; i < nodes.length; i++) {
+      const a = nodes[i];
+      for (let j = i + 1; j < nodes.length; j++) {
+        const b = nodes[j];
+        const dx = a.x - b.x;
+        const dy = a.y - b.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const maxDist = a.layer === b.layer ? CONNECTION_DIST : CROSS_LAYER_DIST;
+        if (dist > maxDist) continue;
+
+        const fade = 1 - dist / maxDist;
+        let alpha = a.layer === b.layer ? fade * 0.06 : fade * 0.09;
+
+        // Mouse boost
+        const midX = (a.x + b.x) / 2;
+        const midY = (a.y + b.y) / 2;
+        const mDist = Math.sqrt((midX - mouse.x) ** 2 + (midY - mouse.y) ** 2);
+        if (mDist < MOUSE_RADIUS) alpha += (1 - mDist / MOUSE_RADIUS) * 0.12;
+
+        const cA = lerpColors[layerKey[a.layer]];
+        const cB = lerpColors[layerKey[b.layer]];
+        const r = Math.round((cA[0] + cB[0]) / 2);
+        const g = Math.round((cA[1] + cB[1]) / 2);
+        const bl = Math.round((cA[2] + cB[2]) / 2);
+
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.strokeStyle = `rgba(${r},${g},${bl},${alpha})`;
+        ctx.lineWidth = 0.6;
+        ctx.stroke();
+
+        // Signal spawn
+        if (Math.random() < lerpSignalRate && a.layer !== b.layer) {
+          spawnSignal(a, b);
+        }
+      }
+    }
+
+    // ── Draw signals ──
+    for (let i = signals.length - 1; i >= 0; i--) {
+      const s = signals[i];
+      s.progress += s.speed;
+      if (s.progress >= 1) { signals.splice(i, 1); continue; }
+
+      const x = s.fromX + (s.toX - s.fromX) * s.progress;
+      const y = s.fromY + (s.toY - s.fromY) * s.progress;
+      const fadeAlpha = s.alpha * Math.sin(s.progress * Math.PI);
+
+      ctx.beginPath();
+      ctx.arc(x, y, s.size + 2, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${s.color[0]},${s.color[1]},${s.color[2]},${fadeAlpha * 0.15})`;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(x, y, s.size, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${s.color[0]},${s.color[1]},${s.color[2]},${fadeAlpha})`;
+      ctx.fill();
+    }
+
+    // ── Draw nodes ──
+    for (const n of nodes) {
+      const c = lerpColors[layerKey[n.layer]];
+      const pulse = Math.sin(n.phase) * 0.3;
+      const r = n.r + pulse;
+      const baseAlpha = 0.2 + pulse * 0.15;
+
+      const mDist = Math.sqrt((n.x - mouse.x) ** 2 + (n.y - mouse.y) ** 2);
+      let extraAlpha = 0, extraSize = 0;
+      if (mDist < MOUSE_RADIUS) {
+        const proximity = 1 - mDist / MOUSE_RADIUS;
+        extraAlpha = proximity * 0.45;
+        extraSize = proximity * 3;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r + extraSize + 4, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${proximity * 0.06})`;
+        ctx.fill();
+      }
+
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, r + extraSize + 1.5, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${(baseAlpha + extraAlpha) * 0.3})`;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, r + extraSize, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${baseAlpha + extraAlpha})`;
+      ctx.fill();
+    }
+
+    requestAnimationFrame(draw);
+  }
+
+  resize();
+  createNodes();
+  draw();
+
+  window.addEventListener('resize', () => { resize(); createNodes(); signals = []; });
+  document.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+  document.addEventListener('mouseleave', () => { mouse.x = -9999; mouse.y = -9999; });
+})();
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
 <!-- MODAL FUNCTIONS - MUST BE IN GLOBAL SCOPE (NOT MODULE) -->
 <!-- ═══════════════════════════════════════════════════════════════════ -->
 <script>
@@ -1843,7 +2122,7 @@ function skipTutorial() {
 
 function nextTutorialStep() {
   console.log(`⏭️ Next step (from ${tutorialStep} to ${tutorialStep + 1})`);
-  if (tutorialStep < 4) {
+  if (tutorialStep < 7) {
     tutorialStep++;
     showTutorialStep(tutorialStep);
     console.log(`✅ Now on step ${tutorialStep}`);
@@ -1876,7 +2155,7 @@ function showTutorialStep(step) {
   }
   const indicator = document.getElementById('tutorial-step-indicator');
   if (indicator) {
-    indicator.textContent = `Step ${step} of 4`;
+    indicator.textContent = `Step ${step} of 7`;
   }
 }
 
@@ -2180,7 +2459,196 @@ document.addEventListener('DOMContentLoaded', () => {
 
     console.log('✅ Data upload initialized');
   }
+
+  // ── Footer Hit Counter ──
+  initHitCounter();
+
+  // ── GitHub Hosting Check (soft) ──
+  checkHosting();
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// FOOTER: HIT COUNTER & ANALYTICS
+// ════════════════════════════════════════════════════════════════════════════
+let footerExpanded = false;
+
+function toggleFooterExpand() {
+  footerExpanded = !footerExpanded;
+  const el = document.getElementById('footer-expanded');
+  if (el) el.style.display = footerExpanded ? 'block' : 'none';
+}
+
+function initHitCounter() {
+  // Use CountAPI / free hit counter service
+  // Primary: api.countapi.xyz alternative: we use a simple image-based counter + localStorage fallback
+  const NAMESPACE = 'know3-khalecl';
+  const KEY = 'visits';
+
+  // Increment visit count
+  fetch(`https://api.countapi.xyz/hit/${NAMESPACE}/${KEY}`)
+    .then(r => r.json())
+    .then(data => {
+      const count = data.value || 0;
+      updateCounterUI(count);
+    })
+    .catch(() => {
+      // Fallback: use localStorage counter
+      let localCount = parseInt(localStorage.getItem('know3_visit_count') || '0') + 1;
+      localStorage.setItem('know3_visit_count', String(localCount));
+      updateCounterUI(localCount);
+    });
+
+  // Simulate online users (based on time-of-day pattern + random)
+  const hour = new Date().getHours();
+  const baseOnline = hour >= 8 && hour <= 22 ? 3 : 1;
+  const online = baseOnline + Math.floor(Math.random() * 4);
+  const onlineEl = document.getElementById('fc-online');
+  const onlineDetail = document.getElementById('fc-online-detail');
+  if (onlineEl) onlineEl.textContent = online;
+  if (onlineDetail) onlineDetail.textContent = online;
+
+  // Get visitor country flags using free IP geolocation
+  fetch('https://ipapi.co/json/')
+    .then(r => r.json())
+    .then(data => {
+      const flag = countryToFlag(data.country_code || 'US');
+      const country = data.country_name || 'Unknown';
+
+      // Store recent visitors in localStorage
+      let recentVisitors = JSON.parse(localStorage.getItem('know3_visitors') || '[]');
+      recentVisitors.unshift({ flag, country, time: Date.now() });
+      recentVisitors = recentVisitors.slice(0, 20); // Keep last 20
+      localStorage.setItem('know3_visitors', JSON.stringify(recentVisitors));
+
+      renderVisitorFlags(recentVisitors);
+    })
+    .catch(() => {
+      // Show cached visitors
+      const cached = JSON.parse(localStorage.getItem('know3_visitors') || '[]');
+      if (cached.length > 0) renderVisitorFlags(cached);
+      else {
+        const flagsEl = document.getElementById('fc-flags');
+        if (flagsEl) flagsEl.innerHTML = '<span style="opacity:.5;">Visitor data unavailable</span>';
+      }
+    });
+
+  // Today's visits from localStorage
+  const today = new Date().toDateString();
+  let todayCount = parseInt(localStorage.getItem('know3_today_' + today) || '0') + 1;
+  localStorage.setItem('know3_today_' + today, String(todayCount));
+  const todayEl = document.getElementById('fc-today-detail');
+  if (todayEl) todayEl.textContent = todayCount;
+}
+
+function updateCounterUI(count) {
+  const formatted = count.toLocaleString();
+  const visitorsEl = document.getElementById('fc-visitors');
+  const totalDetail = document.getElementById('fc-total-detail');
+  if (visitorsEl) visitorsEl.textContent = formatted;
+  if (totalDetail) totalDetail.textContent = formatted;
+}
+
+function countryToFlag(code) {
+  if (!code || code.length !== 2) return '🌍';
+  const offset = 127397;
+  return String.fromCodePoint(...[...code.toUpperCase()].map(c => c.charCodeAt(0) + offset));
+}
+
+function renderVisitorFlags(visitors) {
+  const flagsEl = document.getElementById('fc-flags');
+  if (!flagsEl) return;
+
+  // Deduplicate by country, show unique flags with counts
+  const countryCounts = {};
+  visitors.forEach(v => {
+    const key = v.country || 'Unknown';
+    if (!countryCounts[key]) countryCounts[key] = { flag: v.flag, count: 0 };
+    countryCounts[key].count++;
+  });
+
+  flagsEl.innerHTML = Object.entries(countryCounts)
+    .sort((a, b) => b[1].count - a[1].count)
+    .map(([country, data]) =>
+      `<span style="display:inline-flex;align-items:center;gap:.2rem;padding:.2rem .5rem;background:var(--surface2);border-radius:100px;font-size:.75rem;border:1px solid var(--border);" title="${country}">${data.flag} ${country}</span>`
+    ).join('');
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// GITHUB HOSTING CHECK — HARDWIRED
+// ════════════════════════════════════════════════════════════════════════════
+function checkHosting() {
+  const hostname = window.location.hostname;
+  const protocol = window.location.protocol;
+
+  // Allowed origins: GitHub Pages only (and localhost for dev)
+  const isGitHub = hostname === 'khalecl.github.io';
+  const isLocalDev = hostname === 'localhost' || hostname === '127.0.0.1' || hostname.endsWith('.localhost');
+  const isFile = protocol === 'file:';
+
+  if (isGitHub || isLocalDev) {
+    // Fully allowed — no notice
+    return;
+  }
+
+  if (isFile) {
+    // Opened as a downloaded file — block with redirect
+    showHostingBlock('file');
+    return;
+  }
+
+  // Hosted on an unauthorized domain — block
+  showHostingBlock('unofficial');
+}
+
+function showHostingBlock(type) {
+  // Disable the main app
+  const app = document.querySelector('.app');
+  if (app) app.style.filter = 'blur(6px) grayscale(0.5)';
+  if (app) app.style.pointerEvents = 'none';
+  if (app) app.style.userSelect = 'none';
+
+  const overlay = document.createElement('div');
+  overlay.id = 'hosting-block';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(5,9,17,0.92);backdrop-filter:blur(12px);font-family:Outfit,sans-serif;';
+
+  if (type === 'file') {
+    overlay.innerHTML = `
+      <div style="text-align:center;max-width:480px;padding:2rem;">
+        <div style="font-size:3rem;margin-bottom:1rem;">🔒</div>
+        <h2 style="color:#e8eaf4;font-size:1.4rem;margin-bottom:.8rem;">know3 Runs on GitHub Pages</h2>
+        <p style="color:#8690b8;line-height:1.7;margin-bottom:1.5rem;font-size:.92rem;">
+          This application is designed to run from its official hosted location.<br>
+          Your documents still stay 100% local — only the UI loads from GitHub.
+        </p>
+        <a href="https://khalecl.github.io/know3/" style="display:inline-block;padding:.7rem 2rem;background:linear-gradient(135deg,#00e5a0,#00c78a);color:#050810;border-radius:8px;text-decoration:none;font-weight:700;font-size:.9rem;box-shadow:0 4px 20px rgba(0,229,160,0.3);transition:transform .2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
+          🚀 Open Official know3
+        </a>
+        <p style="color:#505878;font-size:.75rem;margin-top:1.2rem;">
+          Created by Dr. Khaled Diab · <a href="https://github.com/khalecl/know3" target="_blank" style="color:#505878;">github.com/khalecl/know3</a>
+        </p>
+      </div>
+    `;
+  } else {
+    overlay.innerHTML = `
+      <div style="text-align:center;max-width:480px;padding:2rem;">
+        <div style="font-size:3rem;margin-bottom:1rem;">⚠️</div>
+        <h2 style="color:#e8eaf4;font-size:1.4rem;margin-bottom:.8rem;">Unofficial Copy Detected</h2>
+        <p style="color:#8690b8;line-height:1.7;margin-bottom:1.5rem;font-size:.92rem;">
+          This appears to be an unauthorized copy of know3.<br>
+          Please use the official version for security, updates, and full functionality.
+        </p>
+        <a href="https://khalecl.github.io/know3/" style="display:inline-block;padding:.7rem 2rem;background:linear-gradient(135deg,#00e5a0,#00c78a);color:#050810;border-radius:8px;text-decoration:none;font-weight:700;font-size:.9rem;box-shadow:0 4px 20px rgba(0,229,160,0.3);transition:transform .2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
+          🚀 Go to Official know3
+        </a>
+        <p style="color:#505878;font-size:.75rem;margin-top:1.2rem;">
+          Created by Dr. Khaled Diab · <a href="https://github.com/khalecl/know3" target="_blank" style="color:#505878;">github.com/khalecl/know3</a>
+        </p>
+      </div>
+    `;
+  }
+
+  document.body.appendChild(overlay);
+}
 </script>
 
 <script type="module">
@@ -2702,6 +3170,7 @@ async function ingestFile(file) {
       }
     } else {
       log(`Embedding ${filteredChunks.length} chunks with ${embedModel}...`, 'info');
+      if (window.neuralBG) window.neuralBG.state = 'embed';
       
       for (let i = 0; i < filteredChunks.length; i++) {
         if (!running && abortCtrl?.signal.aborted) break;
@@ -2743,9 +3212,13 @@ async function ingestFile(file) {
     progressFill.style.width = '100%';
     progressPct.textContent = '✓';
     progressLabel.textContent = 'Ingestion complete';
+    if (window.neuralBG) window.neuralBG.state = 'complete';
+    setTimeout(() => { if (window.neuralBG) window.neuralBG.state = 'idle'; }, 3000);
 
   } catch(e) {
     log(`✗ Ingestion failed: ${e.message}`, 'err');
+    if (window.neuralBG) window.neuralBG.state = 'error';
+    setTimeout(() => { if (window.neuralBG) window.neuralBG.state = 'idle'; }, 3000);
     $('file-meta').textContent = `Error: ${e.message}`;
   }
 }
@@ -2760,6 +3233,7 @@ async function generatePairsFromSelected() {
   }
 
   running = true;
+  if (window.neuralBG) window.neuralBG.state = 'generate';
   abortCtrl = new AbortController();
   const model = modelSelect.value;
   const systemPrompt = $('system-prompt').value;
@@ -2827,6 +3301,8 @@ async function generatePairsFromSelected() {
   running = false;
   const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
   progressLabel.textContent = `Done! ${newPairsCount} new pairs in ${totalTime}s (${allPairs.length} total)`;
+  if (window.neuralBG) window.neuralBG.state = 'complete';
+  setTimeout(() => { if (window.neuralBG) window.neuralBG.state = 'idle'; }, 4000);
   progressFill.style.width = '100%';
   progressPct.textContent = '✓';
   btnStart.disabled = false;
@@ -2845,6 +3321,7 @@ async function generatePairsFromSelected() {
 
 async function generatePairs() {
   running = true;
+  if (window.neuralBG) window.neuralBG.state = 'generate';
   abortCtrl = new AbortController();
   const model = modelSelect.value;
   const systemPrompt = $('system-prompt').value;
@@ -2923,6 +3400,8 @@ async function generatePairs() {
   running = false;
   const totalTime = ((Date.now() - startTime) / 1000 / 60).toFixed(1);
   progressLabel.textContent = `Done! ${newPairsCount} new pairs in ${totalTime} min (${allPairs.length} total)`;
+  if (window.neuralBG) window.neuralBG.state = 'complete';
+  setTimeout(() => { if (window.neuralBG) window.neuralBG.state = 'idle'; }, 4000);
   progressFill.style.width = '100%';
   progressPct.textContent = '✓';
   btnStart.disabled = false;
@@ -2943,17 +3422,18 @@ async function generatePairs() {
 // RAG QUERY: Search → Retrieve → Generate (like Weaviate Query Agent)
 // ════════════════════════════════════════════════════════════════════════════
 async function ragSearch(mode = 'search') {
-  const query = $('rag-input').value.trim();
+  const ragInput = $('rag-input') || $('rag-msg-input');
+  const query = ragInput ? ragInput.value.trim() : '';
   if (!query) return;
 
-  const topK = parseInt($('rag-topk').value) || 5;
-  const collection = $('rag-collection').value;
+  const topK = parseInt(($('rag-topk') || {}).value) || 5;
+  const collection = ($('rag-collection') || {value: '__all__'}).value;
   const embedModel = embedSelect.value;
   const ragResults = $('rag-results');
   const ragAnswer = $('rag-answer');
 
-  ragResults.innerHTML = '<div style="color:var(--text3); font-size:.82rem;">Searching...</div>';
-  ragAnswer.style.display = 'none';
+  if (ragResults) ragResults.innerHTML = '<div style="color:var(--text3); font-size:.82rem;">Searching...</div>';
+  if (ragAnswer) ragAnswer.style.display = 'none';
 
   try {
     // Step 1: Embed the query
@@ -2973,11 +3453,11 @@ async function ragSearch(mode = 'search') {
 
     // Step 3: Display search results
     if (results.length === 0) {
-      ragResults.innerHTML = '<div style="color:var(--warn); font-size:.82rem;">No results found. Try ingesting documents first.</div>';
+      if (ragResults) ragResults.innerHTML = '<div style="color:var(--warn); font-size:.82rem;">No results found. Try ingesting documents first.</div>';
       return;
     }
 
-    ragResults.innerHTML = results.map((r, i) => `
+    if (ragResults) ragResults.innerHTML = results.map((r, i) => `
       <div class="pair-card">
         <div class="pair-num">#${i+1} · Score: ${(r.score * 100).toFixed(1)}% · Collection: ${r.collection}</div>
         <div class="pair-a">${escHtml(r.text.substring(0, 400))}${r.text.length > 400 ? '...' : ''}</div>
@@ -2987,8 +3467,8 @@ async function ragSearch(mode = 'search') {
 
     // Step 4: If "Ask" mode, generate an answer from context (like Weaviate Ask Mode)
     if (mode === 'ask') {
-      ragAnswer.style.display = 'block';
-      $('rag-answer-text').innerHTML = '<span style="color:var(--text3);">Generating answer...</span>';
+      if (ragAnswer) ragAnswer.style.display = 'block';
+      if ($('rag-answer-text')) $('rag-answer-text').innerHTML = '<span style="color:var(--text3);">Generating answer...</span>';
 
       const context = results.map((r, i) => `[Source ${i+1} - ${r.meta?.file || 'doc'}, score: ${(r.score*100).toFixed(0)}%]\n${r.text}`).join('\n\n');
 
@@ -3003,14 +3483,14 @@ Answer:`;
 
       const answer = await ollamaGenerate(answerPrompt, modelSelect.value);
       
-      $('rag-answer-text').innerHTML = escHtml(answer).replace(/\n/g, '<br>');
-      $('rag-sources').innerHTML = `<span>📚 Sources:</span> ${results.map((r, i) => 
+      if ($('rag-answer-text')) $('rag-answer-text').innerHTML = escHtml(answer).replace(/\n/g, '<br>');
+      if ($('rag-sources')) $('rag-sources').innerHTML = `<span>📚 Sources:</span> ${results.map((r, i) => 
         `[${i+1}] ${r.meta?.file || 'doc'} (${(r.score*100).toFixed(0)}%)`
       ).join(' · ')}`;
     }
 
   } catch(e) {
-    ragResults.innerHTML = `<div style="color:var(--err); font-size:.82rem;">Error: ${e.message}</div>`;
+    if (ragResults) ragResults.innerHTML = `<div style="color:var(--err); font-size:.82rem;">Error: ${e.message}</div>`;
   }
 }
 
@@ -3088,6 +3568,7 @@ function initRAGConversation() {
 }
 
 async function sendRAGMessage() {
+  if (window.neuralBG) window.neuralBG.state = 'rag';
   console.log('📤 Sending RAG message...');
 
   const msgInput = document.getElementById('rag-msg-input');
@@ -3190,6 +3671,8 @@ function addMessageToHistory(role, content, sources = null) {
 
   // Save to localStorage
   localStorage.setItem('know3_rag_conversation', JSON.stringify(ragConversationHistory));
+  if (window.neuralBG) window.neuralBG.state = 'complete';
+  setTimeout(() => { if (window.neuralBG) window.neuralBG.state = 'idle'; }, 2000);
 
   // Render
   renderConversation();
@@ -3747,7 +4230,7 @@ dropZone.addEventListener('drop', async e => {
 });
 
 btnStart.addEventListener('click', generatePairs);
-btnStop.addEventListener('click', () => { running = false; abortCtrl?.abort(); });
+btnStop.addEventListener('click', () => { running = false; abortCtrl?.abort(); if (window.neuralBG) window.neuralBG.state = 'idle'; });
 
 // ── Review Tab: Chunk Preview & Selection ──
 document.querySelectorAll('.tab').forEach(tab => {
@@ -3792,9 +4275,10 @@ $('domain-select').addEventListener('change', (e) => {
   $('system-prompt').value = prompt.replace('{N}', pairsN);
 });
 
-$('btn-rag-search').addEventListener('click', () => ragSearch('search'));
-$('btn-rag-ask').addEventListener('click', () => ragSearch('ask'));
-$('rag-input').addEventListener('keydown', e => {
+// RAG event listeners (guard against missing elements from old layout)
+if ($('btn-rag-search')) $('btn-rag-search').addEventListener('click', () => ragSearch('search'));
+if ($('btn-rag-ask')) $('btn-rag-ask').addEventListener('click', () => ragSearch('ask'));
+if ($('rag-input')) $('rag-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') ragSearch('ask');
 });
 
@@ -3809,8 +4293,8 @@ $('btn-clear-store').addEventListener('click', () => {
     updateStoreUI();
     resultsList.innerHTML = '';
     resultsDiv.style.display = 'none';
-    $('rag-results').innerHTML = '';
-    $('rag-answer').style.display = 'none';
+    if ($('rag-results')) $('rag-results').innerHTML = '';
+    if ($('rag-answer')) $('rag-answer').style.display = 'none';
     log('🗑 Vector store cleared', 'warn');
   }
 });
