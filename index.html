@@ -1023,6 +1023,7 @@ button:focus:not(:focus-visible) { outline: none; }
           <option value="coding">Coding & APIs</option>
           <option value="scientific">Scientific & Math</option>
           <option value="literature">Literature & Humanities</option>
+          <option value="literatureRepro">Literature — Voice Reproduction</option>
           <option value="legal">Legal Documents</option>
           <option value="business">Business & Economics</option>
           <option value="researchpaper">Research Papers</option>
@@ -1886,6 +1887,7 @@ OUTPUT: [your output here]</textarea>
               <option value="coding">Coding & APIs</option>
               <option value="scientific">Scientific & Math</option>
               <option value="literature">Literature & Humanities</option>
+              <option value="literatureRepro">Literature — Voice Reproduction</option>
               <option value="legal">Legal Documents</option>
               <option value="business">Business & Economics</option>
               <option value="researchpaper">Research Papers</option>
@@ -2901,22 +2903,23 @@ Format EXACTLY (repeat for each pair):
 INSTRUCTION: [question or task]
 OUTPUT: [complete answer]`,
 
-  coding: `You are a software engineer training data generator. Given code documentation or technical text, create {N} instruction-output pairs.
+  coding: `You are a systems programming training data generator. Given technical text about programming (especially assembly language, CPU architecture, memory management, or performance optimization), create {N} instruction-output pairs.
 
 Rules:
-- INSTRUCTION types: How to use X? What does Y do? Fix this bug? Explain Z?
-- Include code examples in outputs when relevant
-- Use actual API names, method signatures, parameters
-- Explain WHY not just WHAT
-- Cover both theory and practical usage
-- For APIs: include method names, parameters, return types
-- Show edge cases and common mistakes
-- Instruction: Clear, actionable question about code/APIs
-- Output: Complete explanation with code example if applicable
+- PRESERVE all code exactly as written — register names, mnemonics, labels, comments, indentation
+- When the text contains code examples, ALWAYS include the full code in your output (do not summarize or omit code)
+- INSTRUCTION types: "Explain this code", "What does this code do?", "How does X work at the hardware level?", "Why is approach A faster than B?", "What is the purpose of register/instruction X?", "Write code to accomplish Y"
+- For performance comparisons: include specific timing numbers, cycle counts, percentages from the text
+- For memory/addressing: explain segment:offset, register roles, addressing modes precisely
+- For optimization: explain WHY one approach is faster, referencing CPU pipeline, bus cycles, or memory layout
+- Cover: code behavior, hardware rationale, performance trade-offs, common pitfalls
+- If the text discusses a figure or diagram, describe what it shows
+- Instruction: Specific, technical question (not vague)
+- Output: Complete, detailed explanation preserving ALL code, numbers, and technical terminology
 
 Format EXACTLY (repeat for each pair):
-INSTRUCTION: [specific, actionable question about code/APIs]
-OUTPUT: [complete explanation with code example if applicable]`,
+INSTRUCTION: [specific technical question about the code, architecture, or optimization]
+OUTPUT: [complete explanation with ALL code preserved exactly, performance data included]`,
 
   scientific: `You are a scientific/mathematical training data generator. Given academic or technical text with equations, create {N} pairs.
 
@@ -2965,6 +2968,42 @@ Rules:
 Format EXACTLY (repeat for each pair):
 INSTRUCTION: [specific legal question about interpretation or application]
 OUTPUT: [precise explanation with references]`,
+
+  literatureRepro: `You are training an AI to reproduce the EXACT literary quality of a specific author. Given a passage, create {N} instruction-output pairs that deeply encode the author's writing DNA — their vocabulary, rhythm, sentence architecture, emotional register, and narrative instincts.
+
+Your goal: after fine-tuning on your pairs, the AI should write NEW content that is indistinguishable from the original author.
+
+PAIR TYPE 1 — VOCABULARY & DICTION MAP:
+- INSTRUCTION: "What words and phrases define this author's voice? List their vocabulary patterns."
+- OUTPUT: Extract the author's signature word choices. Group them: emotional words, sensory words, action verbs, adjectives, metaphor patterns, filler/connector words. Note what they AVOID (e.g., "never uses clinical language", "avoids adverbs"). Include the specific words from the passage.
+
+PAIR TYPE 2 — SENTENCE ARCHITECTURE:
+- INSTRUCTION: "Reproduce the sentence structure patterns from this passage in a new paragraph about [different topic]."
+- OUTPUT: Write a NEW paragraph on a different subject that perfectly mirrors the source's sentence patterns — same rhythm of short vs long sentences, same clause nesting style, same punctuation habits (em-dashes, semicolons, fragments), same paragraph flow. The output must READ like the author even though the topic is different.
+
+PAIR TYPE 3 — EMOTIONAL TEXTURE REPRODUCTION:
+- INSTRUCTION: "Write a scene where a character feels [emotion from passage] using the same emotional layering technique as this passage."
+- OUTPUT: Write an original scene that captures how the author builds emotion — do they use body language? Internal monologue? Metaphor? Silence? Dialogue deflection? Replicate the EXACT technique, not just the emotion.
+
+PAIR TYPE 4 — DIALOGUE VOICE CLONING:
+- INSTRUCTION: "Write a dialogue between two characters about [new situation] that sounds exactly like this author's dialogue style."
+- OUTPUT: Original dialogue that replicates the author's dialogue fingerprint — their use of interruption, subtext, dialect markers, said-bookisms, action beats between speech, how characters reveal vs conceal.
+
+PAIR TYPE 5 — NARRATIVE PERSPECTIVE & PACING:
+- INSTRUCTION: "Rewrite [a mundane scenario] using this author's narrative perspective and pacing."
+- OUTPUT: Take something ordinary and render it in the author's EXACT narrative mode — their distance from characters (close/far), their time dilation (which moments stretch, which compress), their attention patterns (what they describe in detail vs skip).
+
+Rules:
+- EVERY output must contain actual WRITING that demonstrates the technique, not just analysis
+- Outputs should be 150-400 words of high-quality prose that could pass as the author's work
+- NEVER summarize plot — always CREATE new content in the author's voice
+- Capture micro-patterns: paragraph length habits, opening sentence patterns, how they transition between scenes, their use of white space and silence
+- Include at least 2-3 specific phrases from the source passage as reference anchors, then show how similar constructions work in new contexts
+- The instruction should specify what aspect of craft to reproduce; the output should BE the reproduction
+
+Format EXACTLY (repeat for each pair):
+INSTRUCTION: [specific writing reproduction task targeting a particular craft element]
+OUTPUT: [original prose that IS the reproduction — written in the author's voice, not about it]`,
 
   business: `You are a business/economics training data generator. Given business books, case studies, or reports, create {N} pairs.
 
@@ -3228,7 +3267,7 @@ async function ollamaGenerate(prompt, model, temperature = 0.7) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model, prompt, stream: false,
-      options: { temperature: temperature, num_predict: 800 },
+      options: { temperature: temperature, num_predict: 1500 },
       keep_alive: '30m'
     }),
     signal: abortCtrl?.signal,
@@ -3317,66 +3356,113 @@ async function parseEPUB(file) {
 function chunkText(text, maxLen) {
   const chunks = [];
   let current = '';
-
   const minChunkSize = 100;
- 
-  // Split by multiple delimiters: paragraphs → sentences → words
-  const paragraphs = text.split(/\n\n+/);
- 
-  for (const para of paragraphs) {
-    const cleaned = para.replace(/\s+/g, ' ').trim();
-    if (!cleaned || cleaned.length < 30) continue;
- 
-    // If paragraph itself is larger than maxLen, split it further by sentences
-    if (cleaned.length > maxLen) {
-      const sentences = cleaned.match(/[^.!?]+[.!?]+/g) || [cleaned];
- 
-      for (let sent of sentences) {
-        sent = sent.trim();
-        if (!sent) continue;
- 
-        // If current + sentence exceeds limit, save current and start new chunk
-        if (current.length + sent.length > maxLen && current.length >= minChunkSize) {
-          chunks.push(current.trim());
-          current = '';
-        }
- 
-        // If sentence itself is huge, split by words as last resort
-        if (sent.length > maxLen) {
-          const words = sent.split(/\s+/);
-          let wordBuffer = '';
-          for (const word of words) {
-            if (wordBuffer.length + word.length > maxLen && wordBuffer.length > 0) {
-              current += (current ? ' ' : '') + wordBuffer;
-              if (current.length >= minChunkSize) {
-                chunks.push(current.trim());
-                current = '';
-              }
-              wordBuffer = word;
-            } else {
-              wordBuffer += (wordBuffer ? ' ' : '') + word;
-            }
-          }
-          if (wordBuffer) current += (current ? ' ' : '') + wordBuffer;
-        } else {
-          current += (current ? ' ' : '') + sent;
-        }
+
+  // Pre-process: protect code blocks by marking them
+  const lines = text.split('\n');
+  const processedBlocks = [];
+  let blockBuffer = '';
+  let inCode = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    const isCodeLine = (
+      (/^\s{2,}/.test(line) && trimmed.length > 0 && /[;:=\[\]\(\)\{\}]|mov |add |sub |inc |dec |jmp |jnz |jz |loop |push |pop |call |ret |xor |and |or |cmp |lea |int |nop |db |dw |dd |\.text|\.data|#include|#define|function |const |let |var |return |if \(|for \(|while \(|class |def |import |from |->|=>/.test(trimmed)) ||
+      /^[A-Za-z_]\w*:/.test(trimmed) ||
+      /^\s*(mov|add|sub|inc|dec|push|pop|call|ret|jmp|jnz|jz|je|jne|loop|xor|and|or|cmp|lea|int|shl|shr|mul|div|nop)\s/i.test(line)
+    );
+
+    if (isCodeLine && !inCode) {
+      if (blockBuffer.trim()) {
+        processedBlocks.push({ type: 'text', content: blockBuffer });
+        blockBuffer = '';
       }
+      inCode = true;
+      blockBuffer = line + '\n';
+    } else if (!isCodeLine && inCode) {
+      if (blockBuffer.trim()) {
+        processedBlocks.push({ type: 'code', content: blockBuffer.trimEnd() });
+        blockBuffer = '';
+      }
+      inCode = false;
+      blockBuffer = line + '\n';
     } else {
-      // Paragraph fits in one chunk, add normally
-      if (current.length + cleaned.length > maxLen && current.length >= minChunkSize) {
+      blockBuffer += line + '\n';
+    }
+  }
+  if (blockBuffer.trim()) {
+    processedBlocks.push({ type: inCode ? 'code' : 'text', content: blockBuffer.trimEnd() });
+  }
+
+  // Chunk using blocks, preserving code formatting
+  for (const block of processedBlocks) {
+    if (block.type === 'code') {
+      const codeContent = '\n```\n' + block.content + '\n```\n';
+
+      if (current.length + codeContent.length > maxLen && current.length >= minChunkSize) {
         chunks.push(current.trim());
         current = '';
       }
-      current += (current ? '\n\n' : '') + cleaned;
+
+      if (codeContent.length > maxLen && current.length === 0) {
+        chunks.push(codeContent.trim());
+        continue;
+      }
+
+      current += codeContent;
+    } else {
+      const paragraphs = block.content.split(/\n\n+/);
+
+      for (const para of paragraphs) {
+        const cleaned = para.replace(/\s+/g, ' ').trim();
+        if (!cleaned || cleaned.length < 30) continue;
+
+        if (cleaned.length > maxLen) {
+          const sentences = cleaned.match(/[^.!?]+[.!?]+/g) || [cleaned];
+          for (let sent of sentences) {
+            sent = sent.trim();
+            if (!sent) continue;
+            if (current.length + sent.length > maxLen && current.length >= minChunkSize) {
+              chunks.push(current.trim());
+              current = '';
+            }
+            if (sent.length > maxLen) {
+              const words = sent.split(/\s+/);
+              let wordBuffer = '';
+              for (const word of words) {
+                if (wordBuffer.length + word.length > maxLen && wordBuffer.length > 0) {
+                  current += (current ? ' ' : '') + wordBuffer;
+                  if (current.length >= minChunkSize) {
+                    chunks.push(current.trim());
+                    current = '';
+                  }
+                  wordBuffer = word;
+                } else {
+                  wordBuffer += (wordBuffer ? ' ' : '') + word;
+                }
+              }
+              if (wordBuffer) current += (current ? ' ' : '') + wordBuffer;
+            } else {
+              current += (current ? ' ' : '') + sent;
+            }
+          }
+        } else {
+          if (current.length + cleaned.length > maxLen && current.length >= minChunkSize) {
+            chunks.push(current.trim());
+            current = '';
+          }
+          current += (current ? '\n\n' : '') + cleaned;
+        }
+      }
     }
   }
- 
-  // Add final chunk if it meets minimum size
+
   if (current.trim().length >= minChunkSize) {
     chunks.push(current.trim());
   }
- 
+
   return chunks;
 }
 
