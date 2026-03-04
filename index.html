@@ -888,6 +888,7 @@ button:focus:not(:focus-visible) { outline: none; }
     <span id="status-text">Connecting to Ollama...</span>
     <span style="margin-left:.5rem; opacity:.5;">|</span>
     <span id="model-info" style="margin-left:.5rem;"></span>
+    <span id="ollama-host-badge" style="margin-left:.5rem; font-size:.7rem; padding:.15rem .5rem; background:var(--surface2); border-radius:100px; border:1px solid var(--border); display:none; font-family:var(--mono);"></span>
   </div>
 
   <!-- TABS -->
@@ -1753,6 +1754,74 @@ OUTPUT: [your output here]</textarea>
     </div>
 
     <div class="settings-content">
+
+      <!-- NETWORK / CONNECTION SECTION -->
+      <details class="settings-section" open>
+        <summary style="font-weight: 600; color: var(--accent); cursor: pointer;">🌐 Ollama Connection</summary>
+        <div class="settings-category">
+          <!-- Current connection status -->
+          <div class="setting-item">
+            <label>Status</label>
+            <div id="settings-connection-status" style="padding: 0.5rem 0.7rem; background: var(--surface); border-radius: 6px; font-size: 0.85rem; border-left: 3px solid var(--border);">
+              <span id="settings-conn-indicator">⏳</span>
+              <span id="settings-conn-text">Checking...</span>
+              <div style="font-size: 0.72rem; color: var(--text3); margin-top: 0.2rem;" id="settings-conn-url"></div>
+            </div>
+          </div>
+
+          <!-- Manual IP input -->
+          <div class="setting-item">
+            <label>Ollama Host IP</label>
+            <div style="display: flex; gap: 0.4rem;">
+              <input type="text" id="settings-ollama-ip"
+                placeholder="e.g., 192.168.1.100 or localhost"
+                style="flex: 1; padding: 0.45rem 0.6rem; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 0.85rem; font-family: var(--mono);"
+              >
+              <button class="btn btn-primary" id="btn-manual-connect" style="padding: 0.45rem 0.8rem; font-size: 0.8rem; white-space: nowrap;">
+                Connect
+              </button>
+            </div>
+            <div class="hint">Enter IP of machine running Ollama (port 11434 is automatic)</div>
+          </div>
+
+          <!-- Subnet range for scanning -->
+          <div class="setting-item">
+            <label>Scan Subnets</label>
+            <input type="text" id="settings-scan-subnets"
+              placeholder="192.168.1, 192.168.0, 10.0.0"
+              style="width: 100%; padding: 0.45rem 0.6rem; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 0.85rem; font-family: var(--mono);"
+            >
+            <div class="hint">Comma-separated subnet prefixes to scan (e.g., 192.168.1, 10.0.0)</div>
+          </div>
+
+          <!-- Scan controls -->
+          <div class="setting-item">
+            <div style="display: flex; gap: 0.4rem;">
+              <button class="btn btn-secondary" id="btn-scan-network" style="flex: 1; font-size: 0.82rem;">
+                🔍 Auto-Scan Network
+              </button>
+              <button class="btn btn-secondary" id="btn-stop-scan" style="flex: 0; padding: 0.45rem 0.8rem; font-size: 0.82rem; display: none;">
+                ⏹ Stop
+              </button>
+            </div>
+            <!-- Scan progress -->
+            <div style="margin-top: 0.5rem;">
+              <div id="scan-status" style="font-size: 0.78rem; color: var(--text2); min-height: 1.2em;"></div>
+              <div style="height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; margin-top: 0.3rem;">
+                <div id="scan-progress-bar" style="height: 100%; background: var(--accent); width: 0%; transition: width 0.3s; display: none;"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Reset to localhost -->
+          <div class="setting-item">
+            <button class="btn btn-secondary" id="btn-reset-ollama" style="width: 100%; font-size: 0.82rem; opacity: 0.7;">
+              ↩️ Reset to localhost
+            </button>
+            <div class="hint">Reset connection to localhost:11434</div>
+          </div>
+        </div>
+      </details>
 
       <!-- MODELS SECTION -->
       <details class="settings-section" open>
@@ -2649,7 +2718,168 @@ try {
 // ════════════════════════════════════════════════════════════════════════════
 // STATE
 // ════════════════════════════════════════════════════════════════════════════
-const OLLAMA = 'http://localhost:11434';
+let OLLAMA = localStorage.getItem('know3_ollama_url') || 'http://localhost:11434';
+const OLLAMA_PORT = 11434;
+
+// ════════════════════════════════════════════════════════════════════════════
+// NETWORK DISCOVERY — Find Ollama on LAN
+// ════════════════════════════════════════════════════════════════════════════
+const networkDiscovery = {
+  scanning: false,
+  found: null,
+  scannedCount: 0,
+  totalToScan: 0,
+  abortController: null,
+
+  // Common private subnets
+  defaultSubnets: ['192.168.1', '192.168.0', '192.168.2', '10.0.0', '10.0.1', '172.16.0'],
+
+  // Try a single host — returns URL if Ollama responds, null otherwise
+  async probeHost(ip, timeout = 2000) {
+    const url = `http://${ip}:${OLLAMA_PORT}`;
+    try {
+      const r = await fetch(`${url}/api/tags`, {
+        signal: AbortSignal.timeout(timeout),
+        mode: 'cors'
+      });
+      if (r.ok) {
+        const data = await r.json();
+        if (data.models) return { url, ip, models: data.models.length };
+      }
+    } catch(e) { /* expected for non-Ollama hosts */ }
+    return null;
+  },
+
+  // Scan a subnet in parallel batches
+  async scanSubnet(subnet, startIP = 1, endIP = 254, batchSize = 15) {
+    const results = [];
+    for (let i = startIP; i <= endIP; i += batchSize) {
+      if (this.abortController?.signal.aborted) break;
+      const batch = [];
+      for (let j = i; j < Math.min(i + batchSize, endIP + 1); j++) {
+        batch.push(this.probeHost(`${subnet}.${j}`, 1500));
+      }
+      const batchResults = await Promise.all(batch);
+      this.scannedCount += batch.length;
+      updateScanProgress();
+      for (const r of batchResults) {
+        if (r) results.push(r);
+      }
+      // If we found one, can optionally stop early
+      if (results.length > 0) return results;
+    }
+    return results;
+  },
+
+  // Full discovery: localhost → saved → common subnets → custom
+  async discover(customSubnets = []) {
+    if (this.scanning) return null;
+    this.scanning = true;
+    this.found = null;
+    this.scannedCount = 0;
+    this.abortController = new AbortController();
+
+    updateScanUI('starting');
+
+    // Phase 1: Try localhost (instant)
+    updateScanUI('phase', 'Trying localhost...');
+    let result = await this.probeHost('localhost', 2000);
+    if (result) { this.scanning = false; return this.onFound(result); }
+    result = await this.probeHost('127.0.0.1', 2000);
+    if (result) { this.scanning = false; return this.onFound(result); }
+
+    // Phase 2: Try saved IP from localStorage
+    const savedURL = localStorage.getItem('know3_ollama_url');
+    if (savedURL && savedURL !== 'http://localhost:11434') {
+      const savedIP = savedURL.replace('http://','').replace(`:${OLLAMA_PORT}`,'');
+      updateScanUI('phase', `Trying saved: ${savedIP}...`);
+      result = await this.probeHost(savedIP, 2000);
+      if (result) { this.scanning = false; return this.onFound(result); }
+    }
+
+    // Phase 3: Scan subnets
+    const subnets = [...new Set([...customSubnets, ...this.defaultSubnets])];
+    this.totalToScan = subnets.length * 254;
+    this.scannedCount = 0;
+
+    for (const subnet of subnets) {
+      if (this.abortController?.signal.aborted) break;
+      updateScanUI('phase', `Scanning ${subnet}.x ...`);
+      const found = await this.scanSubnet(subnet);
+      if (found.length > 0) {
+        this.scanning = false;
+        return this.onFound(found[0]);
+      }
+    }
+
+    this.scanning = false;
+    updateScanUI('notfound');
+    return null;
+  },
+
+  onFound(result) {
+    this.found = result;
+    OLLAMA = result.url;
+    localStorage.setItem('know3_ollama_url', result.url);
+    updateScanUI('found', result);
+    return result;
+  },
+
+  stopScan() {
+    if (this.abortController) this.abortController.abort();
+    this.scanning = false;
+    updateScanUI('stopped');
+  },
+
+  // Manual connect
+  async connectManual(ip) {
+    updateScanUI('phase', `Connecting to ${ip}...`);
+    const result = await this.probeHost(ip, 3000);
+    if (result) {
+      return this.onFound(result);
+    }
+    updateScanUI('notfound');
+    return null;
+  }
+};
+
+// ── Scan UI helpers ──
+function updateScanUI(state, data) {
+  const scanStatus = document.getElementById('scan-status');
+  const scanProgress = document.getElementById('scan-progress-bar');
+  const statusTextEl = document.getElementById('status-text');
+  const statusDotEl = document.getElementById('status-dot');
+
+  if (state === 'starting') {
+    if (scanStatus) scanStatus.textContent = 'Starting discovery...';
+    if (scanProgress) { scanProgress.style.display = 'block'; scanProgress.style.width = '0%'; }
+    if (statusTextEl) statusTextEl.textContent = '🔍 Scanning for Ollama...';
+    if (statusDotEl) statusDotEl.className = 'status-dot';
+  } else if (state === 'phase') {
+    if (scanStatus) scanStatus.textContent = data;
+    if (statusTextEl) statusTextEl.textContent = `🔍 ${data}`;
+  } else if (state === 'found') {
+    if (scanStatus) scanStatus.innerHTML = `<span style="color:var(--accent);">✅ Found at ${data.ip} (${data.models} models)</span>`;
+    if (scanProgress) scanProgress.style.display = 'none';
+    // Update the manual IP input to show found IP
+    const ipInput = document.getElementById('settings-ollama-ip');
+    if (ipInput) ipInput.value = data.ip;
+  } else if (state === 'notfound') {
+    if (scanStatus) scanStatus.innerHTML = '<span style="color:var(--warn);">⚠️ Ollama not found on network</span>';
+    if (scanProgress) scanProgress.style.display = 'none';
+  } else if (state === 'stopped') {
+    if (scanStatus) scanStatus.textContent = 'Scan stopped';
+    if (scanProgress) scanProgress.style.display = 'none';
+  }
+}
+
+function updateScanProgress() {
+  const bar = document.getElementById('scan-progress-bar');
+  if (bar && networkDiscovery.totalToScan > 0) {
+    const pct = Math.min((networkDiscovery.scannedCount / networkDiscovery.totalToScan) * 100, 100);
+    bar.style.width = `${pct}%`;
+  }
+}
 
 // ── DOMAIN-SPECIFIC PROMPTS ──
 const DOMAIN_PROMPTS = {
@@ -2903,14 +3133,13 @@ async function checkOllama() {
     // Separate LLM models and embedding models
     const llmModels = [];
     const embedModels = [];
-    
+
     for (const m of models) {
       const name = m.name || m.model;
-      // Heuristic: embedding models usually have "embed" in name
       if (name.includes('embed') || name.includes('bge') || name.includes('minilm') || name.includes('gte')) {
         embedModels.push(name);
       }
-      llmModels.push(name); // All models can be LLMs
+      llmModels.push(name);
     }
 
     // Populate LLM select
@@ -2924,19 +3153,60 @@ async function checkOllama() {
         `<option value="${m}">${m}</option>`
       ).join('');
     } else {
-      // If no explicit embed model found, add first available + hint
       embedSelect.innerHTML = `<option value="${llmModels[0]}">${llmModels[0]} (LLM fallback)</option>`;
       embedSelect.innerHTML += `<option value="__none__">⚠ No embed model — pull nomic-embed-text</option>`;
     }
 
+    // Show connected host
+    const host = OLLAMA.replace('http://','').replace(`:${OLLAMA_PORT}`,'');
+    const isLocal = host === 'localhost' || host === '127.0.0.1';
     setStatus('ok', `Ollama connected · ${models.length} model${models.length !== 1 ? 's' : ''}`);
     $('model-info').textContent = models.length + ' models loaded';
+
+    // Show host badge for non-localhost connections
+    const badge = document.getElementById('ollama-host-badge');
+    if (badge) {
+      if (!isLocal) {
+        badge.textContent = `🌐 ${host}`;
+        badge.style.display = 'inline';
+        badge.style.borderColor = 'var(--accent)';
+        badge.style.color = 'var(--accent)';
+      } else {
+        badge.textContent = '💻 local';
+        badge.style.display = 'inline';
+        badge.style.borderColor = 'var(--border)';
+        badge.style.color = 'var(--text3)';
+      }
+    }
+
+    // Update settings panel connection status
+    const connIndicator = document.getElementById('settings-conn-indicator');
+    const connText = document.getElementById('settings-conn-text');
+    const connUrl = document.getElementById('settings-conn-url');
+    if (connIndicator) connIndicator.textContent = '🟢';
+    if (connText) connText.textContent = `Connected (${models.length} models)`;
+    if (connUrl) connUrl.textContent = OLLAMA;
+
+    // Update settings IP input with current host
+    const ipInput = document.getElementById('settings-ollama-ip');
+    if (ipInput && !ipInput.value) ipInput.value = host;
+
     setupGuide.style.display = 'none';
     btnStart.disabled = !currentFileName;
     $('btn-clear-store').disabled = false;
     return true;
   } catch(e) {
-    setStatus('err', 'Ollama not found — see setup below');
+    setStatus('err', 'Ollama not found — scanning network...');
+
+    // Update settings panel
+    const connIndicator = document.getElementById('settings-conn-indicator');
+    const connText = document.getElementById('settings-conn-text');
+    if (connIndicator) connIndicator.textContent = '🔴';
+    if (connText) connText.textContent = 'Not connected';
+
+    const badge = document.getElementById('ollama-host-badge');
+    if (badge) badge.style.display = 'none';
+
     setupGuide.style.display = 'block';
     return false;
   }
@@ -4610,17 +4880,11 @@ if (btnDataClear) {
 // ════════════════════════════════════════════════════════════════════════════
 // INIT
 // ════════════════════════════════════════════════════════════════════════════
-checkOllama();
-setInterval(() => {
-  if (!statusDot.classList.contains('ok') && !running) checkOllama();
-}, 10000);
 
 updateStoreUI();
 
 // ════════════════════════════════════════════════════════════════════════════
 // EXPOSE MODULE FUNCTIONS TO GLOBAL SCOPE
-// These functions are called from inline HTML handlers or from the non-module
-// script block, so they must be accessible on `window`.
 // ════════════════════════════════════════════════════════════════════════════
 window.initRAGConversation = initRAGConversation;
 window.sendRAGMessage = sendRAGMessage;
@@ -4646,6 +4910,7 @@ window.removeFromQueue = removeFromQueue;
 window.removeLoadedDoc = removeLoadedDoc;
 window.renderFileQueue = renderFileQueue;
 window.renderLoadedDocs = renderLoadedDocs;
+window.networkDiscovery = networkDiscovery;
 
 // ── Clear queue button ──
 const btnClearQueue = document.getElementById('btn-clear-queue');
@@ -4658,7 +4923,110 @@ if (btnClearQueue) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// FILE LOADED - DIAGNOSTIC
+// NETWORK DISCOVERY — Event Listeners & Auto-Scan
+// ════════════════════════════════════════════════════════════════════════════
+
+// Manual connect button
+const btnManualConnect = document.getElementById('btn-manual-connect');
+if (btnManualConnect) {
+  btnManualConnect.addEventListener('click', async () => {
+    const ipInput = document.getElementById('settings-ollama-ip');
+    const ip = ipInput?.value.trim();
+    if (!ip) { alert('Please enter an IP address or hostname'); return; }
+    btnManualConnect.disabled = true;
+    btnManualConnect.textContent = '...';
+    const result = await networkDiscovery.connectManual(ip);
+    btnManualConnect.disabled = false;
+    btnManualConnect.textContent = 'Connect';
+    if (result) {
+      await checkOllama();
+    } else {
+      alert(`⚠️ Could not connect to Ollama at ${ip}:${OLLAMA_PORT}\n\nMake sure:\n1. Ollama is running on that machine\n2. OLLAMA_ORIGINS=* is set\n3. Firewall allows port ${OLLAMA_PORT}`);
+    }
+  });
+}
+
+// Auto-scan network button
+const btnScanNetwork = document.getElementById('btn-scan-network');
+const btnStopScan = document.getElementById('btn-stop-scan');
+if (btnScanNetwork) {
+  btnScanNetwork.addEventListener('click', async () => {
+    const subnetInput = document.getElementById('settings-scan-subnets');
+    const customSubnets = subnetInput?.value.trim()
+      ? subnetInput.value.split(',').map(s => s.trim()).filter(s => s)
+      : [];
+
+    btnScanNetwork.disabled = true;
+    btnScanNetwork.textContent = '⏳ Scanning...';
+    if (btnStopScan) btnStopScan.style.display = 'inline-block';
+
+    const result = await networkDiscovery.discover(customSubnets);
+
+    btnScanNetwork.disabled = false;
+    btnScanNetwork.textContent = '🔍 Auto-Scan Network';
+    if (btnStopScan) btnStopScan.style.display = 'none';
+
+    if (result) {
+      await checkOllama();
+    }
+  });
+}
+
+if (btnStopScan) {
+  btnStopScan.addEventListener('click', () => {
+    networkDiscovery.stopScan();
+    if (btnScanNetwork) {
+      btnScanNetwork.disabled = false;
+      btnScanNetwork.textContent = '🔍 Auto-Scan Network';
+    }
+    btnStopScan.style.display = 'none';
+  });
+}
+
+// Reset to localhost
+const btnResetOllama = document.getElementById('btn-reset-ollama');
+if (btnResetOllama) {
+  btnResetOllama.addEventListener('click', async () => {
+    OLLAMA = 'http://localhost:11434';
+    localStorage.setItem('know3_ollama_url', OLLAMA);
+    const ipInput = document.getElementById('settings-ollama-ip');
+    if (ipInput) ipInput.value = 'localhost';
+    const scanStatus = document.getElementById('scan-status');
+    if (scanStatus) scanStatus.textContent = 'Reset to localhost';
+    await checkOllama();
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SMART INITIAL CONNECTION
+// Try saved/localhost first → if fail, auto-scan network
+// ════════════════════════════════════════════════════════════════════════════
+async function initialConnect() {
+  const connected = await checkOllama();
+  if (!connected && !networkDiscovery.scanning) {
+    // Auto-scan after a short delay
+    setTimeout(async () => {
+      if (!statusDot.classList.contains('ok')) {
+        const result = await networkDiscovery.discover();
+        if (result) {
+          await checkOllama();
+        }
+      }
+    }, 500);
+  }
+}
+
+initialConnect();
+
+// Periodic re-check (only when disconnected and not scanning)
+setInterval(() => {
+  if (!statusDot.classList.contains('ok') && !running && !networkDiscovery.scanning) {
+    checkOllama();
+  }
+}, 15000);
+
+// ════════════════════════════════════════════════════════════════════════════
+// FILE LOADED
 // ════════════════════════════════════════════════════════════════════════════
 
 </script>
