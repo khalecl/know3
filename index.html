@@ -4192,31 +4192,81 @@ ANSWER:`;
 
       const temperature = parseFloat(ragSettings.temperature) || 0.7;
 
-      // Hide typing indicator, show streaming bubble
+      // Hide typing, show streaming bubble
       if (typingEl) typingEl.style.display = 'none';
 
-      // Add a temporary streaming message to the conversation
+      // Add temporary streaming message
       const streamIdx = ragConversationHistory.length;
-      ragConversationHistory.push({ role: 'assistant', content: '', _streaming: true });
+      ragConversationHistory.push({ role: 'assistant', content: '...' });
       renderConversation();
 
-      // Stream tokens into the last bubble
-      assistantMessage = await ollamaGenerateStream(answerPrompt, modelSelect.value, temperature, (fullText, token) => {
-        ragConversationHistory[streamIdx].content = fullText;
-        // Update the last bubble in-place for performance
-        const container = document.getElementById('rag-conversation');
-        const bubbles = container?.querySelectorAll('.rag-msg.assistant .rag-msg-bubble div');
-        if (bubbles && bubbles.length > 0) {
-          const lastBubble = bubbles[bubbles.length - 1];
-          lastBubble.textContent = fullText;
-        }
-        // Auto-scroll
-        if (container) container.scrollTop = container.scrollHeight;
-      });
+      try {
+        // Try streaming first
+        const streamCtrl = new AbortController();
+        const streamR = await fetch(`${OLLAMA}/api/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: modelSelect.value,
+            prompt: answerPrompt,
+            stream: true,
+            options: { temperature, num_predict: 1200 },
+            keep_alive: '30m'
+          }),
+          signal: streamCtrl.signal,
+        });
 
-      // Finalize the streamed message
+        if (!streamR.ok) throw new Error(`Ollama: ${streamR.status}`);
+
+        const reader = streamR.body.getReader();
+        const decoder = new TextDecoder();
+        let fullResponse = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          for (const line of chunk.split('\n')) {
+            if (!line.trim()) continue;
+            try {
+              const obj = JSON.parse(line);
+              if (obj.response) {
+                fullResponse += obj.response;
+                // Update bubble in-place
+                ragConversationHistory[streamIdx].content = fullResponse;
+                const container = document.getElementById('rag-conversation');
+                const allBubbles = container?.querySelectorAll('.rag-msg.assistant .rag-msg-bubble div');
+                if (allBubbles && allBubbles.length > 0) {
+                  allBubbles[allBubbles.length - 1].textContent = fullResponse;
+                }
+                if (container) container.scrollTop = container.scrollHeight;
+              }
+              if (obj.done) break;
+            } catch(e) { /* skip malformed */ }
+          }
+        }
+
+        assistantMessage = fullResponse;
+
+      } catch (streamErr) {
+        console.warn('⚠️ Streaming failed, falling back to non-streaming:', streamErr.message);
+        // Fallback to non-streaming
+        try {
+          ragConversationHistory[streamIdx].content = 'Generating response...';
+          renderConversation();
+          assistantMessage = await ollamaGenerate(answerPrompt, modelSelect.value, temperature);
+        } catch (genErr) {
+          assistantMessage = `⚠️ Generation failed: ${genErr.message}`;
+        }
+      }
+
+      // If still empty, show error
+      if (!assistantMessage || !assistantMessage.trim()) {
+        assistantMessage = '⚠️ Received empty response from Ollama. This can happen if the model is still loading or the context is too large. Try again or use a smaller model.';
+      }
+
+      // Finalize
       ragConversationHistory[streamIdx].content = assistantMessage;
-      delete ragConversationHistory[streamIdx]._streaming;
 
       sources = results.map((r, i) => ({
         index: i + 1,
@@ -4225,16 +4275,14 @@ ANSWER:`;
       }));
       if (includeSources) ragConversationHistory[streamIdx].sources = sources;
 
-      // Save and re-render with final state
       localStorage.setItem('know3_rag_conversation', JSON.stringify(ragConversationHistory));
       if (window.neuralBG) window.neuralBG.state = 'complete';
       setTimeout(() => { if (window.neuralBG) window.neuralBG.state = 'idle'; }, 2000);
       renderConversation();
 
-      // Re-enable UI
       if (typingEl) typingEl.style.display = 'none';
       if (sendBtn) sendBtn.disabled = false;
-      return; // Skip the non-streaming addMessageToHistory below
+      return;
     }
 
     // Non-streaming path (search mode or no results)
