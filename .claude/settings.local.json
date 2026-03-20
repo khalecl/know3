@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Skill(tchk-code)",
-      "Skill(tchk-code:*)"
-    ]
-  }
-}
