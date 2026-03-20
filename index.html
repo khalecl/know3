@@ -1257,93 +1257,68 @@ OUTPUT: [your output here]</textarea>
     <!-- ═══════════════════════════════════════════════════════════════════ -->
     <!-- CUSTOM DATA LOADING -->
     <!-- ═══════════════════════════════════════════════════════════════════ -->
-    <div style="margin-bottom: 2rem; padding: 1.5rem; background: var(--surface2); border-radius: 10px;">
-      <h3 style="margin-bottom: 1rem;">📤 Load Custom Data</h3>
-      <p style="margin-bottom: 1rem; color: var(--text2); font-size: 0.9rem;">
-        Upload JSON or JSONL files to create custom data collections for RAG queries. Each file is automatically indexed and searchable.
+    <div style="margin-bottom: 2rem; padding: 1.5rem; background: var(--surface2); border-radius: 12px; border: 1px solid var(--border);">
+      <h3 style="margin-bottom: 0.5rem; font-size:1.05rem;">📤 Load Custom Data</h3>
+      <p style="margin-bottom: 1rem; color: var(--text3); font-size: 0.82rem;">
+        Upload JSON or JSONL files. Fields are auto-detected — works with any key structure.
       </p>
 
       <!-- File Upload Area -->
       <div
         id="data-upload-zone"
-        style="
-          border: 2px dashed var(--accent);
-          border-radius: 8px;
-          padding: 2rem;
-          text-align: center;
-          cursor: pointer;
-          background: var(--accent-dim);
-          transition: all 0.2s;
-          margin-bottom: 1rem;
-        "
-        onmouseover="this.style.borderColor='var(--accent2)'; this.style.background='rgba(0,229,160,0.15)';"
-        onmouseout="this.style.borderColor='var(--accent)'; this.style.background='var(--accent-dim)';"
+        style="border: 2px dashed var(--border-bright); border-radius: 10px; padding: 1.5rem; text-align: center; cursor: pointer; background: var(--surface); transition: all 0.3s; margin-bottom: 1rem;"
       >
-        <div style="font-size: 2rem; margin-bottom: 0.5rem;">📁</div>
-        <div style="font-weight: 600; margin-bottom: 0.3rem;">Drop JSON/JSONL files here</div>
-        <div style="font-size: 0.85rem; color: var(--text2);">or click to browse</div>
-        <input
-          type="file"
-          id="data-file-input"
-          multiple
-          accept=".json,.jsonl,.ndjson"
-          style="display: none;"
-          onchange="handleDataUpload(event)"
-        >
+        <div style="font-size: 1.8rem; margin-bottom: 0.3rem;">📁</div>
+        <div style="font-weight: 600; font-size: 0.9rem;">Drop JSON/JSONL files here</div>
+        <div style="font-size: 0.78rem; color: var(--text3);">or click to browse · multiple files supported</div>
+        <input type="file" id="data-file-input" multiple accept=".json,.jsonl,.ndjson" style="display: none;" onchange="handleDataUpload(event)">
       </div>
 
-      <!-- Loading/Preview Area -->
-      <div id="data-preview" style="margin-bottom: 1rem; display: none;">
-        <div style="padding: 1rem; background: var(--surface); border-radius: 6px; border-left: 3px solid var(--accent);">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-            <strong id="data-filename">File</strong>
-            <span id="data-status" style="font-size: 0.8rem; color: var(--text2);">Loading...</span>
-          </div>
-          <div id="data-progress" style="height: 4px; background: var(--border); border-radius: 2px; overflow: hidden;">
-            <div style="height: 100%; background: var(--accent); width: 0%; transition: width 0.3s;" id="data-progress-bar"></div>
-          </div>
-          <div id="data-preview-text" style="margin-top: 1rem; font-size: 0.85rem; color: var(--text2); max-height: 200px; overflow-y: auto;"></div>
-        </div>
+      <!-- File Queue -->
+      <div id="data-file-queue" style="display:none; margin-bottom:1rem;">
+        <div style="font-size:.78rem; font-weight:600; color:var(--text2); margin-bottom:.4rem;">📋 Files queued: <span id="data-queue-count">0</span></div>
+        <div id="data-queue-list" style="max-height:120px; overflow-y:auto; font-size:.78rem; font-family:var(--mono); color:var(--text2);"></div>
       </div>
 
       <!-- Collection Settings -->
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin-bottom: 1rem;">
         <div>
-          <label style="font-size: 0.75rem; color: var(--text2); display: block; margin-bottom: 0.3rem;">Collection Name</label>
-          <input
-            type="text"
-            id="data-collection-name"
-            placeholder="e.g., my-data"
-            value="custom"
-            style="width: 100%; padding: 0.5rem; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 0.85rem;"
-          >
+          <label style="font-size: 0.7rem; color: var(--text3); display: block; margin-bottom: 0.25rem; text-transform:uppercase; letter-spacing:.05em;">Collection Name</label>
+          <input type="text" id="data-collection-name" placeholder="e.g., my-data" value="custom" style="width: 100%; padding: 0.45rem; background: var(--surface-solid); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.82rem;">
         </div>
         <div>
-          <label style="font-size: 0.75rem; color: var(--text2); display: block; margin-bottom: 0.3rem;">Embedding Field</label>
-          <input
-            type="text"
-            id="data-text-field"
-            placeholder="e.g., text (default)"
-            value="text"
-            style="width: 100%; padding: 0.5rem; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 0.85rem;"
-          >
+          <label style="font-size: 0.7rem; color: var(--text3); display: block; margin-bottom: 0.25rem; text-transform:uppercase; letter-spacing:.05em;">Text Field (auto-detect)</label>
+          <input type="text" id="data-text-field" placeholder="auto (or: text, instruction, content)" value="" style="width: 100%; padding: 0.45rem; background: var(--surface-solid); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 0.82rem;">
+          <div style="font-size:.65rem; color:var(--text3); margin-top:.2rem;">Leave blank to auto-detect the longest text field</div>
+        </div>
+      </div>
+
+      <!-- Progress -->
+      <div id="data-progress-area" style="display:none; margin-bottom:1rem;">
+        <div style="display:flex; justify-content:space-between; font-size:.78rem; color:var(--text2); margin-bottom:.3rem;">
+          <span id="data-progress-label">Loading...</span>
+          <span id="data-progress-pct">0%</span>
+        </div>
+        <div style="height: 4px; background: var(--surface3); border-radius: 3px; overflow: hidden;">
+          <div style="height: 100%; background: linear-gradient(90deg, var(--accent), var(--blue)); width: 0%; transition: width 0.3s;" id="data-progress-bar"></div>
         </div>
       </div>
 
       <!-- Action Buttons -->
       <div style="display: flex; gap: 0.5rem;">
-        <button class="btn btn-primary" id="btn-data-load" style="flex: 1;" onclick="loadDataFile()">
-          📤 Load File
+        <button class="btn btn-primary" id="btn-data-load" style="flex: 1;" onclick="loadAllDataFiles()">
+          📤 Load All Files
         </button>
         <button class="btn btn-secondary" id="btn-data-clear" style="flex: 1;" onclick="clearCustomData()">
-          🗑️ Clear Custom Data
+          🗑️ Clear Data
         </button>
       </div>
 
       <!-- Stats -->
-      <div id="data-stats" style="margin-top: 1rem; font-size: 0.8rem; color: var(--text2); display: none;">
-        <div>✅ <strong id="data-items-loaded">0</strong> items loaded</div>
+      <div id="data-stats" style="margin-top: 0.8rem; font-size: 0.78rem; color: var(--text2); display: none;">
+        <div>✅ <strong id="data-items-loaded">0</strong> items loaded across <strong id="data-files-loaded">0</strong> files</div>
         <div>📚 Collection: <strong id="data-collection-display">-</strong></div>
+        <div id="data-fields-detected" style="margin-top:.3rem; font-size:.7rem; color:var(--text3);"></div>
       </div>
     </div>
 
@@ -4378,102 +4353,236 @@ function clearRAGConversation() {
 // CUSTOM DATA LOADING: JSON/JSONL file upload and indexing
 // ════════════════════════════════════════════════════════════════════════════
 
-let customDataFile = null;
-let customDataContent = [];
+let dataFileQueue = []; // Array of File objects
+let totalItemsLoaded = 0;
+let totalFilesLoaded = 0;
 
 function handleDataUpload(event) {
-  console.log('📁 Data file selected...');
-  const files = event.target.files;
+  const files = Array.from(event.target.files || []);
   if (files.length === 0) return;
 
-  customDataFile = files[0];
-  const reader = new FileReader();
+  // Add to queue (don't replace — accumulate)
+  dataFileQueue = dataFileQueue.concat(files);
 
-  reader.onload = (e) => {
-    const content = e.target.result;
-    console.log(`📄 File loaded: ${customDataFile.name} (${content.length} bytes)`);
+  // Show queue UI
+  const queueDiv = document.getElementById('data-file-queue');
+  const queueList = document.getElementById('data-queue-list');
+  const queueCount = document.getElementById('data-queue-count');
 
-    // Show preview
-    const previewDiv = document.getElementById('data-preview');
-    const previewText = document.getElementById('data-preview-text');
-    const filenameEl = document.getElementById('data-filename');
-    const statusEl = document.getElementById('data-status');
+  if (queueDiv) queueDiv.style.display = 'block';
+  if (queueCount) queueCount.textContent = dataFileQueue.length;
+  if (queueList) {
+    queueList.innerHTML = dataFileQueue.map((f, i) =>
+      `<div style="padding:.25rem .4rem;background:var(--surface2-solid);border-radius:4px;margin-bottom:.2rem;display:flex;justify-content:space-between;border:1px solid var(--border);">
+        <span>${f.name}</span>
+        <span style="color:var(--text3);">${(f.size / 1024).toFixed(0)} KB</span>
+      </div>`
+    ).join('');
+  }
 
-    previewDiv.style.display = 'block';
-    filenameEl.textContent = customDataFile.name;
-    statusEl.textContent = 'Ready to load';
-    previewText.innerHTML = `<pre>${escHtml(content.substring(0, 500))}${content.length > 500 ? '...' : ''}</pre>`;
-  };
-
-  reader.readAsText(customDataFile);
+  console.log(`📁 ${files.length} file(s) added to queue. Total: ${dataFileQueue.length}`);
 }
 
-function loadDataFile() {
-  if (!customDataFile) {
-    alert('⚠️ Please select a file first');
+async function loadAllDataFiles() {
+  if (dataFileQueue.length === 0) {
+    alert('Please select files first');
     return;
   }
 
-  console.log('🔄 Loading data file...');
-  const reader = new FileReader();
+  const collectionName = document.getElementById('data-collection-name')?.value || 'custom';
+  const userTextField = document.getElementById('data-text-field')?.value?.trim() || '';
+  const progressArea = document.getElementById('data-progress-area');
+  const progressBar = document.getElementById('data-progress-bar');
+  const progressLabel = document.getElementById('data-progress-label');
+  const progressPct = document.getElementById('data-progress-pct');
 
-  reader.onload = async (e) => {
+  if (progressArea) progressArea.style.display = 'block';
+  if (window.neuralBG) window.neuralBG.state = 'ingest';
+
+  let grandTotal = 0;
+  let filesProcessed = 0;
+  let detectedFields = new Set();
+
+  for (let fi = 0; fi < dataFileQueue.length; fi++) {
+    const file = dataFileQueue[fi];
+    if (progressLabel) progressLabel.textContent = `File ${fi + 1}/${dataFileQueue.length}: ${file.name}`;
+
     try {
-      const content = e.target.result;
-      const extension = customDataFile.name.split('.').pop().toLowerCase();
-      const collectionName = document.getElementById('data-collection-name').value || 'custom';
-      const textField = document.getElementById('data-text-field').value || 'text';
+      const content = await readFileAsText(file);
+      const ext = file.name.split('.').pop().toLowerCase();
 
-      console.log(`📊 Parsing ${extension} file...`);
+      // Auto-detect or use user-specified text field
+      let textField = userTextField;
+      if (!textField) {
+        textField = autoDetectTextField(content, ext);
+        if (textField) detectedFields.add(textField);
+      }
+
+      if (!textField) {
+        console.warn(`⚠️ Could not detect text field in ${file.name} — trying common fields`);
+        textField = 'text'; // ultimate fallback
+      }
 
       let items = [];
-      if (extension === 'json') {
+      if (ext === 'json') {
         items = parseJSON(content, textField);
-      } else if (extension === 'jsonl' || extension === 'ndjson') {
+      } else if (ext === 'jsonl' || ext === 'ndjson') {
         items = parseJSONL(content, textField);
-      } else {
-        throw new Error('Unsupported format. Use JSON or JSONL.');
+      }
+
+      // If no items found with detected field, try all common fields
+      if (items.length === 0) {
+        const commonFields = ['text', 'instruction', 'content', 'input', 'question', 'output', 'answer', 'response', 'body', 'message', 'passage', 'document', 'summary', 'description'];
+        for (const field of commonFields) {
+          if (field === textField) continue;
+          const attempt = ext === 'json' ? parseJSON(content, field) : parseJSONL(content, field);
+          if (attempt.length > items.length) {
+            items = attempt;
+            textField = field;
+            detectedFields.add(field);
+          }
+        }
       }
 
       if (items.length === 0) {
-        throw new Error('No items found in file');
+        console.warn(`⚠️ No items extracted from ${file.name}`);
+        continue;
       }
 
-      console.log(`✅ Parsed ${items.length} items`);
+      console.log(`✅ ${file.name}: ${items.length} items (field: "${textField}")`);
 
-      // Index the data
-      await indexCustomData(items, collectionName, textField, customDataFile.name);
+      // Index with progress
+      const embedModel = embedSelect.value;
+      vectorStore.addCollection(collectionName);
 
-      // Update UI
-      const statsDiv = document.getElementById('data-stats');
-      const itemsEl = document.getElementById('data-items-loaded');
-      const collectionEl = document.getElementById('data-collection-display');
+      for (let i = 0; i < items.length; i++) {
+        const overallProgress = ((fi / dataFileQueue.length) + ((i + 1) / items.length / dataFileQueue.length)) * 100;
+        if (progressBar) progressBar.style.width = overallProgress + '%';
+        if (progressPct) progressPct.textContent = Math.round(overallProgress) + '%';
 
-      statsDiv.style.display = 'block';
-      itemsEl.textContent = items.length;
-      collectionEl.textContent = collectionName;
+        try {
+          let embedding = [];
+          if (embedModel !== '__none__') {
+            embedding = await ollamaEmbed(items[i].text, embedModel);
+          }
+          vectorStore.addChunk(collectionName, items[i].text, embedding, {
+            ...items[i].metadata,
+            file: file.name,
+            chunkIndex: i,
+            totalChunks: items.length,
+            customData: true,
+            textField: textField
+          });
+        } catch (e) {
+          // Store without embedding as fallback
+          vectorStore.addChunk(collectionName, items[i].text, [], {
+            ...items[i].metadata,
+            file: file.name,
+            chunkIndex: i,
+            totalChunks: items.length,
+            customData: true,
+            textField: textField
+          });
+        }
 
-      // Update collection dropdown
-      updateCollectionDropdown();
+        if (i % 10 === 0) await new Promise(r => setTimeout(r, 50));
+      }
 
-      alert(`✅ Successfully loaded ${items.length} items into collection "${collectionName}"`);
-      console.log(`✅ Custom data loaded successfully`);
+      grandTotal += items.length;
+      filesProcessed++;
 
     } catch (err) {
-      console.error('❌ Error loading data:', err);
-      alert(`❌ Error: ${err.message}`);
+      console.error(`❌ Error processing ${file.name}:`, err);
     }
-  };
+  }
 
-  reader.readAsText(customDataFile);
+  // Done
+  if (progressBar) progressBar.style.width = '100%';
+  if (progressLabel) progressLabel.textContent = `Done! ${grandTotal} items from ${filesProcessed} files`;
+  if (progressPct) progressPct.textContent = '✓';
+
+  totalItemsLoaded += grandTotal;
+  totalFilesLoaded += filesProcessed;
+
+  // Update stats UI
+  const statsDiv = document.getElementById('data-stats');
+  const itemsEl = document.getElementById('data-items-loaded');
+  const filesEl = document.getElementById('data-files-loaded');
+  const collectionEl = document.getElementById('data-collection-display');
+  const fieldsEl = document.getElementById('data-fields-detected');
+
+  if (statsDiv) statsDiv.style.display = 'block';
+  if (itemsEl) itemsEl.textContent = totalItemsLoaded;
+  if (filesEl) filesEl.textContent = totalFilesLoaded;
+  if (collectionEl) collectionEl.textContent = collectionName;
+  if (fieldsEl && detectedFields.size > 0) {
+    fieldsEl.textContent = `Fields detected: ${[...detectedFields].join(', ')}`;
+  }
+
+  // Clear queue
+  dataFileQueue = [];
+  const queueDiv = document.getElementById('data-file-queue');
+  if (queueDiv) queueDiv.style.display = 'none';
+
+  updateCollectionDropdown();
+  updateStoreUI();
+
+  if (window.neuralBG) window.neuralBG.state = 'complete';
+  setTimeout(() => { if (window.neuralBG) window.neuralBG.state = 'idle'; }, 3000);
+
+  console.log(`✅ All files loaded: ${grandTotal} items from ${filesProcessed} files`);
+}
+
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result);
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsText(file);
+  });
+}
+
+function autoDetectTextField(content, ext) {
+  // Parse first item and find the key with the longest string value
+  try {
+    let firstItem;
+    if (ext === 'json') {
+      const data = JSON.parse(content);
+      firstItem = Array.isArray(data) ? data[0] : data;
+    } else {
+      const firstLine = content.trim().split('\n')[0];
+      firstItem = JSON.parse(firstLine);
+    }
+
+    if (!firstItem || typeof firstItem !== 'object') return null;
+
+    // Score fields: prefer common RAG field names, weighted by string length
+    const commonNames = ['text', 'instruction', 'content', 'input', 'question', 'output', 'answer', 'response', 'body', 'message', 'passage', 'document'];
+    let bestField = null;
+    let bestScore = 0;
+
+    for (const [key, val] of Object.entries(firstItem)) {
+      if (typeof val !== 'string') continue;
+      let score = val.length;
+      // Bonus for common field names
+      if (commonNames.includes(key.toLowerCase())) score += 500;
+      if (score > bestScore) {
+        bestScore = score;
+        bestField = key;
+      }
+    }
+
+    if (bestField) console.log(`🔍 Auto-detected text field: "${bestField}"`);
+    return bestField;
+  } catch (e) {
+    return null;
+  }
 }
 
 function parseJSON(content, textField) {
-  console.log('📘 Parsing JSON...');
   try {
     const data = JSON.parse(content);
     const items = Array.isArray(data) ? data : [data];
-
     return items.filter(item => item && item[textField]).map(item => ({
       text: String(item[textField]),
       metadata: { ...item }
@@ -4484,10 +4593,8 @@ function parseJSON(content, textField) {
 }
 
 function parseJSONL(content, textField) {
-  console.log('📗 Parsing JSONL...');
   const lines = content.trim().split('\n').filter(line => line.length > 0);
   const items = [];
-
   for (let i = 0; i < lines.length; i++) {
     try {
       const item = JSON.parse(lines[i]);
@@ -4497,111 +4604,70 @@ function parseJSONL(content, textField) {
           metadata: { ...item, lineNumber: i + 1 }
         });
       }
-    } catch (err) {
-      console.warn(`⚠️ Skipping line ${i + 1}: ${err.message}`);
-    }
+    } catch (err) { /* skip malformed lines */ }
   }
-
   return items;
 }
 
 async function indexCustomData(items, collectionName, textField, filename) {
-  console.log(`🔍 Indexing ${items.length} items into collection "${collectionName}"...`);
-
-  const progressBar = document.getElementById('data-progress-bar');
+  // Legacy function — kept for backwards compatibility
   const embedModel = embedSelect.value;
-
+  const progressBar = document.getElementById('data-progress-bar');
   vectorStore.addCollection(collectionName);
-
   for (let i = 0; i < items.length; i++) {
+    if (progressBar) progressBar.style.width = `${((i+1)/items.length)*100}%`;
     try {
-      // Show progress
-      const progress = ((i + 1) / items.length) * 100;
-      progressBar.style.width = `${progress}%`;
-
-      // Embed the text
       let embedding = [];
-      if (embedModel !== '__none__') {
-        embedding = await ollamaEmbed(items[i].text, embedModel);
-      }
+      if (embedModel !== '__none__') embedding = await ollamaEmbed(items[i].text, embedModel);
+      vectorStore.addChunk(collectionName, items[i].text, embedding, { ...items[i].metadata, file: filename, customData: true });
+    } catch (e) {
+      vectorStore.addChunk(collectionName, items[i].text, [], { ...items[i].metadata, file: filename, customData: true });
+    }
+    if (i % 10 === 0) await new Promise(r => setTimeout(r, 50));
+  }
+  if (progressBar) progressBar.style.width = '100%';
+}
 
-      // Store in vector store
-      vectorStore.addChunk(
-        collectionName,
-        items[i].text,
-        embedding,
-        {
-          ...items[i].metadata,
-          file: filename,
-          chunkIndex: i,
-          totalChunks: items.length,
-          customData: true
-        }
-      );
+function clearCustomData() {
+  const confirmed = confirm('Delete all custom data? This cannot be undone.');
+  if (!confirmed) return;
 
-      // Small delay to avoid overwhelming the system
-      if (i % 10 === 0) await new Promise(resolve => setTimeout(resolve, 100));
-
-    } catch (err) {
-      console.warn(`⚠️ Error embedding item ${i + 1}:`, err);
+  const collections = Object.keys(vectorStore.collections);
+  for (const colName of collections) {
+    const col = vectorStore.collections[colName];
+    if (col && col.metadata && col.metadata.some(m => m.customData)) {
+      delete vectorStore.collections[colName];
     }
   }
 
-  progressBar.style.width = '100%';
-  console.log(`✅ Indexing complete`);
+  dataFileQueue = [];
+  totalItemsLoaded = 0;
+  totalFilesLoaded = 0;
+
+  const queueDiv = document.getElementById('data-file-queue');
+  const statsDiv = document.getElementById('data-stats');
+  const progressArea = document.getElementById('data-progress-area');
+  const fileInput = document.getElementById('data-file-input');
+
+  if (queueDiv) queueDiv.style.display = 'none';
+  if (statsDiv) statsDiv.style.display = 'none';
+  if (progressArea) progressArea.style.display = 'none';
+  if (fileInput) fileInput.value = '';
+
+  updateCollectionDropdown();
+  updateStoreUI();
+  console.log('✅ Custom data cleared');
 }
 
 function updateCollectionDropdown() {
-  console.log('🔄 Updating collection dropdowns...');
-
-  // Update RAG conversation dropdown
   const ragCollectionSelect = document.getElementById('rag-collection');
   if (ragCollectionSelect) {
     const collections = Object.keys(vectorStore.collections);
     const existingValue = ragCollectionSelect.value;
-
     ragCollectionSelect.innerHTML = '<option value="__all__">All Collections</option>' +
       collections.map(col => `<option value="${col}">${col}</option>`).join('');
-
-    if (collections.includes(existingValue)) {
-      ragCollectionSelect.value = existingValue;
-    }
+    if (collections.includes(existingValue)) ragCollectionSelect.value = existingValue;
   }
-
-  console.log('✅ Dropdowns updated');
-}
-
-function clearCustomData() {
-  console.log('🗑️ Clearing custom data...');
-
-  const confirmed = confirm('⚠️ Delete all custom data? This cannot be undone.');
-  if (!confirmed) return;
-
-  // Find and remove all custom collections
-  const collections = Object.keys(vectorStore.collections);
-  let removed = 0;
-
-  for (const colName of collections) {
-    const col = vectorStore.collections[colName];
-    // Check if any chunks in this collection are custom data
-    if (col.metadata.some(m => m.customData)) {
-      delete vectorStore.collections[colName];
-      removed++;
-    }
-  }
-
-  // Reset UI
-  customDataFile = null;
-  customDataContent = [];
-  document.getElementById('data-preview').style.display = 'none';
-  document.getElementById('data-stats').style.display = 'none';
-  document.getElementById('data-file-input').value = '';
-
-  // Update dropdowns
-  updateCollectionDropdown();
-
-  alert(`✅ Removed ${removed} custom data collection(s)`);
-  console.log('✅ Custom data cleared');
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -4943,7 +5009,7 @@ updateStoreUI();
 // EXPOSE MODULE FUNCTIONS TO GLOBAL SCOPE (for inline onclick handlers)
 // ════════════════════════════════════════════════════════════════════════════
 window.handleDataUpload = handleDataUpload;
-window.loadDataFile = loadDataFile;
+window.loadAllDataFiles = loadAllDataFiles;
 window.clearCustomData = clearCustomData;
 window.clearRAGConversation = clearRAGConversation;
 window.fillRAGInput = fillRAGInput;
