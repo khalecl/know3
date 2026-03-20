@@ -4939,6 +4939,15 @@ setInterval(() => {
 
 updateStoreUI();
 
+// ════════════════════════════════════════════════════════════════════════════
+// EXPOSE MODULE FUNCTIONS TO GLOBAL SCOPE (for inline onclick handlers)
+// ════════════════════════════════════════════════════════════════════════════
+window.handleDataUpload = handleDataUpload;
+window.loadDataFile = loadDataFile;
+window.clearCustomData = clearCustomData;
+window.clearRAGConversation = clearRAGConversation;
+window.fillRAGInput = fillRAGInput;
+
 </script>
 </body>
 </html>
