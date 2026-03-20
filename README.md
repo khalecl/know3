@@ -8,7 +8,7 @@
 
 Created by **[Dr. Khaled Diab](https://github.com/khalecl)** · PhD Electrical Power Engineering
 
-[![Version](https://img.shields.io/badge/version-v3.1-00e5a0?style=for-the-badge)](https://github.com/khalecl/know3)
+[![Version](https://img.shields.io/badge/version-v3.5-00e5a0?style=for-the-badge)](https://github.com/khalecl/know3)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
 [![Ollama](https://img.shields.io/badge/Powered_by-Ollama-white?style=for-the-badge)](https://ollama.com)
 [![GitHub Pages](https://img.shields.io/badge/Live_Demo-GitHub_Pages-purple?style=for-the-badge)](https://khalecl.github.io/know3/)
@@ -27,7 +27,19 @@ Upload your PDFs, Word documents, eBooks, or text files, and know3 uses a locall
 
 **No cloud APIs. No subscriptions. No data ever leaves your machine.**
 
-know3 also includes a full **RAG (Retrieval-Augmented Generation)** system — have multi-turn conversations with your documents, with source citations and adjustable parameters.
+know3 also includes a full **RAG (Retrieval-Augmented Generation)** system — have multi-turn streaming conversations with your documents, with source citations and adjustable parameters.
+
+---
+
+## What's New in v3.5
+
+- 🎨 **Theme System** — 6 preset color themes (Emerald, Ocean, Sunset, Cyber Pink, Royal Gold, Monochrome) plus a custom accent color picker. Your entire UI adapts from a single color choice, saved across sessions.
+- 💬 **Streaming RAG Chat** — Responses now stream token-by-token as the LLM generates them, with a typing indicator, ChatGPT-style message bubbles, copy buttons, and suggested prompts.
+- 🧠 **Animated Neural Network Background** — Multi-layered canvas visualization with 3 node layers that reacts to your activity (color-shifts during generation, embedding, and RAG queries).
+- 🚀 **Splash Screen** — Branded loading screen while Ollama connects.
+- 📖 **7-Step Interactive Tutorial** — Auto-shown on first visit, covering Ollama setup through export.
+- 👤 **Author Branding** — About modal with creator credentials, GitHub links, and MIT license badge.
+- 📊 **Visitor Analytics** — Expandable footer with hit counter, live online count, and country flags.
 
 ---
 
@@ -46,8 +58,8 @@ Your Documents          Ollama (Local AI)         Training Data
                               ▼
                        ┌──────────────┐
                        │  RAG Chat    │
-                       │  Ask your    │
-                       │  documents   │
+                       │  Stream +    │
+                       │  Cite        │
                        └──────────────┘
 ```
 
@@ -59,7 +71,7 @@ Your Documents          Ollama (Local AI)         Training Data
 
 3. **Export** — Download your training data in 5 formats ready for fine-tuning any LLM.
 
-4. **Chat (RAG)** — Have multi-turn conversations with your documents. know3 retrieves the most relevant chunks and generates AI-powered answers with source citations.
+4. **Chat (RAG)** — Have streaming, multi-turn conversations with your documents. know3 retrieves the most relevant chunks and generates AI-powered answers with source citations — tokens appear as they're generated.
 
 ---
 
@@ -74,7 +86,7 @@ Download and install Ollama from [ollama.com](https://ollama.com/download). It i
 You will need a generation model for training data and an embedding model for RAG functionality:
 
 ```bash
-ollama pull llama3.2:3b          # Recommended Generation model
+ollama pull llama3.2:3b          # Recommended generation model
 ollama pull qwen2.5:1.5b         # Best for low-resource/CPU-only systems
 ollama pull nomic-embed-text     # Required for search/RAG
 ```
@@ -99,9 +111,11 @@ Visit [khalecl.github.io/know3](https://khalecl.github.io/know3). The status ind
 
 - **Document Ingestion** — Supports PDF, DOCX, EPUB, and TXT files
 - **Data Generation** — Generates training pairs for fine-tuning LLaMA, Mistral, or Qwen models
-- **Local RAG Chat** — Multi-turn conversations with source citations and adjustable parameters
-- **Domain Presets** — Optimized prompts for Generic, Coding, Scientific, Legal, Business, and Research content
+- **Streaming RAG Chat** — Multi-turn conversations with real-time token streaming, source citations, and suggested prompts
+- **Domain Presets** — Optimized prompts for Generic, Coding, Scientific, Legal, Business, Literature, and Research content
 - **Flexible Export** — Supports JSONL, JSON, Alpaca, ShareGPT, and CSV formats
+- **Theme Customization** — 6 preset themes plus custom accent color picker
+- **Neural Network Visualization** — Animated background that reacts to processing activity
 - **Privacy First** — 100% browser-based; no data ever leaves your machine
 
 ---
@@ -126,16 +140,19 @@ Visit [khalecl.github.io/know3](https://khalecl.github.io/know3). The status ind
 
 ## 🏗️ Architecture
 
-- **Frontend** — Vanilla HTML5, CSS3, and ES6 JavaScript
-- **Vector Store** — In-memory cosine similarity search
-- **AI Backend** — Local Ollama REST API via `localhost:11434`
-- **Persistence** — Settings and conversation history are saved in browser `localStorage`
+know3 is a **single HTML file** — no build step, no framework, no server beyond Ollama.
+
+- **Frontend** — Vanilla HTML5, CSS3, and ES6 JavaScript (modules)
+- **Vector Store** — In-memory cosine similarity search with browser-side embeddings
+- **AI Backend** — Local Ollama REST API via `localhost:11434` with streaming support
+- **Persistence** — Settings, themes, and conversation history saved in browser `localStorage`
+- **Visualization** — Canvas-based 3-layer neural network with state-driven color transitions
 
 ---
 
 ## ⚖️ License
 
-MIT License. Created by Dr. Khaled Diab.
+MIT License. Created by [Dr. Khaled Diab](https://github.com/khalecl).
 
 ---
 
@@ -143,6 +160,6 @@ MIT License. Created by Dr. Khaled Diab.
 
 **[🚀 Launch know3](https://khalecl.github.io/know3/)** • **[GitHub Issues](https://github.com/khalecl/know3/issues)**
 
-Made with ❤️ for the open-source community
+Made with dedication by Dr. Khaled Diab for the open-source AI community.
 
 </div>
