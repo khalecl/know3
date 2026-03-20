@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>know3 — Local RAG + Training Data Engine</title>
+<title>know3 — Local Edition — RAG + Training Data Engine</title>
+<link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='50' font-size='80' fill='%2300e5a0'>k</text></svg>">
 
 <!-- PDF.js for PDF parsing -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs" type="module"></script>
@@ -62,9 +63,11 @@ body {
   overflow-x: hidden;
   font-size: 15px;
   line-height: 1.55;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
-/* ── ANIMATED NETWORK BACKGROUND ── */
+/* ── ANIMATED NEURAL NETWORK BACKGROUND ── */
 #network-bg {
   position: fixed;
   inset: 0;
@@ -889,6 +892,7 @@ button:focus:not(:focus-visible) { outline: none; }
     <span id="status-text">Connecting to Ollama...</span>
     <span style="margin-left:.5rem; opacity:.5;">|</span>
     <span id="model-info" style="margin-left:.5rem;"></span>
+    <span id="ollama-host-badge" style="margin-left:.5rem; font-size:.7rem; padding:.15rem .5rem; background:var(--surface2); border-radius:100px; border:1px solid var(--border); display:none; font-family:var(--mono);"></span>
   </div>
 
   <!-- TABS -->
@@ -1021,6 +1025,7 @@ button:focus:not(:focus-visible) { outline: none; }
           <option value="coding">Coding & APIs</option>
           <option value="scientific">Scientific & Math</option>
           <option value="literature">Literature & Humanities</option>
+          <option value="literatureRepro">Literature — Voice Reproduction</option>
           <option value="legal">Legal Documents</option>
           <option value="business">Business & Economics</option>
           <option value="researchpaper">Research Papers</option>
@@ -1092,7 +1097,7 @@ OUTPUT: [your output here]</textarea>
     <div style="margin-bottom: 2rem; padding: 1.5rem; background: var(--surface2); border-radius: 10px;">
       <h3 style="margin-bottom: 1rem;">📤 Load Custom Data</h3>
       <p style="margin-bottom: 1rem; color: var(--text2); font-size: 0.9rem;">
-        Upload JSON or JSONL files to create custom data collections for RAG queries. Each file is automatically indexed and searchable.
+        Upload one or more JSON/JSONL files. Each file becomes a searchable collection for RAG queries.
       </p>
 
       <!-- File Upload Area -->
@@ -1101,7 +1106,7 @@ OUTPUT: [your output here]</textarea>
         style="
           border: 2px dashed var(--accent);
           border-radius: 8px;
-          padding: 2rem;
+          padding: 1.5rem;
           text-align: center;
           cursor: pointer;
           background: var(--accent-dim);
@@ -1111,31 +1116,50 @@ OUTPUT: [your output here]</textarea>
         onmouseover="this.style.borderColor='var(--accent2)'; this.style.background='rgba(0,229,160,0.15)';"
         onmouseout="this.style.borderColor='var(--accent)'; this.style.background='var(--accent-dim)';"
       >
-        <div style="font-size: 2rem; margin-bottom: 0.5rem;">📁</div>
+        <div style="font-size: 2rem; margin-bottom: 0.3rem;">📁</div>
         <div style="font-weight: 600; margin-bottom: 0.3rem;">Drop JSON/JSONL files here</div>
-        <div style="font-size: 0.85rem; color: var(--text2);">or click to browse</div>
+        <div style="font-size: 0.85rem; color: var(--text2);">or click to browse · multiple files supported</div>
         <input
           type="file"
           id="data-file-input"
           multiple
           accept=".json,.jsonl,.ndjson"
           style="display: none;"
-          onchange="handleDataUpload(event)"
         >
       </div>
 
-      <!-- Loading/Preview Area -->
-      <div id="data-preview" style="margin-bottom: 1rem; display: none;">
-        <div style="padding: 1rem; background: var(--surface); border-radius: 6px; border-left: 3px solid var(--accent);">
+      <!-- Queued Files List (before loading) -->
+      <div id="data-queue" style="display: none; margin-bottom: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+          <strong style="font-size: 0.85rem; color: var(--text2);">📋 Files to load:</strong>
+          <button
+            style="font-size: 0.75rem; padding: 0.2rem 0.6rem; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; color: var(--text2); cursor: pointer;"
+            id="btn-clear-queue"
+          >Clear Queue</button>
+        </div>
+        <div id="data-queue-list" style="max-height: 180px; overflow-y: auto;"></div>
+      </div>
+
+      <!-- Loading Progress -->
+      <div id="data-loading-progress" style="display: none; margin-bottom: 1rem;">
+        <div style="padding: 0.8rem; background: var(--surface); border-radius: 6px; border-left: 3px solid var(--accent);">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-            <strong id="data-filename">File</strong>
-            <span id="data-status" style="font-size: 0.8rem; color: var(--text2);">Loading...</span>
+            <strong id="data-loading-filename" style="font-size: 0.85rem;">Loading...</strong>
+            <span id="data-loading-status" style="font-size: 0.75rem; color: var(--text2);">0%</span>
           </div>
-          <div id="data-progress" style="height: 4px; background: var(--border); border-radius: 2px; overflow: hidden;">
+          <div style="height: 4px; background: var(--border); border-radius: 2px; overflow: hidden;">
             <div style="height: 100%; background: var(--accent); width: 0%; transition: width 0.3s;" id="data-progress-bar"></div>
           </div>
-          <div id="data-preview-text" style="margin-top: 1rem; font-size: 0.85rem; color: var(--text2); max-height: 200px; overflow-y: auto;"></div>
         </div>
+      </div>
+
+      <!-- Loaded Documents Manager -->
+      <div id="data-loaded-docs" style="display: none; margin-bottom: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+          <strong style="font-size: 0.85rem;">📚 Loaded Documents (<span id="data-doc-count">0</span>)</strong>
+          <span style="font-size: 0.75rem; color: var(--text2);"><span id="data-total-items">0</span> total items indexed</span>
+        </div>
+        <div id="data-doc-list" style="max-height: 250px; overflow-y: auto;"></div>
       </div>
 
       <!-- Collection Settings -->
@@ -1155,7 +1179,7 @@ OUTPUT: [your output here]</textarea>
           <input
             type="text"
             id="data-text-field"
-            placeholder="e.g., text (default)"
+            placeholder="e.g., text (auto-detect)"
             value="text"
             style="width: 100%; padding: 0.5rem; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 0.85rem;"
           >
@@ -1164,19 +1188,23 @@ OUTPUT: [your output here]</textarea>
 
       <!-- Action Buttons -->
       <div style="display: flex; gap: 0.5rem;">
-        <button class="btn btn-primary" id="btn-data-load" style="flex: 1;" onclick="loadDataFile()">
-          📤 Load File
+        <button class="btn btn-primary" id="btn-data-load" style="flex: 1;">
+          📤 Load All Files
         </button>
-        <button class="btn btn-secondary" id="btn-data-clear" style="flex: 1;" onclick="clearCustomData()">
-          🗑️ Clear Custom Data
+        <button class="btn btn-secondary" id="btn-data-clear" style="flex: 1;">
+          🗑️ Clear All Data
         </button>
       </div>
 
-      <!-- Stats -->
-      <div id="data-stats" style="margin-top: 1rem; font-size: 0.8rem; color: var(--text2); display: none;">
+      <!-- Legacy hidden elements for compatibility -->
+      <div id="data-preview" style="display: none;"></div>
+      <div id="data-stats" style="display: none;">
         <div>✅ <strong id="data-items-loaded">0</strong> items loaded</div>
         <div>📚 Collection: <strong id="data-collection-display">-</strong></div>
       </div>
+      <div id="data-preview-text" style="display:none;"></div>
+      <strong id="data-filename" style="display:none;">File</strong>
+      <span id="data-status" style="display:none;">Loading...</span>
     </div>
 
     <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -1367,6 +1395,7 @@ OUTPUT: [your output here]</textarea>
     </div>
 
     <div style="margin-top:.8rem; font-size:.7rem; color:var(--text3);">
+      <span style="background:var(--purple-dim);color:var(--purple);padding:.15rem .5rem;border-radius:100px;font-size:.65rem;font-weight:600;border:1px solid rgba(167,139,250,0.15);margin-right:.4rem;">Local Edition</span>
       Created by <a href="https://github.com/khalecl" target="_blank" style="color:var(--accent); text-decoration:none;">Dr. Khaled Diab</a>
       · <a href="https://github.com/khalecl/know3" target="_blank" style="color:var(--text3); text-decoration:none;">GitHub</a>
       · MIT License
@@ -1731,6 +1760,74 @@ OUTPUT: [your output here]</textarea>
 
     <div class="settings-content">
 
+      <!-- NETWORK / CONNECTION SECTION -->
+      <details class="settings-section" open>
+        <summary style="font-weight: 600; color: var(--accent); cursor: pointer;">🌐 Ollama Connection</summary>
+        <div class="settings-category">
+          <!-- Current connection status -->
+          <div class="setting-item">
+            <label>Status</label>
+            <div id="settings-connection-status" style="padding: 0.5rem 0.7rem; background: var(--surface); border-radius: 6px; font-size: 0.85rem; border-left: 3px solid var(--border);">
+              <span id="settings-conn-indicator">⏳</span>
+              <span id="settings-conn-text">Checking...</span>
+              <div style="font-size: 0.72rem; color: var(--text3); margin-top: 0.2rem;" id="settings-conn-url"></div>
+            </div>
+          </div>
+
+          <!-- Manual IP input -->
+          <div class="setting-item">
+            <label>Ollama Host IP</label>
+            <div style="display: flex; gap: 0.4rem;">
+              <input type="text" id="settings-ollama-ip"
+                placeholder="e.g., 192.168.1.100 or localhost"
+                style="flex: 1; padding: 0.45rem 0.6rem; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 0.85rem; font-family: var(--mono);"
+              >
+              <button class="btn btn-primary" id="btn-manual-connect" style="padding: 0.45rem 0.8rem; font-size: 0.8rem; white-space: nowrap;">
+                Connect
+              </button>
+            </div>
+            <div class="hint">Enter IP of machine running Ollama (port 11434 is automatic)</div>
+          </div>
+
+          <!-- Subnet range for scanning -->
+          <div class="setting-item">
+            <label>Scan Subnets</label>
+            <input type="text" id="settings-scan-subnets"
+              placeholder="192.168.1, 192.168.0, 10.0.0"
+              style="width: 100%; padding: 0.45rem 0.6rem; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 0.85rem; font-family: var(--mono);"
+            >
+            <div class="hint">Comma-separated subnet prefixes to scan (e.g., 192.168.1, 10.0.0)</div>
+          </div>
+
+          <!-- Scan controls -->
+          <div class="setting-item">
+            <div style="display: flex; gap: 0.4rem;">
+              <button class="btn btn-secondary" id="btn-scan-network" style="flex: 1; font-size: 0.82rem;">
+                🔍 Auto-Scan Network
+              </button>
+              <button class="btn btn-secondary" id="btn-stop-scan" style="flex: 0; padding: 0.45rem 0.8rem; font-size: 0.82rem; display: none;">
+                ⏹ Stop
+              </button>
+            </div>
+            <!-- Scan progress -->
+            <div style="margin-top: 0.5rem;">
+              <div id="scan-status" style="font-size: 0.78rem; color: var(--text2); min-height: 1.2em;"></div>
+              <div style="height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; margin-top: 0.3rem;">
+                <div id="scan-progress-bar" style="height: 100%; background: var(--accent); width: 0%; transition: width 0.3s; display: none;"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Reset to localhost -->
+          <div class="setting-item">
+            <button class="btn btn-secondary" id="btn-reset-ollama" style="width: 100%; font-size: 0.82rem; opacity: 0.7;">
+              ↩️ Reset to localhost
+            </button>
+            <div class="hint">Reset connection to localhost:11434</div>
+          </div>
+        </div>
+      </details>
+
       <!-- MODELS SECTION -->
       <details class="settings-section" open>
         <summary style="font-weight: 600; color: var(--accent); cursor: pointer;">🤖 Models</summary>
@@ -1792,6 +1889,7 @@ OUTPUT: [your output here]</textarea>
               <option value="coding">Coding & APIs</option>
               <option value="scientific">Scientific & Math</option>
               <option value="literature">Literature & Humanities</option>
+              <option value="literatureRepro">Literature — Voice Reproduction</option>
               <option value="legal">Legal Documents</option>
               <option value="business">Business & Economics</option>
               <option value="researchpaper">Research Papers</option>
@@ -1839,7 +1937,6 @@ OUTPUT: [your output here]</textarea>
     </div>
   </div>
 </div>
-
 <!-- ═══════════════════════════════════════════════════════════════════ -->
 <!-- ANIMATED NEURAL NETWORK BACKGROUND -->
 <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -2093,65 +2190,53 @@ let tutorialStep = 1;
 
 // ── Tutorial Functions ──
 function openTutorial() {
-  console.log('🎓 Opening tutorial...');
   const modal = document.getElementById('tutorial-modal');
   if (modal) {
     modal.style.display = 'flex';
     modal.style.visibility = 'visible';
     tutorialStep = 1;
     showTutorialStep(1);
-    console.log('✅ Tutorial opened');
   } else {
     console.error('❌ Tutorial modal not found!');
   }
 }
 
 function closeTutorial() {
-  console.log('🚪 Closing tutorial...');
   const modal = document.getElementById('tutorial-modal');
   if (modal) {
     modal.style.display = 'none';
     localStorage.setItem('know3_tutorial_seen', 'true');
-    console.log('✅ Tutorial closed');
   }
 }
 
 function skipTutorial() {
-  console.log('⏭️ Skipping tutorial...');
   localStorage.setItem('know3_tutorial_seen', 'true');
   closeTutorial();
 }
 
 function nextTutorialStep() {
-  console.log(`⏭️ Next step (from ${tutorialStep} to ${tutorialStep + 1})`);
   if (tutorialStep < 7) {
     tutorialStep++;
     showTutorialStep(tutorialStep);
-    console.log(`✅ Now on step ${tutorialStep}`);
   }
 }
 
 function prevTutorialStep() {
-  console.log(`⏮️ Previous step (from ${tutorialStep} to ${tutorialStep - 1})`);
   if (tutorialStep > 1) {
     tutorialStep--;
     showTutorialStep(tutorialStep);
-    console.log(`✅ Now on step ${tutorialStep}`);
   }
 }
 
 function finishTutorial() {
-  console.log('✅ Finishing tutorial...');
   skipTutorial();
 }
 
 function showTutorialStep(step) {
-  console.log(`📍 Showing step ${step}`);
   document.querySelectorAll('.tutorial-step').forEach(s => s.style.display = 'none');
   const stepEl = document.querySelector(`.tutorial-step[data-step="${step}"]`);
   if (stepEl) {
     stepEl.style.display = 'block';
-    console.log(`✅ Step ${step} displayed`);
   } else {
     console.warn(`⚠️ Step ${step} element not found!`);
   }
@@ -2163,17 +2248,14 @@ function showTutorialStep(step) {
 
 // ── Help Functions ──
 function openHelp() {
-  console.log('❓ Opening help...');
   document.getElementById('help-modal').style.display = 'flex';
 }
 
 function closeHelp() {
-  console.log('❓ Closing help...');
   document.getElementById('help-modal').style.display = 'none';
 }
 
 function switchHelpSection(section) {
-  console.log(`📋 Switching to help section: ${section}`);
   // Hide all sections
   document.querySelectorAll('.help-section').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.help-tab').forEach(t => t.classList.remove('active'));
@@ -2189,74 +2271,58 @@ function switchHelpSection(section) {
 
 // ── About Functions ──
 function openAbout() {
-  console.log('ℹ️ Opening about...');
   document.getElementById('about-modal').style.display = 'flex';
 }
 
 function closeAbout() {
-  console.log('ℹ️ Closing about...');
   document.getElementById('about-modal').style.display = 'none';
 }
 
 // ── Settings Drawer Functions ──
 function openSettings() {
-  console.log('⚙️ Opening settings...');
   const drawer = document.getElementById('settings-drawer');
   if (drawer) {
     drawer.classList.add('open');
     syncSettingsFromDOM();  // Populate drawer with current DOM values
-    console.log('✅ Settings opened');
   } else {
     console.error('❌ Settings drawer not found!');
   }
 }
 
 function closeSettings() {
-  console.log('⚙️ Closing settings...');
   const drawer = document.getElementById('settings-drawer');
   if (drawer) {
     drawer.classList.remove('open');
-    console.log('✅ Settings closed (changes discarded)');
   }
 }
 
 function syncSettingsFromDOM() {
-  // Read current DOM values and populate drawer
-  console.log('📍 Syncing settings from DOM...');
 
-  // Models
-  const modelSelect = document.getElementById('modelSelect');
-  const embedSelect = document.getElementById('embedSelect');
+  const modelSelect = document.getElementById('model-select');
+  const embedSelect = document.getElementById('embed-model-select');
   const settingsModelSelect = document.getElementById('settings-model-select');
   const settingsEmbedSelect = document.getElementById('settings-embed-select');
 
   if (modelSelect && settingsModelSelect) {
+    settingsModelSelect.innerHTML = modelSelect.innerHTML;
     settingsModelSelect.value = modelSelect.value;
   }
   if (embedSelect && settingsEmbedSelect) {
+    settingsEmbedSelect.innerHTML = embedSelect.innerHTML;
     settingsEmbedSelect.value = embedSelect.value;
   }
 
-  // Generation settings
-  const domainSelect = document.getElementById('domainSelect');
-  const pairsSelect = document.getElementById('pairsPerChunkSelect');
+  const domainSelect = document.getElementById('domain-select');
+  const pairsSelect = document.getElementById('pairs-per-chunk');
   const settingsDomain = document.getElementById('settings-domain');
   const settingsPairs = document.getElementById('settings-pairs-per-chunk');
 
-  if (domainSelect && settingsDomain) {
-    settingsDomain.value = domainSelect.value;
-  }
-  if (pairsSelect && settingsPairs) {
-    settingsPairs.value = pairsSelect.value;
-  }
+  if (domainSelect && settingsDomain) settingsDomain.value = domainSelect.value;
+  if (pairsSelect && settingsPairs) settingsPairs.value = pairsSelect.value;
 
-  // Advanced settings
-  const chunkSizeInput = document.getElementById('chunkSizeInput');
+  const chunkSizeInput = document.getElementById('chunk-size');
   const settingsChunkSize = document.getElementById('settings-chunk-size');
-
-  if (chunkSizeInput && settingsChunkSize) {
-    settingsChunkSize.value = chunkSizeInput.value;
-  }
+  if (chunkSizeInput && settingsChunkSize) settingsChunkSize.value = chunkSizeInput.value;
 
   // RAG settings from localStorage
   const ragSettings = JSON.parse(localStorage.getItem('ragSettings') || '{}');
@@ -2272,15 +2338,12 @@ function syncSettingsFromDOM() {
   if (settingsTopK) settingsTopK.value = ragSettings.topK || 5;
   if (settingsSources) settingsSources.value = ragSettings.includeSources !== false ? 'yes' : 'no';
 
-  console.log('✅ Settings synced from DOM');
 }
 
 function applySettings() {
-  console.log('💾 Applying settings...');
 
-  // Get all values from drawer
-  const modelSelect = document.getElementById('modelSelect');
-  const embedSelect = document.getElementById('embedSelect');
+  const modelSelect = document.getElementById('model-select');
+  const embedSelect = document.getElementById('embed-model-select');
   const settingsModelSelect = document.getElementById('settings-model-select');
   const settingsEmbedSelect = document.getElementById('settings-embed-select');
 
@@ -2291,9 +2354,8 @@ function applySettings() {
     embedSelect.value = settingsEmbedSelect.value;
   }
 
-  // Generation settings
-  const domainSelect = document.getElementById('domainSelect');
-  const pairsSelect = document.getElementById('pairsPerChunkSelect');
+  const domainSelect = document.getElementById('domain-select');
+  const pairsSelect = document.getElementById('pairs-per-chunk');
   const settingsDomain = document.getElementById('settings-domain');
   const settingsPairs = document.getElementById('settings-pairs-per-chunk');
 
@@ -2304,8 +2366,7 @@ function applySettings() {
     pairsSelect.value = settingsPairs.value;
   }
 
-  // Advanced settings
-  const chunkSizeInput = document.getElementById('chunkSizeInput');
+  const chunkSizeInput = document.getElementById('chunk-size');
   const settingsChunkSize = document.getElementById('settings-chunk-size');
 
   if (chunkSizeInput && settingsChunkSize && settingsChunkSize.value) {
@@ -2322,12 +2383,10 @@ function applySettings() {
 
   localStorage.setItem('ragSettings', JSON.stringify(ragSettings));
 
-  console.log('✅ Settings applied:', ragSettings);
   closeSettings();
 }
 
 function loadSettingsFromStorage() {
-  console.log('📂 Loading settings from storage...');
   const ragSettings = JSON.parse(localStorage.getItem('ragSettings') || '{}');
 
   const settingsRagMode = document.getElementById('settings-rag-mode');
@@ -2342,18 +2401,15 @@ function loadSettingsFromStorage() {
   if (settingsTopK) settingsTopK.value = ragSettings.topK || 5;
   if (settingsSources) settingsSources.value = ragSettings.includeSources !== false ? 'yes' : 'no';
 
-  console.log('✅ Settings loaded:', ragSettings);
 }
 
 function clearAllData() {
-  console.log('🗑️ Clearing all data...');
   const confirmed = confirm('⚠️ Are you sure? This will delete ALL chunks, embeddings, and training pairs. This cannot be undone.');
 
   if (confirmed) {
-    // Clear vector store
-    if (typeof vectorStore !== 'undefined') {
-      vectorStore.collections = {};
-      console.log('✅ Vector store cleared');
+    // Clear vector store (module-scoped, exposed via window)
+    if (window.vectorStore) {
+      window.vectorStore.collections = {};
     }
 
     // Clear UI elements
@@ -2372,9 +2428,7 @@ function clearAllData() {
     if (pairsCount) pairsCount.textContent = '0';
 
     alert('✅ All data cleared successfully!');
-    console.log('✅ All data cleared');
   } else {
-    console.log('❌ Clear cancelled');
   }
 }
 
@@ -2427,12 +2481,22 @@ document.addEventListener('DOMContentLoaded', () => {
   // Load saved settings from localStorage
   loadSettingsFromStorage();
 
-  // Initialize RAG conversation
+  // Initialize RAG conversation (module-scoped, accessed via window)
   setTimeout(() => {
-    if (typeof initRAGConversation === 'function') {
-      initRAGConversation();
+    if (typeof window.initRAGConversation === 'function') {
+      try {
+        window.initRAGConversation();
+      } catch (e) {
+        console.error('❌ RAG initialization error:', e);
+      }
+    } else {
+      setTimeout(() => {
+        if (typeof window.initRAGConversation === 'function') {
+          window.initRAGConversation();
+        }
+      }, 1000);
     }
-  }, 500);
+  }, 800);
 
   // Initialize data loading drag-drop
   const uploadZone = document.getElementById('data-upload-zone');
@@ -2456,16 +2520,17 @@ document.addEventListener('DOMContentLoaded', () => {
       const dt = e.dataTransfer;
       const files = dt.files;
       fileInput.files = files;
-      handleDataUpload({ target: { files: files } });
+      if (typeof window.handleDataUpload === 'function') {
+        window.handleDataUpload({ target: { files: files } });
+      }
     }, false);
 
-    console.log('✅ Data upload initialized');
   }
 
   // ── Footer Hit Counter ──
   initHitCounter();
 
-  // ── GitHub Hosting Check (soft) ──
+  // ── GitHub Hosting Check ──
   checkHosting();
 });
 
@@ -2486,19 +2551,10 @@ function initHitCounter() {
   const NAMESPACE = 'know3-khalecl';
   const KEY = 'visits';
 
-  // Increment visit count
-  fetch(`https://api.countapi.xyz/hit/${NAMESPACE}/${KEY}`)
-    .then(r => r.json())
-    .then(data => {
-      const count = data.value || 0;
-      updateCounterUI(count);
-    })
-    .catch(() => {
-      // Fallback: use localStorage counter
-      let localCount = parseInt(localStorage.getItem('know3_visit_count') || '0') + 1;
-      localStorage.setItem('know3_visit_count', String(localCount));
-      updateCounterUI(localCount);
-    });
+  // Use localStorage-based visit counter (countapi.xyz is defunct)
+  let localCount = parseInt(localStorage.getItem('know3_visit_count') || '0') + 1;
+  localStorage.setItem('know3_visit_count', String(localCount));
+  updateCounterUI(localCount);
 
   // Simulate online users (based on time-of-day pattern + random)
   const hour = new Date().getHours();
@@ -2509,12 +2565,12 @@ function initHitCounter() {
   if (onlineEl) onlineEl.textContent = online;
   if (onlineDetail) onlineDetail.textContent = online;
 
-  // Get visitor country flags using free IP geolocation
-  fetch('https://ipapi.co/json/')
+  // Get visitor country flags using CORS-friendly IP geolocation
+  fetch('https://freeipapi.com/api/json')
     .then(r => r.json())
     .then(data => {
-      const flag = countryToFlag(data.country_code || 'US');
-      const country = data.country_name || 'Unknown';
+      const flag = countryToFlag(data.countryCode || 'US');
+      const country = data.countryName || 'Unknown';
 
       // Store recent visitors in localStorage
       let recentVisitors = JSON.parse(localStorage.getItem('know3_visitors') || '[]');
@@ -2582,24 +2638,21 @@ function checkHosting() {
   const hostname = window.location.hostname;
   const protocol = window.location.protocol;
 
-  // Allowed origins: GitHub Pages only (and localhost for dev)
+  // Allowed origins: GitHub Pages + localhost for dev
   const isGitHub = hostname === 'khalecl.github.io';
   const isLocalDev = hostname === 'localhost' || hostname === '127.0.0.1' || hostname.endsWith('.localhost');
   const isFile = protocol === 'file:';
 
   if (isGitHub || isLocalDev) {
-    // Fully allowed — no notice
-    return;
+    return; // ✅ Fully allowed
   }
 
   if (isFile) {
-    // Opened as a downloaded file — block with redirect
-    showHostingBlock('file');
+    showHostingBlock('file'); // 🔒 Downloaded file
     return;
   }
 
-  // Hosted on an unauthorized domain — block
-  showHostingBlock('unofficial');
+  showHostingBlock('unofficial'); // ⚠️ Unauthorized domain
 }
 
 function showHostingBlock(type) {
@@ -2622,7 +2675,7 @@ function showHostingBlock(type) {
           This application is designed to run from its official hosted location.<br>
           Your documents still stay 100% local — only the UI loads from GitHub.
         </p>
-        <a href="https://khalecl.github.io/know3/" style="display:inline-block;padding:.7rem 2rem;background:linear-gradient(135deg,#00e5a0,#00c78a);color:#050810;border-radius:8px;text-decoration:none;font-weight:700;font-size:.9rem;box-shadow:0 4px 20px rgba(0,229,160,0.3);transition:transform .2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
+        <a href="https://khalecl.github.io/know3/index.html" style="display:inline-block;padding:.7rem 2rem;background:linear-gradient(135deg,#00e5a0,#00c78a);color:#050810;border-radius:8px;text-decoration:none;font-weight:700;font-size:.9rem;box-shadow:0 4px 20px rgba(0,229,160,0.3);transition:transform .2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
           🚀 Open Official know3
         </a>
         <p style="color:#505878;font-size:.75rem;margin-top:1.2rem;">
@@ -2639,7 +2692,7 @@ function showHostingBlock(type) {
           This appears to be an unauthorized copy of know3.<br>
           Please use the official version for security, updates, and full functionality.
         </p>
-        <a href="https://khalecl.github.io/know3/" style="display:inline-block;padding:.7rem 2rem;background:linear-gradient(135deg,#00e5a0,#00c78a);color:#050810;border-radius:8px;text-decoration:none;font-weight:700;font-size:.9rem;box-shadow:0 4px 20px rgba(0,229,160,0.3);transition:transform .2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
+        <a href="https://khalecl.github.io/know3/index.html" style="display:inline-block;padding:.7rem 2rem;background:linear-gradient(135deg,#00e5a0,#00c78a);color:#050810;border-radius:8px;text-decoration:none;font-weight:700;font-size:.9rem;box-shadow:0 4px 20px rgba(0,229,160,0.3);transition:transform .2s;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
           🚀 Go to Official know3
         </a>
         <p style="color:#505878;font-size:.75rem;margin-top:1.2rem;">
@@ -2671,7 +2724,168 @@ try {
 // ════════════════════════════════════════════════════════════════════════════
 // STATE
 // ════════════════════════════════════════════════════════════════════════════
-const OLLAMA = 'http://localhost:11434';
+let OLLAMA = localStorage.getItem('know3_ollama_url') || 'http://localhost:11434';
+const OLLAMA_PORT = 11434;
+
+// ════════════════════════════════════════════════════════════════════════════
+// NETWORK DISCOVERY — Find Ollama on LAN
+// ════════════════════════════════════════════════════════════════════════════
+const networkDiscovery = {
+  scanning: false,
+  found: null,
+  scannedCount: 0,
+  totalToScan: 0,
+  abortController: null,
+
+  // Common private subnets
+  defaultSubnets: ['192.168.1', '192.168.0', '192.168.2', '10.0.0', '10.0.1', '172.16.0'],
+
+  // Try a single host — returns URL if Ollama responds, null otherwise
+  async probeHost(ip, timeout = 2000) {
+    const url = `http://${ip}:${OLLAMA_PORT}`;
+    try {
+      const r = await fetch(`${url}/api/tags`, {
+        signal: AbortSignal.timeout(timeout),
+        mode: 'cors'
+      });
+      if (r.ok) {
+        const data = await r.json();
+        if (data.models) return { url, ip, models: data.models.length };
+      }
+    } catch(e) { /* expected for non-Ollama hosts */ }
+    return null;
+  },
+
+  // Scan a subnet in parallel batches
+  async scanSubnet(subnet, startIP = 1, endIP = 254, batchSize = 15) {
+    const results = [];
+    for (let i = startIP; i <= endIP; i += batchSize) {
+      if (this.abortController?.signal.aborted) break;
+      const batch = [];
+      for (let j = i; j < Math.min(i + batchSize, endIP + 1); j++) {
+        batch.push(this.probeHost(`${subnet}.${j}`, 1500));
+      }
+      const batchResults = await Promise.all(batch);
+      this.scannedCount += batch.length;
+      updateScanProgress();
+      for (const r of batchResults) {
+        if (r) results.push(r);
+      }
+      // If we found one, can optionally stop early
+      if (results.length > 0) return results;
+    }
+    return results;
+  },
+
+  // Full discovery: localhost → saved → common subnets → custom
+  async discover(customSubnets = []) {
+    if (this.scanning) return null;
+    this.scanning = true;
+    this.found = null;
+    this.scannedCount = 0;
+    this.abortController = new AbortController();
+
+    updateScanUI('starting');
+
+    // Phase 1: Try localhost (instant)
+    updateScanUI('phase', 'Trying localhost...');
+    let result = await this.probeHost('localhost', 2000);
+    if (result) { this.scanning = false; return this.onFound(result); }
+    result = await this.probeHost('127.0.0.1', 2000);
+    if (result) { this.scanning = false; return this.onFound(result); }
+
+    // Phase 2: Try saved IP from localStorage
+    const savedURL = localStorage.getItem('know3_ollama_url');
+    if (savedURL && savedURL !== 'http://localhost:11434') {
+      const savedIP = savedURL.replace('http://','').replace(`:${OLLAMA_PORT}`,'');
+      updateScanUI('phase', `Trying saved: ${savedIP}...`);
+      result = await this.probeHost(savedIP, 2000);
+      if (result) { this.scanning = false; return this.onFound(result); }
+    }
+
+    // Phase 3: Scan subnets
+    const subnets = [...new Set([...customSubnets, ...this.defaultSubnets])];
+    this.totalToScan = subnets.length * 254;
+    this.scannedCount = 0;
+
+    for (const subnet of subnets) {
+      if (this.abortController?.signal.aborted) break;
+      updateScanUI('phase', `Scanning ${subnet}.x ...`);
+      const found = await this.scanSubnet(subnet);
+      if (found.length > 0) {
+        this.scanning = false;
+        return this.onFound(found[0]);
+      }
+    }
+
+    this.scanning = false;
+    updateScanUI('notfound');
+    return null;
+  },
+
+  onFound(result) {
+    this.found = result;
+    OLLAMA = result.url;
+    localStorage.setItem('know3_ollama_url', result.url);
+    updateScanUI('found', result);
+    return result;
+  },
+
+  stopScan() {
+    if (this.abortController) this.abortController.abort();
+    this.scanning = false;
+    updateScanUI('stopped');
+  },
+
+  // Manual connect
+  async connectManual(ip) {
+    updateScanUI('phase', `Connecting to ${ip}...`);
+    const result = await this.probeHost(ip, 3000);
+    if (result) {
+      return this.onFound(result);
+    }
+    updateScanUI('notfound');
+    return null;
+  }
+};
+
+// ── Scan UI helpers ──
+function updateScanUI(state, data) {
+  const scanStatus = document.getElementById('scan-status');
+  const scanProgress = document.getElementById('scan-progress-bar');
+  const statusTextEl = document.getElementById('status-text');
+  const statusDotEl = document.getElementById('status-dot');
+
+  if (state === 'starting') {
+    if (scanStatus) scanStatus.textContent = 'Starting discovery...';
+    if (scanProgress) { scanProgress.style.display = 'block'; scanProgress.style.width = '0%'; }
+    if (statusTextEl) statusTextEl.textContent = '🔍 Scanning for Ollama...';
+    if (statusDotEl) statusDotEl.className = 'status-dot';
+  } else if (state === 'phase') {
+    if (scanStatus) scanStatus.textContent = data;
+    if (statusTextEl) statusTextEl.textContent = `🔍 ${data}`;
+  } else if (state === 'found') {
+    if (scanStatus) scanStatus.innerHTML = `<span style="color:var(--accent);">✅ Found at ${data.ip} (${data.models} models)</span>`;
+    if (scanProgress) scanProgress.style.display = 'none';
+    // Update the manual IP input to show found IP
+    const ipInput = document.getElementById('settings-ollama-ip');
+    if (ipInput) ipInput.value = data.ip;
+  } else if (state === 'notfound') {
+    if (scanStatus) scanStatus.innerHTML = '<span style="color:var(--warn);">⚠️ Ollama not found on network</span>';
+    if (scanProgress) scanProgress.style.display = 'none';
+  } else if (state === 'stopped') {
+    if (scanStatus) scanStatus.textContent = 'Scan stopped';
+    if (scanProgress) scanProgress.style.display = 'none';
+  }
+}
+
+function updateScanProgress() {
+  const bar = document.getElementById('scan-progress-bar');
+  if (bar && networkDiscovery.totalToScan > 0) {
+    const pct = Math.min((networkDiscovery.scannedCount / networkDiscovery.totalToScan) * 100, 100);
+    bar.style.width = `${pct}%`;
+  }
+}
 
 // ── DOMAIN-SPECIFIC PROMPTS ──
 const DOMAIN_PROMPTS = {
@@ -2691,22 +2905,23 @@ Format EXACTLY (repeat for each pair):
 INSTRUCTION: [question or task]
 OUTPUT: [complete answer]`,
 
-  coding: `You are a software engineer training data generator. Given code documentation or technical text, create {N} instruction-output pairs.
+  coding: `You are a systems programming training data generator. Given technical text about programming (especially assembly language, CPU architecture, memory management, or performance optimization), create {N} instruction-output pairs.
 
 Rules:
-- INSTRUCTION types: How to use X? What does Y do? Fix this bug? Explain Z?
-- Include code examples in outputs when relevant
-- Use actual API names, method signatures, parameters
-- Explain WHY not just WHAT
-- Cover both theory and practical usage
-- For APIs: include method names, parameters, return types
-- Show edge cases and common mistakes
-- Instruction: Clear, actionable question about code/APIs
-- Output: Complete explanation with code example if applicable
+- PRESERVE all code exactly as written — register names, mnemonics, labels, comments, indentation
+- When the text contains code examples, ALWAYS include the full code in your output (do not summarize or omit code)
+- INSTRUCTION types: "Explain this code", "What does this code do?", "How does X work at the hardware level?", "Why is approach A faster than B?", "What is the purpose of register/instruction X?", "Write code to accomplish Y"
+- For performance comparisons: include specific timing numbers, cycle counts, percentages from the text
+- For memory/addressing: explain segment:offset, register roles, addressing modes precisely
+- For optimization: explain WHY one approach is faster, referencing CPU pipeline, bus cycles, or memory layout
+- Cover: code behavior, hardware rationale, performance trade-offs, common pitfalls
+- If the text discusses a figure or diagram, describe what it shows
+- Instruction: Specific, technical question (not vague)
+- Output: Complete, detailed explanation preserving ALL code, numbers, and technical terminology
 
 Format EXACTLY (repeat for each pair):
-INSTRUCTION: [specific, actionable question about code/APIs]
-OUTPUT: [complete explanation with code example if applicable]`,
+INSTRUCTION: [specific technical question about the code, architecture, or optimization]
+OUTPUT: [complete explanation with ALL code preserved exactly, performance data included]`,
 
   scientific: `You are a scientific/mathematical training data generator. Given academic or technical text with equations, create {N} pairs.
 
@@ -2755,6 +2970,42 @@ Rules:
 Format EXACTLY (repeat for each pair):
 INSTRUCTION: [specific legal question about interpretation or application]
 OUTPUT: [precise explanation with references]`,
+
+  literatureRepro: `You are training an AI to reproduce the EXACT literary quality of a specific author. Given a passage, create {N} instruction-output pairs that deeply encode the author's writing DNA — their vocabulary, rhythm, sentence architecture, emotional register, and narrative instincts.
+
+Your goal: after fine-tuning on your pairs, the AI should write NEW content that is indistinguishable from the original author.
+
+PAIR TYPE 1 — VOCABULARY & DICTION MAP:
+- INSTRUCTION: "What words and phrases define this author's voice? List their vocabulary patterns."
+- OUTPUT: Extract the author's signature word choices. Group them: emotional words, sensory words, action verbs, adjectives, metaphor patterns, filler/connector words. Note what they AVOID (e.g., "never uses clinical language", "avoids adverbs"). Include the specific words from the passage.
+
+PAIR TYPE 2 — SENTENCE ARCHITECTURE:
+- INSTRUCTION: "Reproduce the sentence structure patterns from this passage in a new paragraph about [different topic]."
+- OUTPUT: Write a NEW paragraph on a different subject that perfectly mirrors the source's sentence patterns — same rhythm of short vs long sentences, same clause nesting style, same punctuation habits (em-dashes, semicolons, fragments), same paragraph flow. The output must READ like the author even though the topic is different.
+
+PAIR TYPE 3 — EMOTIONAL TEXTURE REPRODUCTION:
+- INSTRUCTION: "Write a scene where a character feels [emotion from passage] using the same emotional layering technique as this passage."
+- OUTPUT: Write an original scene that captures how the author builds emotion — do they use body language? Internal monologue? Metaphor? Silence? Dialogue deflection? Replicate the EXACT technique, not just the emotion.
+
+PAIR TYPE 4 — DIALOGUE VOICE CLONING:
+- INSTRUCTION: "Write a dialogue between two characters about [new situation] that sounds exactly like this author's dialogue style."
+- OUTPUT: Original dialogue that replicates the author's dialogue fingerprint — their use of interruption, subtext, dialect markers, said-bookisms, action beats between speech, how characters reveal vs conceal.
+
+PAIR TYPE 5 — NARRATIVE PERSPECTIVE & PACING:
+- INSTRUCTION: "Rewrite [a mundane scenario] using this author's narrative perspective and pacing."
+- OUTPUT: Take something ordinary and render it in the author's EXACT narrative mode — their distance from characters (close/far), their time dilation (which moments stretch, which compress), their attention patterns (what they describe in detail vs skip).
+
+Rules:
+- EVERY output must contain actual WRITING that demonstrates the technique, not just analysis
+- Outputs should be 150-400 words of high-quality prose that could pass as the author's work
+- NEVER summarize plot — always CREATE new content in the author's voice
+- Capture micro-patterns: paragraph length habits, opening sentence patterns, how they transition between scenes, their use of white space and silence
+- Include at least 2-3 specific phrases from the source passage as reference anchors, then show how similar constructions work in new contexts
+- The instruction should specify what aspect of craft to reproduce; the output should BE the reproduction
+
+Format EXACTLY (repeat for each pair):
+INSTRUCTION: [specific writing reproduction task targeting a particular craft element]
+OUTPUT: [original prose that IS the reproduction — written in the author's voice, not about it]`,
 
   business: `You are a business/economics training data generator. Given business books, case studies, or reports, create {N} pairs.
 
@@ -2925,14 +3176,13 @@ async function checkOllama() {
     // Separate LLM models and embedding models
     const llmModels = [];
     const embedModels = [];
-    
+
     for (const m of models) {
       const name = m.name || m.model;
-      // Heuristic: embedding models usually have "embed" in name
       if (name.includes('embed') || name.includes('bge') || name.includes('minilm') || name.includes('gte')) {
         embedModels.push(name);
       }
-      llmModels.push(name); // All models can be LLMs
+      llmModels.push(name);
     }
 
     // Populate LLM select
@@ -2946,19 +3196,60 @@ async function checkOllama() {
         `<option value="${m}">${m}</option>`
       ).join('');
     } else {
-      // If no explicit embed model found, add first available + hint
       embedSelect.innerHTML = `<option value="${llmModels[0]}">${llmModels[0]} (LLM fallback)</option>`;
       embedSelect.innerHTML += `<option value="__none__">⚠ No embed model — pull nomic-embed-text</option>`;
     }
 
+    // Show connected host
+    const host = OLLAMA.replace('http://','').replace(`:${OLLAMA_PORT}`,'');
+    const isLocal = host === 'localhost' || host === '127.0.0.1';
     setStatus('ok', `Ollama connected · ${models.length} model${models.length !== 1 ? 's' : ''}`);
     $('model-info').textContent = models.length + ' models loaded';
+
+    // Show host badge for non-localhost connections
+    const badge = document.getElementById('ollama-host-badge');
+    if (badge) {
+      if (!isLocal) {
+        badge.textContent = `🌐 ${host}`;
+        badge.style.display = 'inline';
+        badge.style.borderColor = 'var(--accent)';
+        badge.style.color = 'var(--accent)';
+      } else {
+        badge.textContent = '💻 local';
+        badge.style.display = 'inline';
+        badge.style.borderColor = 'var(--border)';
+        badge.style.color = 'var(--text3)';
+      }
+    }
+
+    // Update settings panel connection status
+    const connIndicator = document.getElementById('settings-conn-indicator');
+    const connText = document.getElementById('settings-conn-text');
+    const connUrl = document.getElementById('settings-conn-url');
+    if (connIndicator) connIndicator.textContent = '🟢';
+    if (connText) connText.textContent = `Connected (${models.length} models)`;
+    if (connUrl) connUrl.textContent = OLLAMA;
+
+    // Update settings IP input with current host
+    const ipInput = document.getElementById('settings-ollama-ip');
+    if (ipInput && !ipInput.value) ipInput.value = host;
+
     setupGuide.style.display = 'none';
     btnStart.disabled = !currentFileName;
     $('btn-clear-store').disabled = false;
     return true;
   } catch(e) {
-    setStatus('err', 'Ollama not found — see setup below');
+    setStatus('err', 'Ollama not found — scanning network...');
+
+    // Update settings panel
+    const connIndicator = document.getElementById('settings-conn-indicator');
+    const connText = document.getElementById('settings-conn-text');
+    if (connIndicator) connIndicator.textContent = '🔴';
+    if (connText) connText.textContent = 'Not connected';
+
+    const badge = document.getElementById('ollama-host-badge');
+    if (badge) badge.style.display = 'none';
+
     setupGuide.style.display = 'block';
     return false;
   }
@@ -2978,7 +3269,7 @@ async function ollamaGenerate(prompt, model, temperature = 0.7) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model, prompt, stream: false,
-      options: { temperature: temperature, num_predict: 800 },
+      options: { temperature: temperature, num_predict: 1500 },
       keep_alive: '30m'
     }),
     signal: abortCtrl?.signal,
@@ -3082,20 +3373,113 @@ async function parseEPUB(file) {
 function chunkText(text, maxLen) {
   const chunks = [];
   let current = '';
+  const minChunkSize = 100;
 
-  const paragraphs = text.split(/\n\n+/);
+  // Pre-process: protect code blocks by marking them
+  const lines = text.split('\n');
+  const processedBlocks = [];
+  let blockBuffer = '';
+  let inCode = false;
 
-  for (const para of paragraphs) {
-    const cleaned = para.replace(/\s+/g, ' ').trim();
-    if (!cleaned || cleaned.length < 30) continue; // Skip tiny fragments
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
 
-    if (current.length + cleaned.length > maxLen && current.length > 100) {
-      chunks.push(current.trim());
-      current = '';
+    const isCodeLine = (
+      (/^\s{2,}/.test(line) && trimmed.length > 0 && /[;:=\[\]\(\)\{\}]|mov |add |sub |inc |dec |jmp |jnz |jz |loop |push |pop |call |ret |xor |and |or |cmp |lea |int |nop |db |dw |dd |\.text|\.data|#include|#define|function |const |let |var |return |if \(|for \(|while \(|class |def |import |from |->|=>/.test(trimmed)) ||
+      /^[A-Za-z_]\w*:/.test(trimmed) ||
+      /^\s*(mov|add|sub|inc|dec|push|pop|call|ret|jmp|jnz|jz|je|jne|loop|xor|and|or|cmp|lea|int|shl|shr|mul|div|nop)\s/i.test(line)
+    );
+
+    if (isCodeLine && !inCode) {
+      if (blockBuffer.trim()) {
+        processedBlocks.push({ type: 'text', content: blockBuffer });
+        blockBuffer = '';
+      }
+      inCode = true;
+      blockBuffer = line + '\n';
+    } else if (!isCodeLine && inCode) {
+      if (blockBuffer.trim()) {
+        processedBlocks.push({ type: 'code', content: blockBuffer.trimEnd() });
+        blockBuffer = '';
+      }
+      inCode = false;
+      blockBuffer = line + '\n';
+    } else {
+      blockBuffer += line + '\n';
     }
-    current += cleaned + '\n\n';
   }
-  if (current.trim().length > 100) chunks.push(current.trim());
+  if (blockBuffer.trim()) {
+    processedBlocks.push({ type: inCode ? 'code' : 'text', content: blockBuffer.trimEnd() });
+  }
+
+  // Chunk using blocks, preserving code formatting
+  for (const block of processedBlocks) {
+    if (block.type === 'code') {
+      const codeContent = '\n```\n' + block.content + '\n```\n';
+
+      if (current.length + codeContent.length > maxLen && current.length >= minChunkSize) {
+        chunks.push(current.trim());
+        current = '';
+      }
+
+      if (codeContent.length > maxLen && current.length === 0) {
+        chunks.push(codeContent.trim());
+        continue;
+      }
+
+      current += codeContent;
+    } else {
+      const paragraphs = block.content.split(/\n\n+/);
+
+      for (const para of paragraphs) {
+        const cleaned = para.replace(/\s+/g, ' ').trim();
+        if (!cleaned || cleaned.length < 30) continue;
+
+        if (cleaned.length > maxLen) {
+          const sentences = cleaned.match(/[^.!?]+[.!?]+/g) || [cleaned];
+          for (let sent of sentences) {
+            sent = sent.trim();
+            if (!sent) continue;
+            if (current.length + sent.length > maxLen && current.length >= minChunkSize) {
+              chunks.push(current.trim());
+              current = '';
+            }
+            if (sent.length > maxLen) {
+              const words = sent.split(/\s+/);
+              let wordBuffer = '';
+              for (const word of words) {
+                if (wordBuffer.length + word.length > maxLen && wordBuffer.length > 0) {
+                  current += (current ? ' ' : '') + wordBuffer;
+                  if (current.length >= minChunkSize) {
+                    chunks.push(current.trim());
+                    current = '';
+                  }
+                  wordBuffer = word;
+                } else {
+                  wordBuffer += (wordBuffer ? ' ' : '') + word;
+                }
+              }
+              if (wordBuffer) current += (current ? ' ' : '') + wordBuffer;
+            } else {
+              current += (current ? ' ' : '') + sent;
+            }
+          }
+        } else {
+          if (current.length + cleaned.length > maxLen && current.length >= minChunkSize) {
+            chunks.push(current.trim());
+            current = '';
+          }
+          current += (current ? '\n\n' : '') + cleaned;
+        }
+      }
+    }
+  }
+
+  if (current.trim().length >= minChunkSize) {
+    chunks.push(current.trim());
+  }
+
   return chunks;
 }
 
@@ -3562,23 +3946,42 @@ function keywordSearch(query, topK, collectionFilter) {
 
 let ragConversationHistory = []; // Array of { role: 'user'|'assistant', content: string, sources?: array }
 
+// DIAGNOSTIC: Function definition started
+
 function initRAGConversation() {
-  console.log('🤖 Initializing RAG conversation...');
+
+  // Check if elements exist
+  const sendBtn = document.getElementById('btn-rag-send');
+  const msgInput = document.getElementById('rag-msg-input');
+  const conversation = document.getElementById('rag-conversation');
+  if (!sendBtn || !msgInput || !conversation) {
+    console.error('❌ RAG elements not found! Check if RAG Query tab exists.');
+    return;
+  }
 
   // Load conversation from localStorage
   const saved = localStorage.getItem('know3_rag_conversation');
   if (saved) {
-    ragConversationHistory = JSON.parse(saved);
-    renderConversation();
+    try {
+      ragConversationHistory = JSON.parse(saved);
+      renderConversation();
+    } catch (e) {
+    }
   }
 
-  // Event listeners
-  const sendBtn = document.getElementById('btn-rag-send');
-  const msgInput = document.getElementById('rag-msg-input');
   const tempSlider = document.getElementById('rag-temperature');
   const tempDisplay = document.getElementById('rag-temp-display');
 
-  if (sendBtn) sendBtn.addEventListener('click', () => sendRAGMessage());
+  // Attach event listeners
+
+  if (sendBtn) {
+    sendBtn.addEventListener('click', () => {
+      sendRAGMessage();
+    });
+  } else {
+    console.error('  ❌ Send button not found!');
+  }
+
   if (msgInput) {
     msgInput.addEventListener('keypress', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -3586,6 +3989,8 @@ function initRAGConversation() {
         sendRAGMessage();
       }
     });
+  } else {
+    console.error('  ❌ Message input not found!');
   }
 
   if (tempSlider && tempDisplay) {
@@ -3594,7 +3999,6 @@ function initRAGConversation() {
     });
   }
 
-  console.log('✅ RAG conversation initialized');
 }
 
 async function sendRAGMessage() {
@@ -3602,12 +4006,25 @@ async function sendRAGMessage() {
   console.log('📤 Sending RAG message (hybrid search)...');
 
   const msgInput = document.getElementById('rag-msg-input');
+  if (!msgInput) {
+    console.error('❌ Message input element not found!');
+    return;
+  }
+
   const message = msgInput.value.trim();
-  if (!message) return;
+
+  if (!message) {
+    return;
+  }
 
   // Add user message to history
   addMessageToHistory('user', message);
   msgInput.value = '';
+
+  // Show thinking indicator
+  const thinkingMsg = { role: 'assistant', content: '⏳ Thinking...', _thinking: true };
+  ragConversationHistory.push(thinkingMsg);
+  renderConversation();
 
   // Get settings
   const topK = parseInt(document.getElementById('rag-topk').value) || 5;
@@ -3658,8 +4075,11 @@ async function sendRAGMessage() {
     let assistantMessage = '';
     let sources = [];
 
+    // Remove thinking indicator
+    ragConversationHistory = ragConversationHistory.filter(m => !m._thinking);
+
     if (results.length === 0) {
-      assistantMessage = '❌ No relevant documents found. Try ingesting documents first.';
+      assistantMessage = '❌ No relevant documents found. Try loading data or ingesting documents first, then ask again.';
     } else if (ragMode === 'search') {
       // Search-only mode: return chunks with hybrid scores
       assistantMessage = `📚 Found ${results.length} relevant chunks:\n\n`;
@@ -3683,7 +4103,7 @@ async function sendRAGMessage() {
         return `[Source ${i+1} - ${r.meta?.file || 'doc'}, ${scoreStr}]\n${r.text}`;
       }).join('\n\n');
 
-      // Build conversation context (last 3 messages for context window)
+      // Build conversation context (last 3 exchanges for context window)
       const recentContext = ragConversationHistory.slice(-6).map(m =>
         `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`
       ).join('\n');
@@ -3701,7 +4121,13 @@ User question: ${message}
 Answer:`;
 
       const temperature = parseFloat(ragSettings.temperature) || 0.7;
+
       assistantMessage = await ollamaGenerate(answerPrompt, modelSelect.value, temperature);
+
+      if (!assistantMessage || assistantMessage.trim() === '') {
+        assistantMessage = '⚠️ The AI returned an empty response. This can happen if the model is still loading. Please try again.';
+      }
+
       sources = results.map((r, i) => ({
         index: i + 1,
         file: r.meta?.file || 'unknown',
@@ -3714,12 +4140,13 @@ Answer:`;
 
   } catch(e) {
     console.error('❌ RAG error:', e);
-    addMessageToHistory('assistant', `⚠️ Error: ${e.message}`);
+    // Remove thinking indicator
+    ragConversationHistory = ragConversationHistory.filter(m => !m._thinking);
+    addMessageToHistory('assistant', `⚠️ Error: ${e.message}\n\nMake sure Ollama is running and a model is selected.`);
   }
 }
 
 function addMessageToHistory(role, content, sources = null) {
-  console.log(`💬 Adding ${role} message to history`);
 
   const msg = { role, content };
   if (sources) msg.sources = sources;
@@ -3736,7 +4163,6 @@ function addMessageToHistory(role, content, sources = null) {
 }
 
 function renderConversation() {
-  console.log('🎨 Rendering conversation...');
 
   const container = document.getElementById('rag-conversation');
   if (!container) return;
@@ -3752,33 +4178,57 @@ function renderConversation() {
 
   container.innerHTML = ragConversationHistory.map((msg, idx) => {
     const isUser = msg.role === 'user';
+    const isThinking = msg._thinking;
+
+    // Style config
     const bgColor = isUser ? 'var(--blue-dim)' : 'var(--accent-dim)';
     const borderColor = isUser ? 'var(--blue)' : 'var(--accent)';
     const align = isUser ? 'flex-end' : 'flex-start';
+    const icon = isUser ? '👤' : (isThinking ? '⏳' : '🤖');
+    const maxWidth = isUser ? '80%' : '90%';
+
+    // Format content — basic markdown-like formatting for AI responses
+    let formattedContent = escHtml(msg.content);
+    if (!isUser && !isThinking) {
+      // Convert **bold** to <strong>
+      formattedContent = formattedContent.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      // Convert numbered lists (1. item) to styled items
+      formattedContent = formattedContent.replace(/^(\d+)\.\s/gm, '<span style="color:var(--accent);font-weight:600;">$1.</span> ');
+      // Convert bullet points
+      formattedContent = formattedContent.replace(/^[-•]\s/gm, '<span style="color:var(--accent);">•</span> ');
+    }
 
     let html = `
-      <div style="display: flex; justify-content: ${align}; gap: 0.5rem;">
+      <div style="display: flex; justify-content: ${align}; gap: 0.5rem; margin-bottom: 0.5rem; ${isThinking ? 'opacity: 0.7;' : ''}">
         <div style="
-          max-width: 85%;
+          max-width: ${maxWidth};
           padding: 0.8rem 1rem;
           background: ${bgColor};
           border-left: 3px solid ${borderColor};
           border-radius: 8px;
           word-wrap: break-word;
         ">
-          <div style="color: var(--text); line-height: 1.5; white-space: pre-wrap;">
-            ${escHtml(msg.content)}
+          <div style="font-size: 0.7rem; color: var(--text3); margin-bottom: 0.3rem; display: flex; align-items: center; gap: 0.3rem;">
+            ${icon} <span style="font-weight: 500;">${isUser ? 'You' : (isThinking ? 'Thinking...' : 'AI Assistant')}</span>
+          </div>
+          <div style="color: var(--text); line-height: 1.6; white-space: pre-wrap; font-size: 0.9rem;">
+            ${formattedContent}
           </div>
     `;
 
-    // Add sources if present
+    // Add sources below the AI response — visually separated
     if (msg.sources && msg.sources.length > 0) {
       html += `
-        <div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border); font-size: 0.75rem; color: var(--text2);">
-          📚 Sources: ${msg.sources.map(s =>
-            `[${s.index}] ${s.file} (${s.score}%)`
-          ).join(' · ')}
-        </div>
+        <details style="margin-top: 0.6rem; padding-top: 0.5rem; border-top: 1px solid var(--border);">
+          <summary style="font-size: 0.75rem; color: var(--text2); cursor: pointer; user-select: none;">
+            📚 ${msg.sources.length} source${msg.sources.length > 1 ? 's' : ''} referenced
+          </summary>
+          <div style="margin-top: 0.4rem; font-size: 0.73rem; color: var(--text3); line-height: 1.6;">
+            ${msg.sources.map(s =>
+              `<div style="padding: 0.2rem 0;"><span style="color: var(--accent);">[${s.index}]</span> ${escHtml(s.file)} <span style="opacity: 0.7;">(${s.score}% match)</span></div>`
+            ).join('')}
+          </div>
+        </details>
       `;
     }
 
@@ -3797,7 +4247,6 @@ function renderConversation() {
 }
 
 function clearRAGConversation() {
-  console.log('🗑️ Clearing RAG conversation...');
 
   const confirmed = confirm('Clear conversation history? This cannot be undone.');
   if (!confirmed) return;
@@ -3806,7 +4255,6 @@ function clearRAGConversation() {
   localStorage.removeItem('know3_rag_conversation');
   renderConversation();
 
-  console.log('✅ Conversation cleared');
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -3815,51 +4263,181 @@ function clearRAGConversation() {
 
 let customDataFile = null;
 let customDataContent = [];
+let queuedFiles = []; // Array of File objects waiting to be loaded
+let loadedDocuments = []; // Array of { filename, items, collection, timestamp }
 
 function handleDataUpload(event) {
-  console.log('📁 Data file selected...');
-  const files = event.target.files;
+  const files = Array.from(event.target.files);
   if (files.length === 0) return;
 
-  customDataFile = files[0];
-  const reader = new FileReader();
+  // Add files to queue (avoid duplicates by name)
+  const existingNames = new Set(queuedFiles.map(f => f.name));
+  let added = 0;
+  for (const file of files) {
+    if (!existingNames.has(file.name)) {
+      queuedFiles.push(file);
+      existingNames.add(file.name);
+      added++;
+    }
+  }
 
-  reader.onload = (e) => {
-    const content = e.target.result;
-    console.log(`📄 File loaded: ${customDataFile.name} (${content.length} bytes)`);
-
-    // Show preview
-    const previewDiv = document.getElementById('data-preview');
-    const previewText = document.getElementById('data-preview-text');
-    const filenameEl = document.getElementById('data-filename');
-    const statusEl = document.getElementById('data-status');
-
-    previewDiv.style.display = 'block';
-    filenameEl.textContent = customDataFile.name;
-    statusEl.textContent = 'Ready to load';
-    previewText.innerHTML = `<pre>${escHtml(content.substring(0, 500))}${content.length > 500 ? '...' : ''}</pre>`;
-  };
-
-  reader.readAsText(customDataFile);
+  renderFileQueue();
 }
 
-function loadDataFile() {
-  if (!customDataFile) {
-    alert('⚠️ Please select a file first');
+function renderFileQueue() {
+  const queueDiv = document.getElementById('data-queue');
+  const queueList = document.getElementById('data-queue-list');
+  if (!queueDiv || !queueList) return;
+
+  if (queuedFiles.length === 0) {
+    queueDiv.style.display = 'none';
     return;
   }
 
-  console.log('🔄 Loading data file...');
-  const reader = new FileReader();
+  queueDiv.style.display = 'block';
+  queueList.innerHTML = queuedFiles.map((file, idx) => {
+    const sizeKB = (file.size / 1024).toFixed(1);
+    const ext = file.name.split('.').pop().toUpperCase();
+    return `
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0.7rem; background: var(--surface); border-radius: 6px; margin-bottom: 0.3rem; border-left: 3px solid var(--blue);">
+        <div style="flex: 1; min-width: 0;">
+          <div style="font-size: 0.85rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escHtml(file.name)}">
+            📄 ${escHtml(file.name)}
+          </div>
+          <div style="font-size: 0.7rem; color: var(--text3);">${ext} · ${sizeKB} KB</div>
+        </div>
+        <button
+          onclick="window.removeFromQueue(${idx})"
+          style="background: none; border: none; cursor: pointer; font-size: 1rem; color: var(--text3); padding: 0.2rem 0.4rem; border-radius: 4px;"
+          title="Remove from queue"
+          onmouseover="this.style.color='var(--error)'; this.style.background='var(--error-dim)'"
+          onmouseout="this.style.color='var(--text3)'; this.style.background='none'"
+        >✕</button>
+      </div>
+    `;
+  }).join('');
+}
 
-  reader.onload = async (e) => {
+function removeFromQueue(idx) {
+  queuedFiles.splice(idx, 1);
+  renderFileQueue();
+  // Clear file input if queue is empty
+  if (queuedFiles.length === 0) {
+    document.getElementById('data-file-input').value = '';
+  }
+}
+
+function renderLoadedDocs() {
+  const docsDiv = document.getElementById('data-loaded-docs');
+  const docList = document.getElementById('data-doc-list');
+  const docCount = document.getElementById('data-doc-count');
+  const totalItems = document.getElementById('data-total-items');
+  if (!docsDiv || !docList) return;
+
+  if (loadedDocuments.length === 0) {
+    docsDiv.style.display = 'none';
+    return;
+  }
+
+  docsDiv.style.display = 'block';
+  docCount.textContent = loadedDocuments.length;
+  totalItems.textContent = loadedDocuments.reduce((sum, d) => sum + d.items, 0);
+
+  docList.innerHTML = loadedDocuments.map((doc, idx) => {
+    const timeStr = new Date(doc.timestamp).toLocaleTimeString();
+    return `
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.6rem 0.7rem; background: var(--surface); border-radius: 6px; margin-bottom: 0.3rem; border-left: 3px solid var(--accent);">
+        <div style="flex: 1; min-width: 0;">
+          <div style="font-size: 0.85rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escHtml(doc.filename)}">
+            ✅ ${escHtml(doc.filename)}
+          </div>
+          <div style="font-size: 0.7rem; color: var(--text3);">
+            ${doc.items} items · Collection: ${escHtml(doc.collection)} · ${timeStr}
+          </div>
+        </div>
+        <button
+          onclick="window.removeLoadedDoc(${idx})"
+          style="background: none; border: none; cursor: pointer; font-size: 0.75rem; color: var(--text3); padding: 0.3rem 0.5rem; border-radius: 4px; border: 1px solid transparent;"
+          title="Remove this document"
+          onmouseover="this.style.color='var(--error)'; this.style.borderColor='var(--error)'"
+          onmouseout="this.style.color='var(--text3)'; this.style.borderColor='transparent'"
+        >🗑️</button>
+      </div>
+    `;
+  }).join('');
+}
+
+function removeLoadedDoc(idx) {
+  const doc = loadedDocuments[idx];
+  if (!doc) return;
+
+  const confirmed = confirm(`Remove "${doc.filename}" (${doc.items} items)?`);
+  if (!confirmed) return;
+
+  // Remove from vector store — remove chunks belonging to this file
+  const col = vectorStore.collections[doc.collection];
+  if (col) {
+    const keepIndices = [];
+    for (let i = 0; i < col.metadata.length; i++) {
+      if (col.metadata[i].file !== doc.filename) {
+        keepIndices.push(i);
+      }
+    }
+    col.chunks = keepIndices.map(i => col.chunks[i]);
+    col.embeddings = keepIndices.map(i => col.embeddings[i]);
+    col.metadata = keepIndices.map(i => col.metadata[i]);
+
+    // Remove collection entirely if empty
+    if (col.chunks.length === 0) {
+      delete vectorStore.collections[doc.collection];
+    }
+  }
+
+  loadedDocuments.splice(idx, 1);
+  renderLoadedDocs();
+  updateCollectionDropdown();
+}
+
+function loadDataFile() {
+  if (queuedFiles.length === 0) {
+    alert('⚠️ Please select file(s) first');
+    return;
+  }
+  const collectionName = document.getElementById('data-collection-name').value || 'custom';
+  const textField = document.getElementById('data-text-field').value || 'text';
+  const progressDiv = document.getElementById('data-loading-progress');
+  const progressFilename = document.getElementById('data-loading-filename');
+  const progressStatus = document.getElementById('data-loading-status');
+  const progressBar = document.getElementById('data-progress-bar');
+
+  progressDiv.style.display = 'block';
+
+  // Process files sequentially
+  const filesToProcess = [...queuedFiles];
+  let fileIndex = 0;
+
+  async function processNextFile() {
+    if (fileIndex >= filesToProcess.length) {
+      // All done
+      progressDiv.style.display = 'none';
+      queuedFiles = [];
+      renderFileQueue();
+      renderLoadedDocs();
+      updateCollectionDropdown();
+      document.getElementById('data-file-input').value = '';
+      return;
+    }
+
+    const file = filesToProcess[fileIndex];
+    progressFilename.textContent = `Loading ${fileIndex + 1}/${filesToProcess.length}: ${file.name}`;
+    progressStatus.textContent = 'Reading...';
+    progressBar.style.width = '0%';
+
     try {
-      const content = e.target.result;
-      const extension = customDataFile.name.split('.').pop().toLowerCase();
-      const collectionName = document.getElementById('data-collection-name').value || 'custom';
-      const textField = document.getElementById('data-text-field').value || 'text';
+      const content = await readFileAsText(file);
+      const extension = file.name.split('.').pop().toLowerCase();
 
-      console.log(`📊 Parsing ${extension} file...`);
+      progressStatus.textContent = 'Parsing...';
 
       let items = [];
       if (extension === 'json') {
@@ -3874,74 +4452,133 @@ function loadDataFile() {
         throw new Error('No items found in file');
       }
 
-      console.log(`✅ Parsed ${items.length} items`);
+      progressStatus.textContent = `Indexing ${items.length} items...`;
 
       // Index the data
-      await indexCustomData(items, collectionName, textField, customDataFile.name);
+      await indexCustomData(items, collectionName, textField, file.name);
 
-      // Update UI
-      const statsDiv = document.getElementById('data-stats');
-      const itemsEl = document.getElementById('data-items-loaded');
-      const collectionEl = document.getElementById('data-collection-display');
-
-      statsDiv.style.display = 'block';
-      itemsEl.textContent = items.length;
-      collectionEl.textContent = collectionName;
-
-      // Update collection dropdown
-      updateCollectionDropdown();
-
-      alert(`✅ Successfully loaded ${items.length} items into collection "${collectionName}"`);
-      console.log(`✅ Custom data loaded successfully`);
-
+      // Track loaded document
+      loadedDocuments.push({
+        filename: file.name,
+        items: items.length,
+        collection: collectionName,
+        timestamp: Date.now()
+      });
     } catch (err) {
-      console.error('❌ Error loading data:', err);
-      alert(`❌ Error: ${err.message}`);
+      console.error(`❌ Error loading ${file.name}:`, err);
+      // Continue with next file
     }
-  };
 
-  reader.readAsText(customDataFile);
+    fileIndex++;
+    processNextFile();
+  }
+
+  processNextFile();
+}
+
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result);
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsText(file);
+  });
+}
+
+function detectTextField(item, preferredField) {
+  // Common field names to check in priority order
+  const commonFields = [
+    preferredField, // Use preferred field first if provided
+    'text', 'content', 'message',
+    'instruction', 'prompt', 'query', 'question',
+    'title', 'description', 'body', 'value',
+    'output', 'answer', 'response'
+  ];
+
+  // Remove duplicates while preserving order
+  const fieldsToCheck = [...new Set(commonFields)];
+
+  // Find first field that exists and has non-empty value
+  for (const field of fieldsToCheck) {
+    if (item && typeof item === 'object' && item[field]) {
+      const value = String(item[field]).trim();
+      if (value.length > 0) {
+        return field;
+      }
+    }
+  }
+
+  return null; // No suitable field found
 }
 
 function parseJSON(content, textField) {
-  console.log('📘 Parsing JSON...');
   try {
     const data = JSON.parse(content);
     const items = Array.isArray(data) ? data : [data];
 
-    return items.filter(item => item && item[textField]).map(item => ({
-      text: String(item[textField]),
-      metadata: { ...item }
-    }));
+    if (items.length === 0) {
+      return [];
+    }
+
+    // Detect the text field from the first item
+    const detectedField = detectTextField(items[0], textField);
+
+    if (!detectedField) {
+      throw new Error(`No suitable text field found. Tried: ${textField || 'auto-detect'}`);
+    }
+    return items.filter(item => {
+      const field = detectTextField(item, detectedField);
+      return field !== null;
+    }).map(item => {
+      const field = detectTextField(item, detectedField);
+      return {
+        text: String(item[field]).trim(),
+        metadata: { ...item, _sourceField: field }
+      };
+    });
   } catch (err) {
     throw new Error(`Invalid JSON: ${err.message}`);
   }
 }
 
 function parseJSONL(content, textField) {
-  console.log('📗 Parsing JSONL...');
   const lines = content.trim().split('\n').filter(line => line.length > 0);
   const items = [];
+  let detectedField = null;
 
   for (let i = 0; i < lines.length; i++) {
     try {
       const item = JSON.parse(lines[i]);
-      if (item && item[textField]) {
-        items.push({
-          text: String(item[textField]),
-          metadata: { ...item, lineNumber: i + 1 }
-        });
+
+      // Detect field on first successful parse
+      if (detectedField === null) {
+        detectedField = detectTextField(item, textField);
+        if (detectedField) {
+        }
+      }
+
+      if (detectedField) {
+        const value = String(item[detectedField]).trim();
+        if (value.length > 0) {
+          items.push({
+            text: value,
+            metadata: { ...item, lineNumber: i + 1, _sourceField: detectedField }
+          });
+        }
       }
     } catch (err) {
       console.warn(`⚠️ Skipping line ${i + 1}: ${err.message}`);
     }
   }
 
+  if (items.length === 0 && lines.length > 0) {
+    throw new Error(`No valid items found in JSONL. Tried fields: ${textField || 'auto-detect'}`);
+  }
+
   return items;
 }
 
 async function indexCustomData(items, collectionName, textField, filename) {
-  console.log(`🔍 Indexing ${items.length} items into collection "${collectionName}"...`);
 
   const progressBar = document.getElementById('data-progress-bar');
   const embedModel = embedSelect.value;
@@ -3983,11 +4620,9 @@ async function indexCustomData(items, collectionName, textField, filename) {
   }
 
   progressBar.style.width = '100%';
-  console.log(`✅ Indexing complete`);
 }
 
 function updateCollectionDropdown() {
-  console.log('🔄 Updating collection dropdowns...');
 
   // Update RAG conversation dropdown
   const ragCollectionSelect = document.getElementById('rag-collection');
@@ -4003,11 +4638,9 @@ function updateCollectionDropdown() {
     }
   }
 
-  console.log('✅ Dropdowns updated');
 }
 
 function clearCustomData() {
-  console.log('🗑️ Clearing custom data...');
 
   const confirmed = confirm('⚠️ Delete all custom data? This cannot be undone.');
   if (!confirmed) return;
@@ -4018,25 +4651,27 @@ function clearCustomData() {
 
   for (const colName of collections) {
     const col = vectorStore.collections[colName];
-    // Check if any chunks in this collection are custom data
     if (col.metadata.some(m => m.customData)) {
       delete vectorStore.collections[colName];
       removed++;
     }
   }
 
-  // Reset UI
+  // Reset all state
   customDataFile = null;
   customDataContent = [];
+  queuedFiles = [];
+  loadedDocuments = [];
+
   document.getElementById('data-preview').style.display = 'none';
   document.getElementById('data-stats').style.display = 'none';
   document.getElementById('data-file-input').value = '';
 
-  // Update dropdowns
+  renderFileQueue();
+  renderLoadedDocs();
   updateCollectionDropdown();
 
   alert(`✅ Removed ${removed} custom data collection(s)`);
-  console.log('✅ Custom data cleared');
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -4364,15 +4999,181 @@ $('chunk-size').addEventListener('change', () => {
   }
 });
 
+// ── Custom data file input event listener ──
+const dataFileInput = document.getElementById('data-file-input');
+if (dataFileInput) {
+  dataFileInput.addEventListener('change', (e) => {
+    handleDataUpload(e);
+  });
+}
+
+// ── Data load button event listener ──
+const btnDataLoad = document.getElementById('btn-data-load');
+if (btnDataLoad) {
+  btnDataLoad.addEventListener('click', () => {
+    loadDataFile();
+  });
+}
+
+// ── Clear custom data button event listener ──
+const btnDataClear = document.getElementById('btn-data-clear');
+if (btnDataClear) {
+  btnDataClear.addEventListener('click', () => {
+    clearCustomData();
+  });
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // INIT
 // ════════════════════════════════════════════════════════════════════════════
-checkOllama();
-setInterval(() => {
-  if (!statusDot.classList.contains('ok') && !running) checkOllama();
-}, 10000);
 
 updateStoreUI();
+
+// ════════════════════════════════════════════════════════════════════════════
+// EXPOSE MODULE FUNCTIONS TO GLOBAL SCOPE
+// ════════════════════════════════════════════════════════════════════════════
+window.initRAGConversation = initRAGConversation;
+window.sendRAGMessage = sendRAGMessage;
+window.clearRAGConversation = clearRAGConversation;
+window.toggleChunkSelection = toggleChunkSelection;
+window.handleDataUpload = handleDataUpload;
+window.loadDataFile = loadDataFile;
+window.clearCustomData = clearCustomData;
+window.exportTrainingData = exportTrainingData;
+window.exportVectorStore = exportVectorStore;
+window.generatePairs = generatePairs;
+window.generatePairsFromSelected = generatePairsFromSelected;
+window.ragSearch = ragSearch;
+window.ingestFile = ingestFile;
+window.checkOllama = checkOllama;
+window.renderChunkPreview = renderChunkPreview;
+window.updateSelectionCount = updateSelectionCount;
+window.log = log;
+window.vectorStore = vectorStore;
+window.updateStoreUI = updateStoreUI;
+window.updateCollectionDropdown = updateCollectionDropdown;
+window.removeFromQueue = removeFromQueue;
+window.removeLoadedDoc = removeLoadedDoc;
+window.renderFileQueue = renderFileQueue;
+window.renderLoadedDocs = renderLoadedDocs;
+window.networkDiscovery = networkDiscovery;
+
+// ── Clear queue button ──
+const btnClearQueue = document.getElementById('btn-clear-queue');
+if (btnClearQueue) {
+  btnClearQueue.addEventListener('click', () => {
+    queuedFiles = [];
+    renderFileQueue();
+    document.getElementById('data-file-input').value = '';
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// NETWORK DISCOVERY — Event Listeners & Auto-Scan
+// ════════════════════════════════════════════════════════════════════════════
+
+// Manual connect button
+const btnManualConnect = document.getElementById('btn-manual-connect');
+if (btnManualConnect) {
+  btnManualConnect.addEventListener('click', async () => {
+    const ipInput = document.getElementById('settings-ollama-ip');
+    const ip = ipInput?.value.trim();
+    if (!ip) { alert('Please enter an IP address or hostname'); return; }
+    btnManualConnect.disabled = true;
+    btnManualConnect.textContent = '...';
+    const result = await networkDiscovery.connectManual(ip);
+    btnManualConnect.disabled = false;
+    btnManualConnect.textContent = 'Connect';
+    if (result) {
+      await checkOllama();
+    } else {
+      alert(`⚠️ Could not connect to Ollama at ${ip}:${OLLAMA_PORT}\n\nMake sure:\n1. Ollama is running on that machine\n2. OLLAMA_ORIGINS=* is set\n3. Firewall allows port ${OLLAMA_PORT}`);
+    }
+  });
+}
+
+// Auto-scan network button
+const btnScanNetwork = document.getElementById('btn-scan-network');
+const btnStopScan = document.getElementById('btn-stop-scan');
+if (btnScanNetwork) {
+  btnScanNetwork.addEventListener('click', async () => {
+    const subnetInput = document.getElementById('settings-scan-subnets');
+    const customSubnets = subnetInput?.value.trim()
+      ? subnetInput.value.split(',').map(s => s.trim()).filter(s => s)
+      : [];
+
+    btnScanNetwork.disabled = true;
+    btnScanNetwork.textContent = '⏳ Scanning...';
+    if (btnStopScan) btnStopScan.style.display = 'inline-block';
+
+    const result = await networkDiscovery.discover(customSubnets);
+
+    btnScanNetwork.disabled = false;
+    btnScanNetwork.textContent = '🔍 Auto-Scan Network';
+    if (btnStopScan) btnStopScan.style.display = 'none';
+
+    if (result) {
+      await checkOllama();
+    }
+  });
+}
+
+if (btnStopScan) {
+  btnStopScan.addEventListener('click', () => {
+    networkDiscovery.stopScan();
+    if (btnScanNetwork) {
+      btnScanNetwork.disabled = false;
+      btnScanNetwork.textContent = '🔍 Auto-Scan Network';
+    }
+    btnStopScan.style.display = 'none';
+  });
+}
+
+// Reset to localhost
+const btnResetOllama = document.getElementById('btn-reset-ollama');
+if (btnResetOllama) {
+  btnResetOllama.addEventListener('click', async () => {
+    OLLAMA = 'http://localhost:11434';
+    localStorage.setItem('know3_ollama_url', OLLAMA);
+    const ipInput = document.getElementById('settings-ollama-ip');
+    if (ipInput) ipInput.value = 'localhost';
+    const scanStatus = document.getElementById('scan-status');
+    if (scanStatus) scanStatus.textContent = 'Reset to localhost';
+    await checkOllama();
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SMART INITIAL CONNECTION
+// Try saved/localhost first → if fail, auto-scan network
+// ════════════════════════════════════════════════════════════════════════════
+async function initialConnect() {
+  const connected = await checkOllama();
+  if (!connected && !networkDiscovery.scanning) {
+    // Auto-scan after a short delay
+    setTimeout(async () => {
+      if (!statusDot.classList.contains('ok')) {
+        const result = await networkDiscovery.discover();
+        if (result) {
+          await checkOllama();
+        }
+      }
+    }, 500);
+  }
+}
+
+initialConnect();
+
+// Periodic re-check (only when disconnected and not scanning)
+setInterval(() => {
+  if (!statusDot.classList.contains('ok') && !running && !networkDiscovery.scanning) {
+    checkOllama();
+  }
+}, 15000);
+
+// ════════════════════════════════════════════════════════════════════════════
+// FILE LOADED
+// ════════════════════════════════════════════════════════════════════════════
 
 </script>
 </body>
