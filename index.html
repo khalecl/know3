@@ -2448,42 +2448,41 @@ function closeSettings() {
 }
 
 function syncSettingsFromDOM() {
-  // Read current DOM values and populate drawer
+  // Read current DOM values and populate settings drawer
   console.log('📍 Syncing settings from DOM...');
 
-  // Models
-  const modelSelect = document.getElementById('modelSelect');
-  const embedSelect = document.getElementById('embedSelect');
-  const settingsModelSelect = document.getElementById('settings-model-select');
-  const settingsEmbedSelect = document.getElementById('settings-embed-select');
+  // Models — clone options from main dropdowns into settings dropdowns
+  const mainModel = document.getElementById('model-select');
+  const mainEmbed = document.getElementById('embed-model-select');
+  const settingsModel = document.getElementById('settings-model-select');
+  const settingsEmbed = document.getElementById('settings-embed-select');
 
-  if (modelSelect && settingsModelSelect) {
-    settingsModelSelect.value = modelSelect.value;
+  if (mainModel && settingsModel) {
+    settingsModel.innerHTML = mainModel.innerHTML;
+    settingsModel.value = mainModel.value;
   }
-  if (embedSelect && settingsEmbedSelect) {
-    settingsEmbedSelect.value = embedSelect.value;
+  if (mainEmbed && settingsEmbed) {
+    settingsEmbed.innerHTML = mainEmbed.innerHTML;
+    settingsEmbed.value = mainEmbed.value;
   }
 
   // Generation settings
-  const domainSelect = document.getElementById('domainSelect');
-  const pairsSelect = document.getElementById('pairsPerChunkSelect');
+  const mainDomain = document.getElementById('domain-select');
+  const mainPairs = document.getElementById('pairs-per-chunk');
   const settingsDomain = document.getElementById('settings-domain');
   const settingsPairs = document.getElementById('settings-pairs-per-chunk');
 
-  if (domainSelect && settingsDomain) {
-    settingsDomain.value = domainSelect.value;
-  }
-  if (pairsSelect && settingsPairs) {
-    settingsPairs.value = pairsSelect.value;
-  }
+  if (mainDomain && settingsDomain) settingsDomain.value = mainDomain.value;
+  if (mainPairs && settingsPairs) settingsPairs.value = mainPairs.value;
 
   // Advanced settings
-  const chunkSizeInput = document.getElementById('chunkSizeInput');
+  const mainChunkSize = document.getElementById('chunk-size');
   const settingsChunkSize = document.getElementById('settings-chunk-size');
+  const mainCollection = document.getElementById('collection-name');
+  const settingsCollection = document.getElementById('settings-collection-name');
 
-  if (chunkSizeInput && settingsChunkSize) {
-    settingsChunkSize.value = chunkSizeInput.value;
-  }
+  if (mainChunkSize && settingsChunkSize) settingsChunkSize.value = mainChunkSize.value;
+  if (mainCollection && settingsCollection) settingsCollection.value = mainCollection.value;
 
   // RAG settings from localStorage
   const ragSettings = JSON.parse(localStorage.getItem('ragSettings') || '{}');
@@ -2499,55 +2498,74 @@ function syncSettingsFromDOM() {
   if (settingsTopK) settingsTopK.value = ragSettings.topK || 5;
   if (settingsSources) settingsSources.value = ragSettings.includeSources !== false ? 'yes' : 'no';
 
+  // Ollama connection status
+  initOllamaSettings();
+
   console.log('✅ Settings synced from DOM');
 }
 
 function applySettings() {
   console.log('💾 Applying settings...');
 
-  // Get all values from drawer
-  const modelSelect = document.getElementById('modelSelect');
-  const embedSelect = document.getElementById('embedSelect');
-  const settingsModelSelect = document.getElementById('settings-model-select');
-  const settingsEmbedSelect = document.getElementById('settings-embed-select');
+  // Sync model selections back to main dropdowns
+  const mainModel = document.getElementById('model-select');
+  const mainEmbed = document.getElementById('embed-model-select');
+  const settingsModel = document.getElementById('settings-model-select');
+  const settingsEmbed = document.getElementById('settings-embed-select');
 
-  if (modelSelect && settingsModelSelect && settingsModelSelect.value) {
-    modelSelect.value = settingsModelSelect.value;
+  if (mainModel && settingsModel && settingsModel.value) {
+    mainModel.value = settingsModel.value;
   }
-  if (embedSelect && settingsEmbedSelect && settingsEmbedSelect.value) {
-    embedSelect.value = settingsEmbedSelect.value;
+  if (mainEmbed && settingsEmbed && settingsEmbed.value) {
+    mainEmbed.value = settingsEmbed.value;
   }
 
   // Generation settings
-  const domainSelect = document.getElementById('domainSelect');
-  const pairsSelect = document.getElementById('pairsPerChunkSelect');
+  const mainDomain = document.getElementById('domain-select');
+  const mainPairs = document.getElementById('pairs-per-chunk');
   const settingsDomain = document.getElementById('settings-domain');
   const settingsPairs = document.getElementById('settings-pairs-per-chunk');
 
-  if (domainSelect && settingsDomain && settingsDomain.value) {
-    domainSelect.value = settingsDomain.value;
+  if (mainDomain && settingsDomain && settingsDomain.value) {
+    mainDomain.value = settingsDomain.value;
   }
-  if (pairsSelect && settingsPairs && settingsPairs.value) {
-    pairsSelect.value = settingsPairs.value;
+  if (mainPairs && settingsPairs && settingsPairs.value) {
+    mainPairs.value = settingsPairs.value;
   }
 
   // Advanced settings
-  const chunkSizeInput = document.getElementById('chunkSizeInput');
+  const mainChunkSize = document.getElementById('chunk-size');
   const settingsChunkSize = document.getElementById('settings-chunk-size');
+  const mainCollection = document.getElementById('collection-name');
+  const settingsCollection = document.getElementById('settings-collection-name');
 
-  if (chunkSizeInput && settingsChunkSize && settingsChunkSize.value) {
-    chunkSizeInput.value = settingsChunkSize.value;
+  if (mainChunkSize && settingsChunkSize && settingsChunkSize.value) {
+    mainChunkSize.value = settingsChunkSize.value;
+  }
+  if (mainCollection && settingsCollection && settingsCollection.value) {
+    mainCollection.value = settingsCollection.value;
   }
 
   // RAG settings to localStorage
   const ragSettings = {
-    ragMode: document.getElementById('settings-rag-mode').value || 'ask',
-    temperature: parseFloat(document.getElementById('settings-temperature').value) || 0.7,
-    topK: parseInt(document.getElementById('settings-topk').value) || 5,
-    includeSources: document.getElementById('settings-include-sources').value === 'yes'
+    ragMode: document.getElementById('settings-rag-mode')?.value || 'ask',
+    temperature: parseFloat(document.getElementById('settings-temperature')?.value) || 0.7,
+    topK: parseInt(document.getElementById('settings-topk')?.value) || 5,
+    includeSources: document.getElementById('settings-include-sources')?.value === 'yes'
   };
 
   localStorage.setItem('ragSettings', JSON.stringify(ragSettings));
+
+  // Also update the RAG panel's advanced options to stay in sync
+  const ragTemp = document.getElementById('rag-temperature');
+  const ragTempDisplay = document.getElementById('rag-temp-display');
+  const ragTopK = document.getElementById('rag-topk');
+  const ragSources = document.getElementById('rag-include-sources');
+
+  if (ragTemp) ragTemp.value = ragSettings.temperature;
+  if (ragTempDisplay) ragTempDisplay.textContent = ragSettings.temperature;
+  if (ragTopK) ragTopK.value = ragSettings.topK;
+  if (ragSources) ragSources.value = ragSettings.includeSources ? 'yes' : 'no';
 
   console.log('✅ Settings applied:', ragSettings);
   closeSettings();
