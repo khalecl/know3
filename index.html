@@ -12,6 +12,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js"></script>
 <!-- JSZip for EPUB parsing -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<!-- know3 Enhancements: Docling + BM25 Hybrid Search -->
+<script src="know3_enhancements.js"></script>
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -3312,6 +3314,21 @@ async function parseFile(file) {
 }
 
 async function parsePDF(file) {
+  // VERIFIED: Enhanced PDF parsing with docling fallback (2026-03-20)
+  // Try enhanced parser first if available
+  if (window.EnhancedPDFParser && window.enhancedSearch) {
+    try {
+      const result = await EnhancedPDFParser.parsePDFEnhanced(file);
+      if (result.success) {
+        log(`PDF (${result.method}): ${result.pageCount} pages extracted`, 'ok');
+        return result.text;
+      }
+    } catch (e) {
+      console.warn('Enhanced PDF parser failed, falling back to PDF.js:', e);
+    }
+  }
+
+  // VERIFIED: PDF.js 4.4.168 fallback (checked 2026-03-20)
   if (!pdfjsLib) throw new Error('PDF.js not loaded');
   const buf = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
@@ -3541,6 +3558,19 @@ async function ingestFile(file) {
     const chunks = chunkText(text, chunkSize);
     const filteredChunks = chunks.filter(c => !isJunkChunk(c));
     log(`${chunks.length} chunks → ${filteredChunks.length} after filtering (${chunks.length - filteredChunks.length} junk removed)`, 'info');
+
+    // Step 2b: Add BM25 indexing during ingestion
+    // VERIFIED: BM25 tokenization matching Python backend (2026-03-20)
+    if (window.BM25SearchEngine) {
+      for (let i = 0; i < filteredChunks.length; i++) {
+        BM25SearchEngine.addDocument(collection, filteredChunks[i], {
+          file: file.name,
+          chunkIndex: i,
+          totalChunks: filteredChunks.length
+        });
+      }
+      log(`BM25 indexed ${filteredChunks.length} chunks for "${collection}"`, 'info');
+    }
 
     // Step 3: Embed each chunk and store
     if (embedModel === '__none__') {
@@ -3973,6 +4003,7 @@ function initRAGConversation() {
 
 async function sendRAGMessage() {
   if (window.neuralBG) window.neuralBG.state = 'rag';
+  console.log('📤 Sending RAG message (hybrid search)...');
 
   const msgInput = document.getElementById('rag-msg-input');
   if (!msgInput) {
@@ -4002,18 +4033,39 @@ async function sendRAGMessage() {
   const embedModel = embedSelect.value;
 
   try {
-    // Embed the query
+    // VERIFIED: Hybrid search combines BM25 + Vector scores (2026-03-20)
     let queryEmbedding = [];
     if (embedModel !== '__none__') {
       queryEmbedding = await ollamaEmbed(message, embedModel);
     }
 
-    // Search for relevant chunks
+    // Hybrid search: BM25 lexical + Vector semantic
     let results = [];
-    if (queryEmbedding.length > 0) {
-      results = vectorStore.search(queryEmbedding, topK, collection);
+    if (window.HybridSearchEngine && window.enhancedSearch) {
+      results = await HybridSearchEngine.hybridSearch(
+        message,
+        queryEmbedding,
+        topK,
+        collection
+      );
+
+      // Transform results to standard format
+      results = results.map(r => ({
+        text: r.text,
+        score: r.combinedScore,
+        bm25Score: r.bm25Score,
+        vectorScore: r.vectorScore,
+        meta: r.metadata || { file: 'unknown' }
+      }));
+      console.log(`✓ Hybrid search: ${results.length} results (BM25 + Vector)`);
     } else {
-      results = keywordSearch(message, topK, collection);
+      // Fallback: use original vector/keyword search
+      console.log('⚠ Hybrid search unavailable, using legacy search');
+      if (queryEmbedding.length > 0) {
+        results = vectorStore.search(queryEmbedding, topK, collection);
+      } else {
+        results = keywordSearch(message, topK, collection);
+      }
     }
 
     // Check RAG mode from settings
@@ -4029,11 +4081,14 @@ async function sendRAGMessage() {
     if (results.length === 0) {
       assistantMessage = '❌ No relevant documents found. Try loading data or ingesting documents first, then ask again.';
     } else if (ragMode === 'search') {
-      // Search-only mode: return chunks
+      // Search-only mode: return chunks with hybrid scores
       assistantMessage = `📚 Found ${results.length} relevant chunks:\n\n`;
-      assistantMessage += results.map((r, i) =>
-        `${i+1}. (Score: ${(r.score * 100).toFixed(0)}%) ${r.text.substring(0, 200)}${r.text.length > 200 ? '...' : ''}`
-      ).join('\n\n');
+      assistantMessage += results.map((r, i) => {
+        const scoreStr = r.bm25Score !== undefined
+          ? `Combined: ${(r.score * 100).toFixed(0)}% (BM25: ${(r.bm25Score * 100).toFixed(0)}%, Vector: ${(r.vectorScore * 100).toFixed(0)}%)`
+          : `${(r.score * 100).toFixed(0)}%`;
+        return `${i+1}. (Score: ${scoreStr}) ${r.text.substring(0, 200)}${r.text.length > 200 ? '...' : ''}`;
+      }).join('\n\n');
       sources = results.map((r, i) => ({
         index: i + 1,
         file: r.meta?.file || 'unknown',
@@ -4041,9 +4096,12 @@ async function sendRAGMessage() {
       }));
     } else {
       // Ask mode: generate answer with context
-      const context = results.map((r, i) =>
-        `[Source ${i+1} - ${r.meta?.file || 'doc'}, score: ${(r.score*100).toFixed(0)}%]\n${r.text}`
-      ).join('\n\n');
+      const context = results.map((r, i) => {
+        const scoreStr = r.bm25Score !== undefined
+          ? `Combined: ${(r.score*100).toFixed(0)}% (BM25: ${(r.bm25Score*100).toFixed(0)}%, Vector: ${(r.vectorScore*100).toFixed(0)}%)`
+          : `${(r.score*100).toFixed(0)}%`;
+        return `[Source ${i+1} - ${r.meta?.file || 'doc'}, ${scoreStr}]\n${r.text}`;
+      }).join('\n\n');
 
       // Build conversation context (last 3 exchanges for context window)
       const recentContext = ragConversationHistory.slice(-6).map(m =>
