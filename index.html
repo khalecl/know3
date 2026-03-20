@@ -1889,6 +1889,31 @@ OUTPUT: [your output here]</textarea>
 
     <div class="settings-content">
 
+      <!-- OLLAMA CONNECTION SECTION -->
+      <details class="settings-section" open>
+        <summary style="font-weight: 600; color: var(--accent); cursor: pointer;">🌐 Ollama Connection</summary>
+        <div class="settings-category">
+          <div class="setting-item">
+            <label>Status</label>
+            <div id="settings-ollama-status" style="display:flex; align-items:center; gap:.5rem; font-size:.85rem; color:var(--text2);">
+              <span style="width:8px;height:8px;border-radius:50%;background:var(--warn);" id="settings-status-dot"></span>
+              <span id="settings-status-text">Checking...</span>
+            </div>
+          </div>
+          <div class="setting-item">
+            <label>Ollama Host</label>
+            <div style="display:flex; gap:.4rem;">
+              <input type="text" id="settings-ollama-host" placeholder="http://localhost:11434" style="flex:1;">
+              <button class="btn btn-primary" style="font-size:.75rem; padding:.4rem .7rem; white-space:nowrap;" onclick="connectToOllamaHost()">Connect</button>
+            </div>
+            <div class="hint">Default: http://localhost:11434 · For LAN: http://192.168.x.x:11434</div>
+          </div>
+          <div class="setting-item">
+            <button class="btn btn-secondary" style="width:100%; font-size:.78rem;" onclick="resetOllamaHost()">↩️ Reset to localhost</button>
+          </div>
+        </div>
+      </details>
+
       <!-- MODELS SECTION -->
       <details class="settings-section" open>
         <summary style="font-weight: 600; color: var(--accent); cursor: pointer;">🤖 Models</summary>
@@ -2673,6 +2698,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── Theme System ──
   initTheme();
 
+  // ── Ollama Settings ──
+  initOllamaSettings();
+
   // ── Splash Screen ──
   setTimeout(() => {
     const splash = document.getElementById('splash-screen');
@@ -2697,6 +2725,82 @@ function toggleFooterExpand() {
   footerExpanded = !footerExpanded;
   const el = document.getElementById('footer-expanded');
   if (el) el.style.display = footerExpanded ? 'block' : 'none';
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// OLLAMA CONNECTION from Settings Drawer
+// ════════════════════════════════════════════════════════════════════════════
+function connectToOllamaHost() {
+  const hostInput = document.getElementById('settings-ollama-host');
+  if (!hostInput) return;
+  let host = hostInput.value.trim();
+  if (!host) host = 'http://localhost:11434';
+
+  // Normalize: add http:// if missing, remove trailing slash
+  if (!host.startsWith('http')) host = 'http://' + host;
+  host = host.replace(/\/+$/, '');
+
+  // Add port if missing
+  if (!host.match(/:\d+$/)) host += ':11434';
+
+  hostInput.value = host;
+
+  const statusDot = document.getElementById('settings-status-dot');
+  const statusText = document.getElementById('settings-status-text');
+  if (statusDot) statusDot.style.background = 'var(--warn)';
+  if (statusText) statusText.textContent = 'Connecting...';
+
+  // Test the connection
+  fetch(host + '/api/tags', { signal: AbortSignal.timeout(5000) })
+    .then(r => {
+      if (!r.ok) throw new Error('Not OK');
+      return r.json();
+    })
+    .then(data => {
+      const models = data.models || [];
+      if (statusDot) statusDot.style.background = 'var(--accent)';
+      if (statusText) statusText.textContent = `Connected · ${models.length} model${models.length !== 1 ? 's' : ''}`;
+
+      // Save to localStorage and update the module OLLAMA variable via window
+      localStorage.setItem('know3_ollama_host', host);
+      window.__know3_ollama_host = host;
+
+      // Dispatch a custom event so the module script can pick it up
+      window.dispatchEvent(new CustomEvent('ollama-host-changed', { detail: { host } }));
+    })
+    .catch(e => {
+      if (statusDot) statusDot.style.background = 'var(--err)';
+      if (statusText) statusText.textContent = `Failed: ${e.message}`;
+    });
+}
+
+function resetOllamaHost() {
+  const hostInput = document.getElementById('settings-ollama-host');
+  if (hostInput) hostInput.value = 'http://localhost:11434';
+  localStorage.removeItem('know3_ollama_host');
+  connectToOllamaHost();
+}
+
+function initOllamaSettings() {
+  const hostInput = document.getElementById('settings-ollama-host');
+  const saved = localStorage.getItem('know3_ollama_host') || 'http://localhost:11434';
+  if (hostInput) hostInput.value = saved;
+
+  // Auto-check status on load
+  const statusDot = document.getElementById('settings-status-dot');
+  const statusText = document.getElementById('settings-status-text');
+
+  fetch(saved + '/api/tags', { signal: AbortSignal.timeout(3000) })
+    .then(r => r.ok ? r.json() : Promise.reject('Not OK'))
+    .then(data => {
+      const models = data.models || [];
+      if (statusDot) statusDot.style.background = 'var(--accent)';
+      if (statusText) statusText.textContent = `Connected · ${models.length} model${models.length !== 1 ? 's' : ''}`;
+    })
+    .catch(() => {
+      if (statusDot) statusDot.style.background = 'var(--err)';
+      if (statusText) statusText.textContent = 'Not connected';
+    });
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -3000,7 +3104,16 @@ try {
 // ════════════════════════════════════════════════════════════════════════════
 // STATE
 // ════════════════════════════════════════════════════════════════════════════
-const OLLAMA = 'http://localhost:11434';
+let OLLAMA = localStorage.getItem('know3_ollama_host') || 'http://localhost:11434';
+
+// Listen for host changes from the settings drawer
+window.addEventListener('ollama-host-changed', (e) => {
+  if (e.detail && e.detail.host) {
+    OLLAMA = e.detail.host;
+    console.log('🔄 Ollama host updated to:', OLLAMA);
+    checkOllama(); // Re-check with new host
+  }
+});
 
 // ── DOMAIN-SPECIFIC PROMPTS ──
 const DOMAIN_PROMPTS = {
@@ -3869,6 +3982,11 @@ Answer:`;
 // Fallback keyword search (when no embedding model available)
 function keywordSearch(query, topK, collectionFilter) {
   const terms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+  // Simple stopword removal for better keyword matching
+  const stopwords = new Set(['the','and','for','are','but','not','you','all','can','her','was','one','our','out','has','had','how','its','may','new','now','old','see','way','who','did','get','let','say','she','too','use']);
+  const filtered = terms.filter(t => !stopwords.has(t));
+  const searchTerms = filtered.length > 0 ? filtered : terms;
+
   const results = [];
   const collections = collectionFilter && collectionFilter !== '__all__'
     ? [collectionFilter]
@@ -3880,13 +3998,19 @@ function keywordSearch(query, topK, collectionFilter) {
     for (let i = 0; i < col.chunks.length; i++) {
       const lower = col.chunks[i].toLowerCase();
       let score = 0;
-      for (const term of terms) {
+      let matchedTerms = 0;
+      for (const term of searchTerms) {
         const count = (lower.match(new RegExp(term, 'g')) || []).length;
-        score += count;
+        if (count > 0) matchedTerms++;
+        // BM25-inspired scoring: diminishing returns for repeated terms
+        score += Math.log(1 + count);
       }
-      if (score > 0) {
+      // Bonus for matching more unique terms (coverage)
+      if (matchedTerms > 0) {
+        const coverageBonus = matchedTerms / searchTerms.length;
+        score *= (0.5 + 0.5 * coverageBonus);
         results.push({
-          score: score / terms.length / 10, // Normalize
+          score: Math.min(1, score / 5), // Normalize to 0-1 range
           text: col.chunks[i],
           collection: colName,
           meta: col.metadata[i]
@@ -3896,6 +4020,51 @@ function keywordSearch(query, topK, collectionFilter) {
   }
   results.sort((a, b) => b.score - a.score);
   return results.slice(0, topK);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// HYBRID SEARCH: Vector + Keyword with Reciprocal Rank Fusion (RRF)
+// ════════════════════════════════════════════════════════════════════════════
+function hybridSearch(vectorResults, keywordResults, topK, rrf_k = 60) {
+  // Reciprocal Rank Fusion: score = Σ 1/(k + rank)
+  const scores = new Map(); // key: chunk text hash → { score, item }
+
+  function chunkKey(item) {
+    // Use first 100 chars + collection as a dedup key
+    return (item.collection || '') + '|' + (item.text || '').substring(0, 100);
+  }
+
+  // Score vector results
+  vectorResults.forEach((item, rank) => {
+    const key = chunkKey(item);
+    const rrfScore = 1 / (rrf_k + rank + 1);
+    if (!scores.has(key)) {
+      scores.set(key, { score: 0, item });
+    }
+    scores.get(key).score += rrfScore;
+  });
+
+  // Score keyword results
+  keywordResults.forEach((item, rank) => {
+    const key = chunkKey(item);
+    const rrfScore = 1 / (rrf_k + rank + 1);
+    if (!scores.has(key)) {
+      scores.set(key, { score: 0, item });
+    }
+    scores.get(key).score += rrfScore;
+  });
+
+  // Sort by fused score and return top K
+  const fused = Array.from(scores.values())
+    .sort((a, b) => b.score - a.score)
+    .slice(0, topK)
+    .map(entry => ({
+      ...entry.item,
+      score: Math.min(1, entry.score * 50), // Normalize for display
+      retrieval: 'hybrid'
+    }));
+
+  return fused;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -3972,12 +4141,20 @@ async function sendRAGMessage() {
       queryEmbedding = await ollamaEmbed(message, embedModel);
     }
 
-    // Search for relevant chunks
+    // Search for relevant chunks — HYBRID SEARCH (vector + keyword + RRF)
     let results = [];
+    const broadK = topK * 3; // Retrieve more candidates for fusion
+
     if (queryEmbedding.length > 0) {
-      results = vectorStore.search(queryEmbedding, topK, collection);
+      // Hybrid: both vector and keyword, then fuse with RRF
+      const vectorResults = vectorStore.search(queryEmbedding, broadK, collection);
+      const kwResults = keywordSearch(message, broadK, collection);
+      results = hybridSearch(vectorResults, kwResults, topK);
+      console.log(`🔍 Hybrid search: ${vectorResults.length} vector + ${kwResults.length} keyword → ${results.length} fused`);
     } else {
+      // Fallback: keyword only
       results = keywordSearch(message, topK, collection);
+      console.log(`🔍 Keyword-only search: ${results.length} results`);
     }
 
     // Check RAG mode from settings
@@ -4010,17 +4187,25 @@ async function sendRAGMessage() {
         `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`
       ).join('\n');
 
-      const answerPrompt = `You are a helpful assistant. Answer the question using ONLY the provided context. If the context doesn't contain enough information, say so honestly. Always cite which source(s) you used by number [1], [2], etc.
+      const answerPrompt = `You are a precise, knowledgeable assistant. Answer the user's question using ONLY the document context provided below. Follow these rules strictly:
 
-Recent conversation:
+RULES:
+1. Base your answer ONLY on the provided context. Do NOT use outside knowledge.
+2. Cite sources using [1], [2], etc. matching the source numbers below.
+3. If the context does not contain enough information, say "Based on the available documents, I cannot fully answer this" and explain what's missing.
+4. Be specific — use exact terms, numbers, and details from the sources.
+5. If sources contain contradictory information, mention both and note the contradiction.
+6. Structure longer answers with clear paragraphs. Be thorough but concise.
+
+CONVERSATION HISTORY:
 ${recentContext}
 
-Context from documents:
+DOCUMENT CONTEXT:
 ${context}
 
-User question: ${message}
+USER QUESTION: ${message}
 
-Answer:`;
+ANSWER:`;
 
       const temperature = parseFloat(ragSettings.temperature) || 0.7;
 
