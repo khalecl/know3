@@ -1341,13 +1341,8 @@ OUTPUT: [your output here]</textarea>
         <!-- Empty state with suggestions -->
         <div id="rag-empty-state" style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; gap:1rem;">
           <div style="font-size:2.5rem; opacity:0.3;">🧠</div>
-          <div style="color: var(--text3); text-align: center; font-size: 0.88rem;">Ask your documents anything</div>
-          <div class="rag-suggestions" id="rag-suggestions">
-            <button class="rag-suggestion-btn" onclick="fillRAGInput('What are the main topics covered?')">📋 Main topics covered?</button>
-            <button class="rag-suggestion-btn" onclick="fillRAGInput('Summarize the key findings')">📝 Summarize key findings</button>
-            <button class="rag-suggestion-btn" onclick="fillRAGInput('What are the most important concepts?')">💡 Important concepts?</button>
-            <button class="rag-suggestion-btn" onclick="fillRAGInput('Compare the different approaches mentioned')">⚖️ Compare approaches</button>
-          </div>
+          <div style="color: var(--text3); text-align: center; font-size: 0.88rem;">Ingest documents first, then ask questions here</div>
+          <div class="rag-suggestions" id="rag-suggestions"></div>
         </div>
       </div>
 
@@ -2647,12 +2642,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Load saved settings from localStorage
   loadSettingsFromStorage();
 
-  // Initialize RAG conversation
-  setTimeout(() => {
-    if (typeof initRAGConversation === 'function') {
-      initRAGConversation();
-    }
-  }, 500);
+  // RAG conversation is initialized inside the module script (not here)
 
   // Initialize data loading drag-drop
   const uploadZone = document.getElementById('data-upload-zone');
@@ -4277,24 +4267,74 @@ function addMessageToHistory(role, content, sources = null) {
   renderConversation();
 }
 
-function renderConversation() {
-  console.log('🎨 Rendering conversation...');
+function getSmartSuggestions() {
+  // Check what's loaded in the vector store
+  const collections = Object.keys(vectorStore.collections);
+  const totalChunks = collections.reduce((sum, col) => sum + (vectorStore.collections[col]?.chunks?.length || 0), 0);
 
+  if (totalChunks === 0) {
+    return {
+      heading: 'Ingest documents first, then ask questions here',
+      items: [
+        { icon: '📥', label: 'Go to Ingest tab', text: '' },
+        { icon: '📋', label: 'What can I do?', text: 'What can I do with this tool?' },
+      ]
+    };
+  }
+
+  // Get file names and collection names from metadata
+  const fileNames = new Set();
+  const collectionNames = new Set();
+  for (const colName of collections) {
+    collectionNames.add(colName);
+    const col = vectorStore.collections[colName];
+    if (col?.metadata) {
+      col.metadata.forEach(m => { if (m?.file) fileNames.add(m.file); });
+    }
+  }
+
+  const files = [...fileNames];
+  const shortNames = files.map(f => f.replace(/\.[^.]+$/, '').substring(0, 30));
+
+  // Build smart suggestions based on what's loaded
+  const suggestions = [];
+
+  if (files.length === 1) {
+    suggestions.push({ icon: '📋', label: `Summarize ${shortNames[0]}`, text: `Summarize the key points of ${files[0]}` });
+    suggestions.push({ icon: '🔍', label: 'Main topics', text: `What are the main topics covered in ${files[0]}?` });
+    suggestions.push({ icon: '💡', label: 'Key takeaways', text: `What are the most important takeaways from this document?` });
+    suggestions.push({ icon: '❓', label: 'Explain a concept', text: `Explain the most important concept discussed in this document` });
+  } else if (files.length > 1) {
+    suggestions.push({ icon: '📋', label: 'Overview all docs', text: `Give me an overview of what these ${files.length} documents cover` });
+    suggestions.push({ icon: '⚖️', label: 'Compare documents', text: `Compare the key themes across ${shortNames.slice(0, 3).join(', ')}` });
+    suggestions.push({ icon: '🔍', label: 'Common themes', text: `What common themes appear across all loaded documents?` });
+    suggestions.push({ icon: '💡', label: 'Key differences', text: `What are the key differences between the documents?` });
+  }
+
+  // Add a generic deep-dive option
+  if (suggestions.length < 4) {
+    suggestions.push({ icon: '🧠', label: 'Deep dive', text: 'What is the most detailed or technical section in these documents?' });
+  }
+
+  return {
+    heading: `${totalChunks} chunks from ${files.length} file${files.length !== 1 ? 's' : ''} loaded — ask anything`,
+    items: suggestions.slice(0, 4)
+  };
+}
+
+function renderConversation() {
   const container = document.getElementById('rag-conversation');
   if (!container) return;
 
-  const emptyState = document.getElementById('rag-empty-state');
-
   if (ragConversationHistory.length === 0) {
+    // Build dynamic suggestions based on loaded documents
+    const suggestions = getSmartSuggestions();
     container.innerHTML = `
       <div id="rag-empty-state" style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; gap:1rem;">
         <div style="font-size:2.5rem; opacity:0.3;">🧠</div>
-        <div style="color: var(--text3); text-align: center; font-size: 0.88rem;">Ask your documents anything</div>
+        <div style="color: var(--text3); text-align: center; font-size: 0.88rem;">${suggestions.heading}</div>
         <div class="rag-suggestions">
-          <button class="rag-suggestion-btn" onclick="fillRAGInput('What are the main topics covered?')">📋 Main topics?</button>
-          <button class="rag-suggestion-btn" onclick="fillRAGInput('Summarize the key findings')">📝 Key findings</button>
-          <button class="rag-suggestion-btn" onclick="fillRAGInput('What are the most important concepts?')">💡 Key concepts?</button>
-          <button class="rag-suggestion-btn" onclick="fillRAGInput('Compare the different approaches mentioned')">⚖️ Compare approaches</button>
+          ${suggestions.items.map(s => `<button class="rag-suggestion-btn" onclick="fillRAGInput('${s.text.replace(/'/g, "\\'")}')">${s.icon} ${s.label}</button>`).join('')}
         </div>
       </div>
     `;
@@ -5004,6 +5044,7 @@ setInterval(() => {
 }, 10000);
 
 updateStoreUI();
+initRAGConversation();
 
 // ════════════════════════════════════════════════════════════════════════════
 // EXPOSE MODULE FUNCTIONS TO GLOBAL SCOPE (for inline onclick handlers)
