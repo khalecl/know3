@@ -2820,7 +2820,7 @@ function onCloudProviderChange() {
 
   const hints = {
     groq: { signup: 'Free key → <a href="https://console.groq.com" target="_blank" style="color:var(--accent)">console.groq.com</a>', model: 'Try: llama-3.1-8b-instant (fast) or llama-3.3-70b-versatile' },
-    cerebras: { signup: 'Free key → <a href="https://cloud.cerebras.ai" target="_blank" style="color:var(--accent)">cloud.cerebras.ai</a>', model: 'Try: qwen3-32b or llama-3.3-70b' },
+    cerebras: { signup: 'Free key → <a href="https://cloud.cerebras.ai" target="_blank" style="color:var(--accent)">cloud.cerebras.ai</a>', model: 'Try: llama3.1-8b or llama3.1-70b or gpt-oss-120b' },
     custom: { signup: 'Any OpenAI-compatible provider', model: 'Check your provider docs' },
   };
   if (hints[p]) {
@@ -3229,6 +3229,7 @@ window.addEventListener('cloud-settings-changed', (e) => {
     window.CLOUD_API_KEY = CLOUD_API_KEY;
     window.CLOUD_MODEL = CLOUD_MODEL;
     console.log('☁️ Cloud settings updated:', CLOUD_PROVIDER, CLOUD_MODEL);
+    _ollamaEmbedOffline = false; // reset embed cache in case Ollama came back
     checkOllama(); // Refresh model list for new provider
   }
 });
@@ -3684,9 +3685,11 @@ async function ollamaEmbed(text, model) {
   return data.embeddings?.[0] || data.embedding || [];
 }
 
+let _ollamaEmbedOffline = false; // cache offline state to avoid spam
+
 async function cloudEmbed(text, model) {
   // Groq/Cerebras don't offer embeddings — need local Ollama.
-  // If Ollama is off, return empty array (generation works, RAG search won't).
+  if (_ollamaEmbedOffline) return []; // skip silently after first failure
   const embedHost = localStorage.getItem('know3_ollama_host') || 'http://localhost:11434';
   try {
     const r = await fetch(`${embedHost}/api/embed`, {
@@ -3699,7 +3702,8 @@ async function cloudEmbed(text, model) {
     const data = await r.json();
     return data.embeddings?.[0] || data.embedding || [];
   } catch(e) {
-    console.warn('⚠️ Embedding skipped (Ollama offline). Generation works but RAG search won\'t.');
+    _ollamaEmbedOffline = true;
+    console.warn('⚠️ Embedding skipped (Ollama offline). Generation works but RAG search won\'t. Suppressing further embed attempts.');
     return [];
   }
 }
