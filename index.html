@@ -2835,9 +2835,11 @@ function saveCloudSettings() {
   const model = document.getElementById('settings-cloud-model')?.value?.trim() || '';
   const customUrl = document.getElementById('settings-cloud-url')?.value?.trim() || '';
 
-  CLOUD_PROVIDER = provider;
-  CLOUD_API_KEY = apikey;
-  CLOUD_MODEL = model;
+  window.CLOUD_PROVIDER = provider;
+  window.CLOUD_API_KEY = apikey;
+  window.CLOUD_MODEL = model;
+  // Notify the module script
+  window.dispatchEvent(new CustomEvent('cloud-settings-changed', { detail: { provider, apikey, model } }));
 
   localStorage.setItem('know3_cloud_provider', provider);
   localStorage.setItem('know3_cloud_apikey', apikey);
@@ -2846,7 +2848,7 @@ function saveCloudSettings() {
 
   // Quick test
   if (provider !== 'ollama' && apikey) {
-    const base = getCloudBaseUrl();
+    const base = window.getCloudBaseUrl();
     fetch(`${base}/models`, {
       headers: { 'Authorization': `Bearer ${apikey}` },
       signal: AbortSignal.timeout(5000)
@@ -2864,9 +2866,9 @@ function initCloudSettings() {
   const key = document.getElementById('settings-cloud-apikey');
   const model = document.getElementById('settings-cloud-model');
   const url = document.getElementById('settings-cloud-url');
-  if (sel) sel.value = CLOUD_PROVIDER;
-  if (key) key.value = CLOUD_API_KEY;
-  if (model) model.value = CLOUD_MODEL;
+  if (sel) sel.value = window.CLOUD_PROVIDER || localStorage.getItem('know3_cloud_provider') || 'ollama';
+  if (key) key.value = window.CLOUD_API_KEY || localStorage.getItem('know3_cloud_apikey') || '';
+  if (model) model.value = window.CLOUD_MODEL || localStorage.getItem('know3_cloud_model') || '';
   if (url) url.value = localStorage.getItem('know3_cloud_custom_url') || '';
   onCloudProviderChange();
 }
@@ -3193,8 +3195,7 @@ try {
 // ════════════════════════════════════════════════════════════════════════════
 // STATE
 // ════════════════════════════════════════════════════════════════════════════
-let OLLAMA = localStorage.getItem('know3_ollama_host') || 'http://localhost:11434';
-let CLOUD_PROVIDER = localStorage.getItem('know3_cloud_provider') || 'ollama'; // ollama | groq | cerebras | custom
+let CLOUD_PROVIDER = localStorage.getItem('know3_cloud_provider') || 'ollama';
 let CLOUD_API_KEY = localStorage.getItem('know3_cloud_apikey') || '';
 let CLOUD_MODEL = localStorage.getItem('know3_cloud_model') || '';
 
@@ -3209,12 +3210,23 @@ function getCloudBaseUrl() {
   return urls[CLOUD_PROVIDER] || '';
 }
 
+// Expose to global scope for settings drawer (non-module script)
+window.CLOUD_PROVIDER = CLOUD_PROVIDER;
+window.CLOUD_API_KEY = CLOUD_API_KEY;
+window.CLOUD_MODEL = CLOUD_MODEL;
+window.isCloudProvider = isCloudProvider;
+window.getCloudBaseUrl = getCloudBaseUrl;
+
 // Listen for host changes from the settings drawer
-window.addEventListener('ollama-host-changed', (e) => {
-  if (e.detail && e.detail.host) {
-    OLLAMA = e.detail.host;
-    console.log('🔄 Ollama host updated to:', OLLAMA);
-    checkOllama(); // Re-check with new host
+window.addEventListener('cloud-settings-changed', (e) => {
+  if (e.detail) {
+    CLOUD_PROVIDER = e.detail.provider || 'ollama';
+    CLOUD_API_KEY = e.detail.apikey || '';
+    CLOUD_MODEL = e.detail.model || '';
+    window.CLOUD_PROVIDER = CLOUD_PROVIDER;
+    window.CLOUD_API_KEY = CLOUD_API_KEY;
+    window.CLOUD_MODEL = CLOUD_MODEL;
+    console.log('☁️ Cloud settings updated:', CLOUD_PROVIDER, CLOUD_MODEL);
   }
 });
 
