@@ -2840,6 +2840,8 @@ function saveCloudSettings() {
   window.CLOUD_MODEL = model;
   // Notify the module script
   window.dispatchEvent(new CustomEvent('cloud-settings-changed', { detail: { provider, apikey, model } }));
+  // Re-check connection with new provider to populate model list
+  window.dispatchEvent(new CustomEvent('ollama-host-changed', { detail: { host: provider === 'ollama' ? (localStorage.getItem('know3_ollama_host') || 'http://localhost:11434') : 'cloud' } }));
 
   localStorage.setItem('know3_cloud_provider', provider);
   localStorage.setItem('know3_cloud_apikey', apikey);
@@ -3227,6 +3229,7 @@ window.addEventListener('cloud-settings-changed', (e) => {
     window.CLOUD_API_KEY = CLOUD_API_KEY;
     window.CLOUD_MODEL = CLOUD_MODEL;
     console.log('☁️ Cloud settings updated:', CLOUD_PROVIDER, CLOUD_MODEL);
+    checkOllama(); // Refresh model list for new provider
   }
 });
 
@@ -3474,10 +3477,24 @@ function cosineSim(a, b) {
 // ════════════════════════════════════════════════════════════════════════════
 async function checkOllama() {
   try {
-    const r = await fetch(`${OLLAMA}/api/tags`, { signal: AbortSignal.timeout(3000) });
-    if (!r.ok) throw new Error('Not OK');
-    const data = await r.json();
-    const models = data.models || [];
+    let models = [];
+
+    if (isCloudProvider()) {
+      // Fetch models from cloud API
+      const base = getCloudBaseUrl();
+      const r = await fetch(`${base}/models`, {
+        headers: { 'Authorization': `Bearer ${CLOUD_API_KEY}` },
+        signal: AbortSignal.timeout(5000)
+      });
+      if (!r.ok) throw new Error('Cloud API: ' + r.status);
+      const data = await r.json();
+      models = (data.data || []).map(m => ({ name: m.id }));
+    } else {
+      const r = await fetch(`${OLLAMA}/api/tags`, { signal: AbortSignal.timeout(3000) });
+      if (!r.ok) throw new Error('Not OK');
+      const data = await r.json();
+      models = data.models || [];
+    }
 
     // Separate LLM models and embedding models
     const llmModels = [];
@@ -3508,7 +3525,7 @@ async function checkOllama() {
       embedSelect.innerHTML += `<option value="__none__">⚠ No embed model — pull nomic-embed-text</option>`;
     }
 
-    setStatus('ok', `Ollama connected · ${models.length} model${models.length !== 1 ? 's' : ''}`);
+    setStatus('ok', `${isCloudProvider() ? CLOUD_PROVIDER.toUpperCase() : 'Ollama'} connected · ${models.length} model${models.length !== 1 ? 's' : ''}`);
     $('model-info').textContent = models.length + ' models loaded';
     setupGuide.style.display = 'none';
     btnStart.disabled = !currentFileName;
@@ -3668,19 +3685,23 @@ async function ollamaEmbed(text, model) {
 }
 
 async function cloudEmbed(text, model) {
-  // Cloud providers: use their embeddings endpoint, or fall back to local
-  // Note: Groq does NOT offer embeddings. Cerebras does not either.
-  // For cloud LLM + local embeddings, we call Ollama for embeddings even in cloud mode
+  // Groq/Cerebras don't offer embeddings — need local Ollama.
+  // If Ollama is off, return empty array (generation works, RAG search won't).
   const embedHost = localStorage.getItem('know3_ollama_host') || 'http://localhost:11434';
-  const r = await fetch(`${embedHost}/api/embed`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, input: text }),
-    signal: abortCtrl?.signal,
-  });
-  if (!r.ok) throw new Error(`Embedding error (local fallback): ${r.status}`);
-  const data = await r.json();
-  return data.embeddings?.[0] || data.embedding || [];
+  try {
+    const r = await fetch(`${embedHost}/api/embed`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, input: text }),
+      signal: abortCtrl?.signal,
+    });
+    if (!r.ok) throw new Error(r.status);
+    const data = await r.json();
+    return data.embeddings?.[0] || data.embedding || [];
+  } catch(e) {
+    console.warn('⚠️ Embedding skipped (Ollama offline). Generation works but RAG search won\'t.');
+    return [];
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
