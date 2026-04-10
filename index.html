@@ -1885,6 +1885,46 @@ OUTPUT: [your output here]</textarea>
       </details>
 
       <!-- MODELS SECTION -->
+    <!-- CLOUD INFERENCE SECTION -->
+      <details class="settings-section">
+        <summary style="font-weight: 600; color: var(--accent); cursor: pointer;">☁️ Cloud Inference (Faster)</summary>
+        <div class="settings-category">
+          <div class="setting-item">
+            <label>Provider</label>
+            <select id="settings-cloud-provider" onchange="onCloudProviderChange()">
+              <option value="ollama">🖥️ Local Ollama (default)</option>
+              <option value="groq">⚡ Groq (free, ~840 tok/s)</option>
+              <option value="cerebras">🚀 Cerebras (free, 1M tok/day)</option>
+              <option value="custom">🔧 Custom OpenAI-compatible</option>
+            </select>
+            <div class="hint">Cloud = faster inference but documents leave your machine</div>
+          </div>
+          <div id="cloud-settings-extra" style="display:none;">
+            <div class="setting-item">
+              <label>API Key</label>
+              <input type="password" id="settings-cloud-apikey" placeholder="Paste your free API key" style="width:100%;">
+              <div class="hint" id="cloud-signup-hint"></div>
+            </div>
+            <div class="setting-item" id="cloud-custom-url-row" style="display:none;">
+              <label>API Base URL</label>
+              <input type="text" id="settings-cloud-url" placeholder="https://api.example.com/v1" style="width:100%;">
+            </div>
+            <div class="setting-item">
+              <label>Cloud Model</label>
+              <input type="text" id="settings-cloud-model" placeholder="e.g. llama-3.1-8b-instant" style="width:100%;">
+              <div class="hint" id="cloud-model-hint"></div>
+            </div>
+            <div class="setting-item">
+              <button class="btn btn-primary" style="width:100%; font-size:.78rem;" onclick="saveCloudSettings()">💾 Save Cloud Settings</button>
+            </div>
+            <div class="setting-item" style="background:rgba(255,170,0,.08); border-radius:6px; padding:.6rem; font-size:.78rem; color:var(--warn);">
+              ⚠️ <strong>Privacy note:</strong> Documents & queries will be sent to the cloud provider. Embeddings still run locally via Ollama.
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <!-- MODELS SECTION -->
       <details class="settings-section" open>
         <summary style="font-weight: 600; color: var(--accent); cursor: pointer;">🤖 Models</summary>
         <div class="settings-category">
@@ -2470,7 +2510,7 @@ function syncSettingsFromDOM() {
 
   // Ollama connection status
   initOllamaSettings();
-
+  initCloudSettings(); // ← add this line
   console.log('✅ Settings synced from DOM');
 }
 
@@ -2763,7 +2803,73 @@ function resetOllamaHost() {
   localStorage.removeItem('know3_ollama_host');
   connectToOllamaHost();
 }
+// ════════════════════════════════════════════════════════════════════════════
+// CLOUD INFERENCE SETTINGS
+// ════════════════════════════════════════════════════════════════════════════
+function onCloudProviderChange() {
+  const sel = document.getElementById('settings-cloud-provider');
+  const extra = document.getElementById('cloud-settings-extra');
+  const customRow = document.getElementById('cloud-custom-url-row');
+  const signupHint = document.getElementById('cloud-signup-hint');
+  const modelHint = document.getElementById('cloud-model-hint');
+  if (!sel) return;
 
+  const p = sel.value;
+  extra.style.display = p === 'ollama' ? 'none' : 'block';
+  customRow.style.display = p === 'custom' ? 'block' : 'none';
+
+  const hints = {
+    groq: { signup: 'Free key → <a href="https://console.groq.com" target="_blank" style="color:var(--accent)">console.groq.com</a>', model: 'Try: llama-3.1-8b-instant (fast) or llama-3.3-70b-versatile' },
+    cerebras: { signup: 'Free key → <a href="https://cloud.cerebras.ai" target="_blank" style="color:var(--accent)">cloud.cerebras.ai</a>', model: 'Try: qwen3-32b or llama-3.3-70b' },
+    custom: { signup: 'Any OpenAI-compatible provider', model: 'Check your provider docs' },
+  };
+  if (hints[p]) {
+    signupHint.innerHTML = hints[p].signup;
+    modelHint.textContent = hints[p].model;
+  }
+}
+
+function saveCloudSettings() {
+  const provider = document.getElementById('settings-cloud-provider')?.value || 'ollama';
+  const apikey = document.getElementById('settings-cloud-apikey')?.value?.trim() || '';
+  const model = document.getElementById('settings-cloud-model')?.value?.trim() || '';
+  const customUrl = document.getElementById('settings-cloud-url')?.value?.trim() || '';
+
+  CLOUD_PROVIDER = provider;
+  CLOUD_API_KEY = apikey;
+  CLOUD_MODEL = model;
+
+  localStorage.setItem('know3_cloud_provider', provider);
+  localStorage.setItem('know3_cloud_apikey', apikey);
+  localStorage.setItem('know3_cloud_model', model);
+  if (provider === 'custom') localStorage.setItem('know3_cloud_custom_url', customUrl);
+
+  // Quick test
+  if (provider !== 'ollama' && apikey) {
+    const base = getCloudBaseUrl();
+    fetch(`${base}/models`, {
+      headers: { 'Authorization': `Bearer ${apikey}` },
+      signal: AbortSignal.timeout(5000)
+    })
+    .then(r => r.json())
+    .then(d => { alert(`✅ Connected! ${d.data?.length || '?'} models available.`); })
+    .catch(e => { alert(`⚠️ Connection test failed: ${e.message}\nSettings saved anyway — check your key.`); });
+  } else {
+    alert('✅ Saved. Using local Ollama.');
+  }
+}
+
+function initCloudSettings() {
+  const sel = document.getElementById('settings-cloud-provider');
+  const key = document.getElementById('settings-cloud-apikey');
+  const model = document.getElementById('settings-cloud-model');
+  const url = document.getElementById('settings-cloud-url');
+  if (sel) sel.value = CLOUD_PROVIDER;
+  if (key) key.value = CLOUD_API_KEY;
+  if (model) model.value = CLOUD_MODEL;
+  if (url) url.value = localStorage.getItem('know3_cloud_custom_url') || '';
+  onCloudProviderChange();
+}
 function initOllamaSettings() {
   const hostInput = document.getElementById('settings-ollama-host');
   const saved = localStorage.getItem('know3_ollama_host') || 'http://localhost:11434';
@@ -3088,6 +3194,20 @@ try {
 // STATE
 // ════════════════════════════════════════════════════════════════════════════
 let OLLAMA = localStorage.getItem('know3_ollama_host') || 'http://localhost:11434';
+let CLOUD_PROVIDER = localStorage.getItem('know3_cloud_provider') || 'ollama'; // ollama | groq | cerebras | custom
+let CLOUD_API_KEY = localStorage.getItem('know3_cloud_apikey') || '';
+let CLOUD_MODEL = localStorage.getItem('know3_cloud_model') || '';
+
+function isCloudProvider() { return CLOUD_PROVIDER !== 'ollama'; }
+
+function getCloudBaseUrl() {
+  const urls = {
+    groq: 'https://api.groq.com/openai/v1',
+    cerebras: 'https://api.cerebras.ai/v1',
+    custom: localStorage.getItem('know3_cloud_custom_url') || ''
+  };
+  return urls[CLOUD_PROVIDER] || '';
+}
 
 // Listen for host changes from the settings drawer
 window.addEventListener('ollama-host-changed', (e) => {
@@ -3401,6 +3521,7 @@ function setStatus(state, text) {
 // OLLAMA API CALLS
 // ════════════════════════════════════════════════════════════════════════════
 async function ollamaGenerate(prompt, model, temperature = 0.7) {
+  if (isCloudProvider()) return cloudGenerate(prompt, model, temperature);
   const r = await fetch(`${OLLAMA}/api/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -3416,8 +3537,33 @@ async function ollamaGenerate(prompt, model, temperature = 0.7) {
   return data.response || '';
 }
 
+async function cloudGenerate(prompt, model, temperature = 0.7) {
+  const base = getCloudBaseUrl();
+  const useModel = CLOUD_MODEL || model;
+  const r = await fetch(`${base}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${CLOUD_API_KEY}`
+    },
+    body: JSON.stringify({
+      model: useModel,
+      messages: [{ role: 'user', content: prompt }],
+      temperature, max_tokens: 800, stream: false
+    }),
+    signal: abortCtrl?.signal,
+  });
+  if (!r.ok) {
+    const err = await r.text().catch(() => r.status);
+    throw new Error(`Cloud API error: ${err}`);
+  }
+  const data = await r.json();
+  return data.choices?.[0]?.message?.content || '';
+}
+
 // Streaming variant for RAG conversation — shows tokens as they arrive
 async function ollamaGenerateStream(prompt, model, temperature, onToken) {
+  if (isCloudProvider()) return cloudGenerateStream(prompt, model, temperature, onToken);
   const r = await fetch(`${OLLAMA}/api/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -3454,7 +3600,50 @@ async function ollamaGenerateStream(prompt, model, temperature, onToken) {
   return full;
 }
 
+async function cloudGenerateStream(prompt, model, temperature, onToken) {
+  const base = getCloudBaseUrl();
+  const useModel = CLOUD_MODEL || model;
+  const r = await fetch(`${base}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${CLOUD_API_KEY}`
+    },
+    body: JSON.stringify({
+      model: useModel,
+      messages: [{ role: 'user', content: prompt }],
+      temperature, max_tokens: 1200, stream: true
+    }),
+    signal: abortCtrl?.signal,
+  });
+  if (!r.ok) throw new Error(`Cloud API error: ${r.status}`);
+
+  const reader = r.body.getReader();
+  const decoder = new TextDecoder();
+  let full = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk = decoder.decode(value, { stream: true });
+    for (const line of chunk.split('\n')) {
+      const trimmed = line.replace(/^data: /, '').trim();
+      if (!trimmed || trimmed === '[DONE]') continue;
+      try {
+        const obj = JSON.parse(trimmed);
+        const token = obj.choices?.[0]?.delta?.content || '';
+        if (token) {
+          full += token;
+          if (onToken) onToken(full, token);
+        }
+      } catch(e) { /* skip */ }
+    }
+  }
+  return full;
+}
+
 async function ollamaEmbed(text, model) {
+  if (isCloudProvider()) return cloudEmbed(text, model);
   const r = await fetch(`${OLLAMA}/api/embed`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -3463,7 +3652,22 @@ async function ollamaEmbed(text, model) {
   });
   if (!r.ok) throw new Error(`Embedding error: ${r.status}`);
   const data = await r.json();
-  // Ollama returns { embeddings: [[...]] } for single input
+  return data.embeddings?.[0] || data.embedding || [];
+}
+
+async function cloudEmbed(text, model) {
+  // Cloud providers: use their embeddings endpoint, or fall back to local
+  // Note: Groq does NOT offer embeddings. Cerebras does not either.
+  // For cloud LLM + local embeddings, we call Ollama for embeddings even in cloud mode
+  const embedHost = localStorage.getItem('know3_ollama_host') || 'http://localhost:11434';
+  const r = await fetch(`${embedHost}/api/embed`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, input: text }),
+    signal: abortCtrl?.signal,
+  });
+  if (!r.ok) throw new Error(`Embedding error (local fallback): ${r.status}`);
+  const data = await r.json();
   return data.embeddings?.[0] || data.embedding || [];
 }
 
@@ -4202,21 +4406,41 @@ ANSWER:`;
 
       try {
         // Try streaming first
-        const streamCtrl = new AbortController();
-        const streamR = await fetch(`${OLLAMA}/api/generate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: modelSelect.value,
-            prompt: answerPrompt,
-            stream: true,
-            options: { temperature, num_predict: 1200 },
-            keep_alive: '30m'
-          }),
-          signal: streamCtrl.signal,
-        });
+const streamCtrl = new AbortController();
+        let streamR, isCloud = isCloudProvider();
 
-        if (!streamR.ok) throw new Error(`Ollama: ${streamR.status}`);
+        if (isCloud) {
+          const base = getCloudBaseUrl();
+          const useModel = CLOUD_MODEL || modelSelect.value;
+          streamR = await fetch(`${base}/chat/completions`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${CLOUD_API_KEY}`
+            },
+            body: JSON.stringify({
+              model: useModel,
+              messages: [{ role: 'user', content: answerPrompt }],
+              temperature, max_tokens: 1200, stream: true
+            }),
+            signal: streamCtrl.signal,
+          });
+        } else {
+          streamR = await fetch(`${OLLAMA}/api/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: modelSelect.value,
+              prompt: answerPrompt,
+              stream: true,
+              options: { temperature, num_predict: 1200 },
+              keep_alive: '30m'
+            }),
+            signal: streamCtrl.signal,
+          });
+        }
+
+        if (!streamR.ok) throw new Error(`${isCloud ? 'Cloud API' : 'Ollama'}: ${streamR.status}`);
 
         const reader = streamR.body.getReader();
         const decoder = new TextDecoder();
@@ -4227,22 +4451,32 @@ ANSWER:`;
           if (done) break;
           const chunk = decoder.decode(value, { stream: true });
           for (const line of chunk.split('\n')) {
-            if (!line.trim()) continue;
-            try {
-              const obj = JSON.parse(line);
-              if (obj.response) {
-                fullResponse += obj.response;
-                // Update bubble in-place
-                ragConversationHistory[streamIdx].content = fullResponse;
-                const container = document.getElementById('rag-conversation');
-                const allBubbles = container?.querySelectorAll('.rag-msg.assistant .rag-msg-bubble div');
-                if (allBubbles && allBubbles.length > 0) {
-                  allBubbles[allBubbles.length - 1].textContent = fullResponse;
-                }
-                if (container) container.scrollTop = container.scrollHeight;
+            let token = '';
+            if (isCloud) {
+              const trimmed = line.replace(/^data: /, '').trim();
+              if (!trimmed || trimmed === '[DONE]') continue;
+              try {
+                const obj = JSON.parse(trimmed);
+                token = obj.choices?.[0]?.delta?.content || '';
+              } catch(e) { continue; }
+            } else {
+              if (!line.trim()) continue;
+              try {
+                const obj = JSON.parse(line);
+                token = obj.response || '';
+                if (obj.done) { if (token) fullResponse += token; break; }
+              } catch(e) { continue; }
+            }
+            if (token) {
+              fullResponse += token;
+              ragConversationHistory[streamIdx].content = fullResponse;
+              const container = document.getElementById('rag-conversation');
+              const allBubbles = container?.querySelectorAll('.rag-msg.assistant .rag-msg-bubble div');
+              if (allBubbles && allBubbles.length > 0) {
+                allBubbles[allBubbles.length - 1].textContent = fullResponse;
               }
-              if (obj.done) break;
-            } catch(e) { /* skip malformed */ }
+              if (container) container.scrollTop = container.scrollHeight;
+            }
           }
         }
 
