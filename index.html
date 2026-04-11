@@ -1916,6 +1916,14 @@ OUTPUT: [your output here]</textarea>
               <div class="hint" id="cloud-model-hint"></div>
             </div>
             <div class="setting-item">
+              <label>API Rate Limit (ms between calls)</label>
+              <div style="display:flex; align-items:center; gap:.6rem;">
+                <input type="range" id="settings-cloud-delay" min="500" max="10000" step="100" value="2500" style="flex:1;" oninput="document.getElementById('cloud-delay-value').textContent = this.value + 'ms (~' + Math.floor(60000/this.value) + ' RPM)'">
+                <span id="cloud-delay-value" style="font-size:.78rem; min-width:7rem; color:var(--accent);">2500ms (~24 RPM)</span>
+              </div>
+              <div class="hint">Lower = faster but risks 429 rate limits. Groq free: 30 RPM max. Cerebras: 30 RPM max.</div>
+            </div>
+            <div class="setting-item">
               <button class="btn btn-primary" style="width:100%; font-size:.78rem;" onclick="saveCloudSettings()">💾 Save Cloud Settings</button>
             </div>
             <div class="setting-item" style="background:rgba(255,170,0,.08); border-radius:6px; padding:.6rem; font-size:.78rem; color:var(--warn);">
@@ -2835,19 +2843,22 @@ function saveCloudSettings() {
   const apikey = document.getElementById('settings-cloud-apikey')?.value?.trim() || '';
   const model = document.getElementById('settings-cloud-model')?.value?.trim() || '';
   const customUrl = document.getElementById('settings-cloud-url')?.value?.trim() || '';
+  const delay = document.getElementById('settings-cloud-delay')?.value || '2500';
 
   window.CLOUD_PROVIDER = provider;
   window.CLOUD_API_KEY = apikey;
   window.CLOUD_MODEL = model;
-  // Notify the module script
-  window.dispatchEvent(new CustomEvent('cloud-settings-changed', { detail: { provider, apikey, model } }));
-  // Re-check connection with new provider to populate model list
-  window.dispatchEvent(new CustomEvent('ollama-host-changed', { detail: { host: provider === 'ollama' ? (localStorage.getItem('know3_ollama_host') || 'http://localhost:11434') : 'cloud' } }));
 
   localStorage.setItem('know3_cloud_provider', provider);
   localStorage.setItem('know3_cloud_apikey', apikey);
   localStorage.setItem('know3_cloud_model', model);
+  localStorage.setItem('know3_cloud_delay', delay);
   if (provider === 'custom') localStorage.setItem('know3_cloud_custom_url', customUrl);
+
+  // Notify the module script
+  window.dispatchEvent(new CustomEvent('cloud-settings-changed', { detail: { provider, apikey, model, delay: parseInt(delay) } }));
+  // Re-check connection with new provider to populate model list
+  window.dispatchEvent(new CustomEvent('ollama-host-changed', { detail: { host: provider === 'ollama' ? (localStorage.getItem('know3_ollama_host') || 'http://localhost:11434') : 'cloud' } }));
 
   // Quick test
   if (provider !== 'ollama' && apikey) {
@@ -2869,10 +2880,15 @@ function initCloudSettings() {
   const key = document.getElementById('settings-cloud-apikey');
   const model = document.getElementById('settings-cloud-model');
   const url = document.getElementById('settings-cloud-url');
+  const delay = document.getElementById('settings-cloud-delay');
+  const delayVal = document.getElementById('cloud-delay-value');
   if (sel) sel.value = window.CLOUD_PROVIDER || localStorage.getItem('know3_cloud_provider') || 'ollama';
   if (key) key.value = window.CLOUD_API_KEY || localStorage.getItem('know3_cloud_apikey') || '';
   if (model) model.value = window.CLOUD_MODEL || localStorage.getItem('know3_cloud_model') || '';
   if (url) url.value = localStorage.getItem('know3_cloud_custom_url') || '';
+  const savedDelay = localStorage.getItem('know3_cloud_delay') || '2500';
+  if (delay) delay.value = savedDelay;
+  if (delayVal) delayVal.textContent = savedDelay + 'ms (~' + Math.floor(60000 / parseInt(savedDelay)) + ' RPM)';
   onCloudProviderChange();
 }
 function initOllamaSettings() {
@@ -3226,10 +3242,11 @@ window.addEventListener('cloud-settings-changed', (e) => {
     CLOUD_PROVIDER = e.detail.provider || 'ollama';
     CLOUD_API_KEY = e.detail.apikey || '';
     CLOUD_MODEL = e.detail.model || '';
+    if (e.detail.delay) _CLOUD_MIN_DELAY = e.detail.delay;
     window.CLOUD_PROVIDER = CLOUD_PROVIDER;
     window.CLOUD_API_KEY = CLOUD_API_KEY;
     window.CLOUD_MODEL = CLOUD_MODEL;
-    console.log('☁️ Cloud settings updated:', CLOUD_PROVIDER, CLOUD_MODEL);
+    console.log('☁️ Cloud settings updated:', CLOUD_PROVIDER, CLOUD_MODEL, 'delay:', _CLOUD_MIN_DELAY + 'ms');
     _ollamaEmbedOffline = false; // reset embed cache in case Ollama came back
     checkOllama(); // Refresh model list for new provider
   }
@@ -3570,7 +3587,7 @@ async function ollamaGenerate(prompt, model, temperature = 0.7) {
 }
 
 let _lastCloudCall = 0;
-const _CLOUD_MIN_DELAY = 2500; // ms between calls (~24 RPM, safely under 30 RPM limit)
+let _CLOUD_MIN_DELAY = parseInt(localStorage.getItem('know3_cloud_delay') || '2500');
 const _CLOUD_MAX_RETRIES = 5;
 
 async function cloudGenerate(prompt, model, temperature = 0.7) {
@@ -4089,6 +4106,10 @@ async function generatePairs() {
   btnStart.disabled = true;
   btnStop.disabled = false;
   btnStop.style.display = '';
+  btnPause.disabled = false;
+  btnPause.style.display = '';
+  btnPause.textContent = '⏸ Pause';
+  paused = false;
 
   // Collect all chunks from all collections for training
   const chunksToProcess = [];
@@ -4117,6 +4138,12 @@ async function generatePairs() {
 
   for (let i = 0; i < chunksToProcess.length; i++) {
     if (!running) { log('Stopped by user', 'err'); break; }
+
+    // Pause loop — wait until unpaused
+    while (paused && running) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    if (!running) { log('Stopped while paused', 'err'); break; }
 
     const pct = ((i + 1) / chunksToProcess.length * 100).toFixed(0);
     progressFill.style.width = pct + '%';
