@@ -3567,10 +3567,22 @@ async function ollamaGenerate(prompt, model, temperature = 0.7) {
   return data.response || '';
 }
 
+let _lastCloudCall = 0;
+const _CLOUD_MIN_DELAY = 2200; // ms between calls (~27 RPM, under 30 RPM limit)
+const _CLOUD_MAX_RETRIES = 3;
+
 async function cloudGenerate(prompt, model, temperature = 0.7) {
+  // Rate limiter: enforce minimum delay between calls
+  const now = Date.now();
+  const wait = _CLOUD_MIN_DELAY - (now - _lastCloudCall);
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  _lastCloudCall = Date.now();
+
   const base = getCloudBaseUrl();
   const useModel = CLOUD_MODEL || model;
-  const r = await fetch(`${base}/chat/completions`, {
+
+  for (let attempt = 0; attempt <= _CLOUD_MAX_RETRIES; attempt++) {
+    const r = await fetch(`${base}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -3583,12 +3595,23 @@ async function cloudGenerate(prompt, model, temperature = 0.7) {
     }),
     signal: abortCtrl?.signal,
   });
-  if (!r.ok) {
-    const err = await r.text().catch(() => r.status);
-    throw new Error(`Cloud API error: ${err}`);
-  }
-  const data = await r.json();
-  return data.choices?.[0]?.message?.content || '';
+if (r.status === 429) {
+      const retryAfter = parseInt(r.headers.get('retry-after') || '0') * 1000;
+      const backoff = retryAfter || (Math.pow(2, attempt) * 3000); // 3s, 6s, 12s
+      console.warn(`⏳ Rate limited (429). Retry ${attempt + 1}/${_CLOUD_MAX_RETRIES} in ${(backoff/1000).toFixed(0)}s...`);
+      await new Promise(r => setTimeout(r, backoff));
+      _lastCloudCall = Date.now();
+      continue;
+    }
+    if (!r.ok) {
+      const err = await r.text().catch(() => r.status);
+      throw new Error(`Cloud API error: ${err}`);
+    }
+const data = await r.json();
+    return data.choices?.[0]?.message?.content || '';
+  } // end for-loop
+
+  throw new Error('Cloud API: max retries exceeded (rate limited)');
 }
 
 // Streaming variant for RAG conversation — shows tokens as they arrive
