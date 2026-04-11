@@ -334,6 +334,13 @@ async function initEmbeddings() {
     updateEmbeddingStatus('⚠️ Keyword only');
     embeddingReady = false;
   }
+  // Load cached embeddings
+const cached = await loadEmbeddings();
+if (cached && cached.chunks) {
+  window.vectorStore.chunks = cached.chunks;
+  window.vectorStore.embeddings = cached.embeddings;
+  updateEmbeddingStatus(`✅ Semantic (${cached.chunks.length} cached)`);
+}
 }
 
 function updateEmbeddingStatus(text) {
@@ -1089,13 +1096,7 @@ window.addEventListener('DOMContentLoaded', () => {
   initConversations();
   updateSourcesUI();
   initEmbeddings();
-  // Load cached embeddings
-    const cached = await loadEmbeddings();
-    if (cached && cached.chunks) {
-      window.vectorStore.chunks = cached.chunks;
-      window.vectorStore.embeddings = cached.embeddings;
-      updateEmbeddingStatus(`✅ Semantic (${cached.chunks.length} cached)`);
-    }
+
 });
 
 // Globals
