@@ -3,10 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>know3 Chat — RAG Query Interface</title>
-
-<!-- PDF.js for inline preview -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs" type="module"></script>
+<title>know3 Chat — Multi-Provider RAG Interface</title>
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -23,11 +20,6 @@
   --accent: #00e5a0;
   --accent-dim: rgba(0,229,160,0.06);
   --accent-glow: rgba(0,229,160,0.12);
-  --purple: #a78bfa;
-  --blue: #38bdf8;
-  --orange: #fb923c;
-  --warn: #fbbf24;
-  --err: #f87171;
   --mono: 'IBM Plex Mono', monospace;
   --sans: 'Outfit', system-ui, sans-serif;
   --radius: 12px;
@@ -36,14 +28,13 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+html, body { height: 100%; }
+
 body {
   font-family: var(--sans);
   background: var(--bg);
   color: var(--text);
-  min-height: 100vh;
-  overflow-x: hidden;
-  font-size: 15px;
-  line-height: 1.55;
+  overflow: hidden;
   position: relative;
 }
 
@@ -58,43 +49,17 @@ body {
   opacity: 0.8;
 }
 
-body::before {
-  content: '';
-  position: fixed;
-  top: -20%;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 800px;
-  height: 800px;
-  background: radial-gradient(circle, rgba(0,229,160,0.04) 0%, transparent 70%);
-  pointer-events: none;
-  z-index: 0;
-}
-
-body::after {
-  content: '';
-  position: fixed;
-  bottom: -30%;
-  right: -10%;
-  width: 600px;
-  height: 600px;
-  background: radial-gradient(circle, rgba(167,139,250,0.03) 0%, transparent 70%);
-  pointer-events: none;
-  z-index: 0;
-}
-
 .app {
   position: relative;
   z-index: 1;
   max-width: 1100px;
   margin: 0 auto;
-  padding: 1rem 1.5rem 1rem;
+  padding: 1rem 1.5rem;
   height: 100vh;
   display: flex;
   flex-direction: column;
 }
 
-/* ── HEADER ── */
 .header {
   display: flex;
   justify-content: space-between;
@@ -123,32 +88,6 @@ body::after {
   align-items: center;
 }
 
-.status-indicator {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.75rem;
-  color: var(--text2);
-  font-family: var(--mono);
-  padding: 0.3rem 0.6rem;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-
-.status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--err);
-  transition: all 0.3s;
-}
-
-.status-dot.ok {
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--accent);
-}
-
 .btn-icon {
   background: transparent;
   border: 1px solid var(--border);
@@ -166,7 +105,6 @@ body::after {
   color: var(--accent);
 }
 
-/* ── CHAT LAYOUT ── */
 .chat-container {
   display: flex;
   flex: 1;
@@ -196,7 +134,6 @@ body::after {
   overflow: hidden;
 }
 
-/* ── CHAT MESSAGES ── */
 #chat-messages {
   flex: 1;
   overflow-y: auto;
@@ -217,9 +154,7 @@ body::after {
   to { opacity: 1; transform: translateY(0); }
 }
 
-.msg.user {
-  justify-content: flex-end;
-}
+.msg.user { justify-content: flex-end; }
 
 .msg-bubble {
   max-width: 80%;
@@ -255,11 +190,9 @@ body::after {
   border-top: 1px solid var(--border);
 }
 
-/* ── INPUT ── */
 .chat-input-box {
   padding: 1rem;
   border-top: 1px solid var(--border);
-  background: var(--surface);
   display: flex;
   gap: 0.6rem;
   align-items: flex-end;
@@ -276,7 +209,6 @@ body::after {
   font-size: 0.9rem;
   resize: none;
   max-height: 100px;
-  transition: border-color 0.25s;
 }
 
 #chat-input:focus {
@@ -297,7 +229,7 @@ body::after {
   font-family: var(--sans);
 }
 
-.btn-send:hover {
+.btn-send:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0,229,160,0.3);
 }
@@ -305,10 +237,8 @@ body::after {
 .btn-send:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-  transform: none;
 }
 
-/* ── SIDEBAR TABS ── */
 .sidebar-tabs {
   display: flex;
   gap: 2px;
@@ -348,11 +278,8 @@ body::after {
   display: none;
 }
 
-.sidebar-content.active {
-  display: block;
-}
+.sidebar-content.active { display: block; }
 
-/* ── HISTORY ── */
 .history-item {
   padding: 0.6rem;
   background: var(--surface2);
@@ -372,24 +299,38 @@ body::after {
 .history-item.active {
   background: var(--accent-dim);
   border-color: var(--accent);
+}
+
+.modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal.active { display: flex; }
+
+.modal-content {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  max-width: 600px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
   color: var(--accent);
 }
 
-.history-label {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--text2);
-  font-size: 0.75rem;
-}
-
-.history-time {
-  color: var(--text3);
-  font-size: 0.7rem;
-  margin-top: 0.2rem;
-}
-
-/* ── SETTINGS ── */
 .setting-group {
   margin-bottom: 1rem;
 }
@@ -402,16 +343,7 @@ body::after {
   display: block;
 }
 
-.setting-desc {
-  font-size: 0.7rem;
-  color: var(--text3);
-  margin-bottom: 0.4rem;
-}
-
-input[type="file"],
-input[type="text"],
-textarea,
-select {
+input, select, textarea {
   width: 100%;
   background: var(--surface2);
   border: 1px solid var(--border);
@@ -421,22 +353,9 @@ select {
   font-family: var(--mono);
   font-size: 0.8rem;
   margin-bottom: 0.4rem;
-  transition: border-color 0.25s;
 }
 
-input[type="file"] {
-  padding: 0.3rem;
-  cursor: pointer;
-}
-
-textarea {
-  resize: vertical;
-  min-height: 80px;
-}
-
-input[type="text"]:focus,
-textarea:focus,
-select:focus {
+input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-dim);
@@ -475,137 +394,52 @@ select:focus {
 }
 
 .btn-small.danger {
-  background: var(--err);
-  color: white;
+  background: #f87171;
 }
 
-.btn-small.danger:hover {
-  box-shadow: 0 2px 8px rgba(248,113,113,0.2);
-}
-
-/* ── COLLECTIONS LIST ── */
-.collection-item {
-  padding: 0.6rem;
+.provider-info {
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  margin-bottom: 0.4rem;
+  border-radius: 8px;
+  padding: 0.8rem;
+  margin: 1rem 0;
   font-size: 0.75rem;
+  color: var(--text2);
 }
 
-.collection-name {
-  font-weight: 600;
+.provider-info a {
   color: var(--accent);
-  margin-bottom: 0.2rem;
+  text-decoration: none;
+  margin-right: 0.8rem;
 }
 
-.collection-stats {
-  color: var(--text3);
-  font-size: 0.7rem;
-}
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: var(--surface); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
-.collection-checkbox {
-  margin-right: 0.4rem;
-}
-
-/* ── MODALS ── */
-.modal {
-  display: none;
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.7);
-  z-index: 1000;
-  align-items: center;
-  justify-content: center;
-}
-
-.modal.active {
-  display: flex;
-}
-
-.modal-content {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1.5rem;
-  max-width: 500px;
-  width: 90%;
-  max-height: 90vh;
-  overflow-y: auto;
-}
-
-.modal-title {
-  font-size: 1.1rem;
-  font-weight: 700;
-  margin-bottom: 1rem;
-  color: var(--accent);
-}
-
-.modal-actions {
-  display: flex;
-  gap: 0.6rem;
-  margin-top: 1rem;
-}
-
-/* ── RESPONSIVE ── */
 @media (max-width: 900px) {
-  .chat-container {
-    flex-direction: column;
-  }
-  
-  .chat-panel {
-    flex: 0 0 200px;
-    max-height: 300px;
-  }
-  
-  .msg-bubble {
-    max-width: 100%;
-  }
-}
-
-/* ── SCROLLBAR ── */
-::-webkit-scrollbar {
-  width: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: var(--surface);
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--border-bright, var(--border));
+  .chat-container { flex-direction: column; }
+  .chat-panel { flex: 0 0 200px; max-height: 300px; }
+  .msg-bubble { max-width: 100%; }
 }
 </style>
-
 </head>
 <body>
 
 <canvas id="matrix-canvas"></canvas>
 
 <div class="app">
-  <!-- HEADER -->
   <div class="header">
     <div class="logo">
       <h1><span class="k">k</span><span class="n">now3</span> Chat</h1>
     </div>
     <div class="header-right">
-      <div class="status-indicator">
-        <div class="status-dot"></div>
-        <span id="status-text">Offline</span>
-      </div>
       <button class="btn-icon" onclick="openModal('load-data-modal')" title="Load JSON data">📂</button>
       <button class="btn-icon" onclick="openModal('settings-modal')" title="Settings">⚙️</button>
     </div>
   </div>
 
-  <!-- MAIN CHAT LAYOUT -->
   <div class="chat-container">
-    <!-- CHAT MAIN -->
     <div class="chat-main">
       <div id="chat-messages"></div>
       <div class="chat-input-box">
@@ -614,15 +448,13 @@ select:focus {
       </div>
     </div>
 
-    <!-- SIDEBAR PANEL -->
     <div class="chat-panel">
       <div class="sidebar-tabs">
         <button class="sidebar-tab active" onclick="switchSidebarTab('history')">History</button>
         <button class="sidebar-tab" onclick="switchSidebarTab('sources')">Sources</button>
-        <button class="sidebar-tab" onclick="switchSidebarTab('settings-panel')">Settings</button>
+        <button class="sidebar-tab" onclick="switchSidebarTab('settings-panel')">Quick</button>
       </div>
 
-      <!-- HISTORY TAB -->
       <div id="sidebar-history" class="sidebar-content active">
         <div style="font-size: 0.75rem; color: var(--text3); margin-bottom: 0.6rem;">
           <strong>Conversations:</strong>
@@ -633,56 +465,45 @@ select:focus {
         </button>
       </div>
 
-      <!-- SOURCES TAB -->
       <div id="sidebar-sources" class="sidebar-content">
         <div style="font-size: 0.75rem; color: var(--text3); margin-bottom: 0.6rem;">
-          <strong>Loaded Collections:</strong>
+          <strong>Data:</strong>
         </div>
         <div id="sources-list"></div>
       </div>
 
-      <!-- QUICK SETTINGS TAB -->
       <div id="sidebar-settings-panel" class="sidebar-content">
         <div class="setting-group">
-          <label class="setting-label">Model</label>
-          <select id="model-select">
-            <option value="ollama">Ollama (Local)</option>
-            <option value="openai">OpenAI</option>
+          <label class="setting-label">Provider</label>
+          <select id="quick-provider" onchange="switchProvider()">
+            <option value="ollama">🖥️ Ollama</option>
+            <option value="google">🌐 Google</option>
+            <option value="groq">⚡ Groq</option>
+            <option value="together">🚀 Together</option>
+            <option value="github">🐙 GitHub</option>
+            <option value="openrouter">🔄 OpenRouter</option>
+            <option value="mistral">✨ Mistral</option>
+            <option value="deepseek">💰 DeepSeek</option>
           </select>
         </div>
 
-        <div class="setting-group">
-          <label class="setting-label">Ollama URL</label>
-          <input type="text" id="ollama-url" placeholder="http://localhost:11434" value="http://localhost:11434">
-        </div>
+        <div id="provider-status" style="font-size: 0.75rem; color: var(--text2); padding: 0.5rem; background: var(--surface2); border-radius: 6px; margin: 0.5rem 0;"></div>
 
         <div class="setting-group">
-          <label class="setting-label">Ollama Model</label>
-          <input type="text" id="ollama-model" placeholder="mistral" value="mistral">
+          <label class="setting-label">Temp</label>
+          <input type="range" id="temp-slider" min="0" max="100" value="70" onchange="updateTemp()">
+          <div style="text-align: center; font-size: 0.7rem; color: var(--text3);">
+            <span id="temp-display">0.7</span>
+          </div>
         </div>
 
-        <div class="setting-group">
-          <label class="setting-label">Search Mode</label>
-          <select id="search-mode">
-            <option value="hybrid">Hybrid (Vector + BM25)</option>
-            <option value="vector">Vector Only</option>
-            <option value="bm25">BM25 Only</option>
-          </select>
-        </div>
-
-        <div class="setting-group">
-          <label class="setting-label">Top K Results</label>
-          <input type="text" id="top-k" placeholder="3" value="3">
-        </div>
-
-        <button class="btn-small" onclick="saveQuickSettings()">💾 Save</button>
-        <button class="btn-small secondary" onclick="openModal('settings-modal')">⚙️ Full Settings</button>
+        <button class="btn-small secondary" onclick="openModal('settings-modal')">
+          ⚙️ Full Settings
+        </button>
       </div>
     </div>
   </div>
 </div>
-
-<!-- MODALS -->
 
 <!-- LOAD DATA MODAL -->
 <div id="load-data-modal" class="modal">
@@ -692,43 +513,24 @@ select:focus {
     <div class="setting-group">
       <label class="setting-label">Load Method</label>
       <select id="load-method" onchange="switchLoadMethod(this.value)">
-        <option value="manual">Manual Upload (JSON/JSONL)</option>
-        <option value="github">Auto-Load from GitHub</option>
+        <option value="manual">Manual Upload</option>
+        <option value="github">From GitHub</option>
       </select>
     </div>
 
-    <!-- MANUAL UPLOAD -->
     <div id="manual-load-section">
-      <p style="font-size: 0.85rem; color: var(--text2); margin-bottom: 1rem;">
-        Upload JSON or JSONL from know3 export.
-      </p>
-      <div class="setting-group">
-        <label class="setting-label">Select File:</label>
-        <input type="file" id="data-file-input" accept=".json,.jsonl" onchange="handleDataFileSelect(event)">
-      </div>
-      <div id="file-preview" style="font-size: 0.75rem; color: var(--text3); margin: 0.8rem 0;"></div>
-      <div class="modal-actions">
-        <button class="btn-small" onclick="loadDataFile()">✅ Load</button>
-        <button class="btn-small secondary" onclick="closeModal('load-data-modal')">Cancel</button>
-      </div>
+      <input type="file" id="data-file-input" accept=".json,.jsonl" onchange="handleDataFileSelect(event)">
+      <div id="file-preview" style="font-size: 0.75rem; color: var(--text3); margin: 0.6rem 0;"></div>
+      <button class="btn-small" onclick="loadDataFile()">✅ Load</button>
+      <button class="btn-small secondary" onclick="closeModal('load-data-modal')">Cancel</button>
     </div>
 
-    <!-- GITHUB PRELUDE -->
     <div id="github-load-section" style="display: none;">
-      <p style="font-size: 0.85rem; color: var(--text2); margin-bottom: 1rem;">
-        Auto-load from khalecl.github.io/know3/prelude/
-      </p>
-      <div class="setting-group">
-        <label class="setting-label">Available Datasets:</label>
-        <select id="github-dataset-select">
-          <option value="">Loading...</option>
-        </select>
-      </div>
-      <div id="github-preview" style="font-size: 0.75rem; color: var(--text3); margin: 0.8rem 0;"></div>
-      <div class="modal-actions">
-        <button class="btn-small" onclick="loadGitHubDataset()">✅ Load</button>
-        <button class="btn-small secondary" onclick="closeModal('load-data-modal')">Cancel</button>
-      </div>
+      <select id="github-dataset-select">
+        <option value="">Loading...</option>
+      </select>
+      <button class="btn-small" onclick="loadGitHubDataset()">✅ Load</button>
+      <button class="btn-small secondary" onclick="closeModal('load-data-modal')">Cancel</button>
     </div>
   </div>
 </div>
@@ -740,179 +542,255 @@ select:focus {
     
     <div class="setting-group">
       <label class="setting-label">Inference Provider</label>
-      <select id="provider-select">
-        <option value="ollama">Ollama (Local)</option>
-        <option value="openai">OpenAI API</option>
-        <option value="anthropic">Anthropic</option>
+      <select id="provider-select" onchange="updateProviderUI()">
+        <option value="ollama">🖥️ Ollama (Local)</option>
+        <option value="google">🌐 Google Gemini (Free)</option>
+        <option value="groq">⚡ Groq (Free)</option>
+        <option value="together">🚀 Together AI (Free)</option>
+        <option value="github">🐙 GitHub Models (Free)</option>
+        <option value="openrouter">🔄 OpenRouter (Free)</option>
+        <option value="mistral">✨ Mistral AI (Free)</option>
+        <option value="deepseek">💰 DeepSeek (Cheap)</option>
+        <option value="openai">OpenAI (Paid)</option>
+        <option value="anthropic">Anthropic (Paid)</option>
       </select>
     </div>
 
+    <div id="provider-info" class="provider-info"></div>
+
+    <!-- OLLAMA -->
+    <div id="ollama-config" class="provider-config">
+      <div class="setting-group">
+        <label class="setting-label">URL</label>
+        <input type="text" id="setting-ollama-url" placeholder="http://localhost:11434">
+      </div>
+      <div class="setting-group">
+        <label class="setting-label">Model</label>
+        <input type="text" id="setting-ollama-model" placeholder="mistral">
+      </div>
+    </div>
+
+    <!-- GOOGLE -->
+    <div id="google-config" class="provider-config" style="display: none;">
+      <div class="setting-group">
+        <label class="setting-label">API Key</label>
+        <input type="password" id="setting-google-key" placeholder="Get at https://aistudio.google.com/app/apikey">
+      </div>
+      <div class="setting-group">
+        <label class="setting-label">Model</label>
+        <select id="setting-google-model">
+          <option>gemini-2.5-flash</option>
+          <option>gemini-2.5-pro</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- GROQ -->
+    <div id="groq-config" class="provider-config" style="display: none;">
+      <div class="setting-group">
+        <label class="setting-label">API Key</label>
+        <input type="password" id="setting-groq-key" placeholder="Get at https://console.groq.com">
+      </div>
+      <div class="setting-group">
+        <label class="setting-label">Model</label>
+        <select id="setting-groq-model">
+          <option>llama-3.3-70b-versatile</option>
+          <option>mixtral-8x7b-32768</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- TOGETHER -->
+    <div id="together-config" class="provider-config" style="display: none;">
+      <div class="setting-group">
+        <label class="setting-label">API Key</label>
+        <input type="password" id="setting-together-key" placeholder="Get at https://api.together.xyz">
+      </div>
+      <div class="setting-group">
+        <label class="setting-label">Model</label>
+        <select id="setting-together-model">
+          <option>meta-llama/Llama-3.3-70B-Instruct-Turbo</option>
+          <option>meta-llama/Llama-3.1-8B-Instruct-Turbo</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- GITHUB -->
+    <div id="github-config" class="provider-config" style="display: none;">
+      <div class="setting-group">
+        <label class="setting-label">PAT Token</label>
+        <input type="password" id="setting-github-key" placeholder="Get at https://github.com/settings/tokens">
+      </div>
+      <div class="setting-group">
+        <label class="setting-label">Model</label>
+        <select id="setting-github-model">
+          <option>gpt-4o</option>
+          <option>llama-3.3-70b</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- OPENROUTER -->
+    <div id="openrouter-config" class="provider-config" style="display: none;">
+      <div class="setting-group">
+        <label class="setting-label">API Key</label>
+        <input type="password" id="setting-openrouter-key" placeholder="Get at https://openrouter.ai/keys">
+      </div>
+      <div class="setting-group">
+        <label class="setting-label">Model</label>
+        <select id="setting-openrouter-model">
+          <option>openrouter/auto</option>
+          <option>deepseek/deepseek-r1</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- MISTRAL -->
+    <div id="mistral-config" class="provider-config" style="display: none;">
+      <div class="setting-group">
+        <label class="setting-label">API Key</label>
+        <input type="password" id="setting-mistral-key" placeholder="Get at https://console.mistral.ai">
+      </div>
+      <div class="setting-group">
+        <label class="setting-label">Model</label>
+        <select id="setting-mistral-model">
+          <option>mistral-small-latest</option>
+          <option>mistral-large-latest</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- DEEPSEEK -->
+    <div id="deepseek-config" class="provider-config" style="display: none;">
+      <div class="setting-group">
+        <label class="setting-label">API Key</label>
+        <input type="password" id="setting-deepseek-key" placeholder="Get at https://platform.deepseek.com">
+      </div>
+      <div class="setting-group">
+        <label class="setting-label">Model</label>
+        <select id="setting-deepseek-model">
+          <option>deepseek-chat</option>
+          <option>deepseek-reasoner</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- OPENAI -->
+    <div id="openai-config" class="provider-config" style="display: none;">
+      <div class="setting-group">
+        <label class="setting-label">API Key</label>
+        <input type="password" id="setting-openai-key" placeholder="sk-...">
+      </div>
+      <div class="setting-group">
+        <label class="setting-label">Model</label>
+        <select id="setting-openai-model">
+          <option>gpt-4o-mini</option>
+          <option>gpt-4o</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- ANTHROPIC -->
+    <div id="anthropic-config" class="provider-config" style="display: none;">
+      <div class="setting-group">
+        <label class="setting-label">API Key</label>
+        <input type="password" id="setting-anthropic-key" placeholder="sk-ant-...">
+      </div>
+      <div class="setting-group">
+        <label class="setting-label">Model</label>
+        <select id="setting-anthropic-model">
+          <option>claude-3-5-haiku-latest</option>
+          <option>claude-3-5-sonnet-latest</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- COMMON SETTINGS -->
     <div class="setting-group">
-      <label class="setting-label">Ollama Configuration</label>
-      <div class="setting-desc">Local inference endpoint</div>
-      <input type="text" id="setting-ollama-url" placeholder="http://localhost:11434">
-      <input type="text" id="setting-ollama-model" placeholder="Model name (mistral, neural-chat, etc.)">
+      <label class="setting-label">Temperature</label>
+      <input type="range" id="setting-temperature" min="0" max="100" value="70" onchange="updateTempDisplay()">
+      <div style="text-align: center; font-size: 0.7rem; color: var(--text3);">
+        <span id="temp-number">0.7</span>
+      </div>
     </div>
 
     <div class="setting-group">
-      <label class="setting-label">OpenAI API Key</label>
-      <input type="text" id="setting-openai-key" placeholder="sk-...">
+      <label class="setting-label">Top K Results</label>
+      <input type="text" id="setting-top-k" placeholder="3" value="3">
     </div>
 
     <div class="setting-group">
-      <label class="setting-label">RAG Settings</label>
-      <div class="setting-desc">Retrieval and ranking</div>
-      <select id="setting-search-mode">
-        <option value="hybrid">Hybrid Search (Recommended)</option>
-        <option value="vector">Vector Similarity Only</option>
-        <option value="bm25">BM25 Only</option>
-      </select>
-      <input type="text" id="setting-top-k" placeholder="Number of results (default: 3)" value="3">
-    </div>
-
-    <div class="setting-group">
-      <label class="setting-label">Background Effects</label>
-      <div class="setting-desc">Matrix rain & custom colors</div>
-      
-      <label style="font-size: 0.8rem; color: var(--text2); margin: 0.5rem 0; display: flex; align-items: center; gap: 0.4rem;">
-        <input type="checkbox" id="matrix-enabled" checked onchange="toggleMatrixBg()"> Enable Matrix BG
+      <label class="setting-label">Matrix Background</label>
+      <label style="font-size: 0.8rem; color: var(--text2); display: flex; align-items: center; gap: 0.4rem;">
+        <input type="checkbox" id="matrix-enabled" checked onchange="toggleMatrixBg()"> Enable
       </label>
-      
-      <label style="font-size: 0.8rem; color: var(--text2); margin: 0.5rem 0; display: block;">
-        Matrix Rain Color:
-        <input type="color" id="matrix-color-primary" value="#00ff00" onchange="updateMatrixColor()" style="width: 100%; height: 40px; cursor: pointer; margin-top: 0.3rem;">
-      </label>
-      
-      <input type="range" id="matrix-intensity" min="0" max="100" value="80" onchange="updateMatrixIntensity()" style="width: 100%; margin-top: 0.3rem;">
-      <div style="font-size: 0.7rem; color: var(--text3); text-align: center;">Intensity: <span id="intensity-display">80</span>%</div>
+      <input type="color" id="matrix-color" value="#00ff00" onchange="updateMatrixColor()">
+      <input type="range" id="matrix-intensity" min="0" max="100" value="80" onchange="updateMatrixIntensity()" style="margin-top: 0.3rem;">
     </div>
 
     <div class="setting-group">
-      <label class="setting-label">Chat Export</label>
+      <button class="btn-small" onclick="saveSettings()">✅ Save All</button>
       <button class="btn-small secondary" onclick="exportCurrentChat()">📥 Export Chat</button>
-      <button class="btn-small secondary" onclick="exportAllChats()">📥 Export All Chats</button>
+      <button class="btn-small danger" onclick="clearAllData()">🗑️ Clear All</button>
     </div>
 
-    <div class="setting-group">
-      <label class="setting-label">Danger Zone</label>
-      <button class="btn-small danger" onclick="clearAllData()">🗑️ Clear Everything</button>
-    </div>
-
-    <div class="modal-actions">
-      <button class="btn-small" onclick="saveSettings()">✅ Save Settings</button>
-      <button class="btn-small secondary" onclick="closeModal('settings-modal')">Cancel</button>
-    </div>
+    <button class="btn-small secondary" onclick="closeModal('settings-modal')" style="margin-top: 1rem;">Close</button>
   </div>
 </div>
 
 <script>
 // ════════════════════════════════════════════════════════════════════════════
-// VECTOR STORE (In-memory RAG)
+// VECTOR STORE
 // ════════════════════════════════════════════════════════════════════════════
 
 class VectorStore {
   constructor() {
     this.chunks = [];
-    this.metadata = {};
-    this.collections = {};
-  }
-
-  addChunk(text, embedding, metadata = {}) {
-    const chunk = { text, embedding, metadata };
-    this.chunks.push(chunk);
-    return chunk;
   }
 
   addChunksFromJSON(data) {
-    if (!data || typeof data !== 'object') return;
-
-    // Support different JSON formats
     if (Array.isArray(data)) {
-      // Array of chunks
-      data.forEach((item, idx) => {
-        const text = item.text || item.content || JSON.stringify(item);
-        const embedding = item.embedding || null;
-        const meta = item.metadata || { index: idx };
-        this.addChunk(text, embedding, meta);
+      data.forEach((item, i) => {
+        this.chunks.push({ text: item.text || item.content || '', metadata: item.metadata || {index: i} });
       });
-    } else if (data.chunks && Array.isArray(data.chunks)) {
-      // know3 export format
-      data.chunks.forEach((chunk, idx) => {
-        const text = chunk.text || chunk.content || '';
-        const embedding = chunk.embedding || null;
-        const meta = { ...chunk.metadata, collection: data.collection };
-        this.addChunk(text, embedding, meta);
-      });
-    } else if (data.vectors && Array.isArray(data.vectors)) {
-      // Vector store format
-      data.vectors.forEach((vec, idx) => {
-        const text = vec.text || vec.content || '';
-        const embedding = vec.vector || vec.embedding || null;
-        const meta = { ...vec.metadata, index: idx };
-        this.addChunk(text, embedding, meta);
+    } else if (data.chunks) {
+      data.chunks.forEach((c, i) => {
+        this.chunks.push({ text: c.text || '', metadata: {...c.metadata, collection: data.collection} });
       });
     }
   }
 
-  search(query, topK = 3, mode = 'hybrid') {
-    if (this.chunks.length === 0) return [];
-
-    // Simple embedding: tf-idf-like scoring
-    const queryTerms = query.toLowerCase().split(/\s+/);
-    
-    const scores = this.chunks.map((chunk, idx) => {
-      const text = chunk.text.toLowerCase();
+  search(query, topK = 3) {
+    if (!this.chunks.length) return [];
+    const terms = query.toLowerCase().split(/\s+/);
+    const scored = this.chunks.map((c, i) => {
       let score = 0;
-
-      queryTerms.forEach(term => {
-        const count = (text.match(new RegExp(term, 'g')) || []).length;
-        score += count;
-      });
-
-      return { chunk, score, idx };
+      terms.forEach(t => score += (c.text.toLowerCase().match(new RegExp(t, 'g')) || []).length);
+      return { chunk: c, score, i };
     });
-
-    return scores
-      .sort((a, b) => b.score - a.score)
-      .slice(0, topK)
-      .map(({ chunk }) => chunk);
+    return scored.sort((a, b) => b.score - a.score).slice(0, topK).map(x => x.chunk);
   }
 
-  getStats() {
-    return {
-      chunks: this.chunks.length,
-      collections: Object.keys(this.collections).length
-    };
-  }
-
-  clear() {
-    this.chunks = [];
-    this.metadata = {};
-    this.collections = {};
-  }
+  clear() { this.chunks = []; }
 }
 
 window.vectorStore = new VectorStore();
 
 // ════════════════════════════════════════════════════════════════════════════
-// CONVERSATION MANAGEMENT
+// CONVERSATIONS
 // ════════════════════════════════════════════════════════════════════════════
 
-let conversations = {};
-let currentConversationId = null;
+let conversations = {}, currentConversationId = null;
 
 function initConversations() {
-  const stored = localStorage.getItem('know3_conversations');
-  if (stored) {
-    try {
-      conversations = JSON.parse(stored);
-    } catch (e) {
-      conversations = {};
-    }
+  try {
+    conversations = JSON.parse(localStorage.getItem('know3_conversations')) || {};
+  } catch (e) {
+    conversations = {};
   }
-  const stored_id = localStorage.getItem('know3_current_id');
-  if (stored_id && conversations[stored_id]) {
-    currentConversationId = stored_id;
+  const id = localStorage.getItem('know3_current_id');
+  if (id && conversations[id]) {
+    currentConversationId = id;
   } else {
     startNewConversation();
   }
@@ -921,545 +799,518 @@ function initConversations() {
 
 function startNewConversation() {
   const id = Date.now().toString();
-  conversations[id] = {
-    id,
-    title: 'Chat ' + new Date().toLocaleString(),
-    messages: [],
-    created: Date.now()
-  };
+  conversations[id] = { id, title: 'Chat ' + new Date().toLocaleString(), messages: [], created: Date.now() };
   currentConversationId = id;
-  saveConversations();
+  localStorage.setItem('know3_conversations', JSON.stringify(conversations));
+  localStorage.setItem('know3_current_id', id);
   renderChat();
   updateHistoryUI();
   document.getElementById('chat-input').focus();
 }
 
-function saveConversations() {
-  localStorage.setItem('know3_conversations', JSON.stringify(conversations));
-  localStorage.setItem('know3_current_id', currentConversationId);
-}
-
-function deleteConversation(id) {
-  if (confirm('Delete this conversation?')) {
-    delete conversations[id];
-    if (currentConversationId === id) {
-      startNewConversation();
-    } else {
-      saveConversations();
-      updateHistoryUI();
-    }
-  }
-}
-
-function switchConversation(id) {
-  if (conversations[id]) {
-    currentConversationId = id;
-    saveConversations();
-    renderChat();
-    updateHistoryUI();
-  }
-}
-
-function updateHistoryUI() {
-  const list = document.getElementById('history-list');
-  list.innerHTML = Object.values(conversations)
-    .sort((a, b) => b.created - a.created)
-    .map(conv => `
-      <div class="history-item ${conv.id === currentConversationId ? 'active' : ''}" onclick="switchConversation('${conv.id}')">
-        <div class="history-label">${escapeHtml(conv.title.substring(0, 25))}</div>
-        <div class="history-time">${new Date(conv.created).toLocaleString()}</div>
-      </div>
-    `).join('');
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// CHAT UI
-// ════════════════════════════════════════════════════════════════════════════
-
 function renderChat() {
   const conv = conversations[currentConversationId];
   if (!conv) return;
-
-  const messagesDiv = document.getElementById('chat-messages');
-  messagesDiv.innerHTML = conv.messages.map((msg, idx) => `
-    <div class="msg ${msg.role}">
+  const msgs = document.getElementById('chat-messages');
+  msgs.innerHTML = conv.messages.map(m => `
+    <div class="msg ${m.role}">
       <div class="msg-bubble">
-        ${escapeHtml(msg.content)}
-        ${msg.sources ? `<div class="msg-source">📚 ${msg.sources.map(s => escapeHtml(s.substring(0, 20))).join(', ')}</div>` : ''}
+        ${escapeHtml(m.content)}
+        ${m.sources ? `<div class="msg-source">📚 ${m.sources.map(s => escapeHtml(s.substring(0, 20))).join(', ')}</div>` : ''}
       </div>
-      <div class="msg-time">${new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+      <div class="msg-time">${new Date(m.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
     </div>
   `).join('');
-  
-  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  msgs.scrollTop = msgs.scrollHeight;
 }
 
 function addMessage(role, content, sources = null) {
   const conv = conversations[currentConversationId];
   if (!conv) return;
-
-  conv.messages.push({
-    role,
-    content,
-    sources,
-    timestamp: Date.now()
-  });
-
-  // Update title from first user message
+  conv.messages.push({ role, content, sources, timestamp: Date.now() });
   if (role === 'user' && conv.messages.length === 1) {
     conv.title = content.substring(0, 50) + (content.length > 50 ? '...' : '');
   }
-
-  saveConversations();
+  localStorage.setItem('know3_conversations', JSON.stringify(conversations));
   renderChat();
   updateHistoryUI();
 }
 
+function updateHistoryUI() {
+  const list = document.getElementById('history-list');
+  list.innerHTML = Object.values(conversations).sort((a, b) => b.created - a.created)
+    .map(c => `
+      <div class="history-item ${c.id === currentConversationId ? 'active' : ''}" onclick="switchConversation('${c.id}')">
+        <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text2); font-size: 0.75rem;">${escapeHtml(c.title.substring(0, 25))}</div>
+        <div style="color: var(--text3); font-size: 0.7rem; margin-top: 0.2rem;">${new Date(c.created).toLocaleString()}</div>
+      </div>
+    `).join('');
+}
+
+function switchConversation(id) {
+  if (conversations[id]) {
+    currentConversationId = id;
+    localStorage.setItem('know3_current_id', id);
+    renderChat();
+    updateHistoryUI();
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// CHAT & INFERENCE
+// ════════════════════════════════════════════════════════════════════════════
+
 async function sendMessage() {
   const input = document.getElementById('chat-input');
-  const query = input.value.trim();
-  if (!query) return;
-
+  const q = input.value.trim();
+  if (!q) return;
   input.value = '';
   input.style.height = 'auto';
-  
-  addMessage('user', query);
-  
+
+  addMessage('user', q);
+
   const settings = loadSettings();
-  const topK = parseInt(settings.topK) || 3;
-  const mode = settings.searchMode || 'hybrid';
-  
-  // RAG search
-  const results = window.vectorStore.search(query, topK, mode);
-  
-  if (results.length === 0) {
-    addMessage('assistant', 'No relevant sources found. Load a JSON dataset to enable RAG search.');
+  const topK = parseInt(localStorage.getItem('know3_top_k')) || 3;
+  const results = window.vectorStore.search(q, topK);
+
+  if (!results.length) {
+    addMessage('assistant', '⚠️ No data loaded. Upload JSON to enable RAG search.');
     return;
   }
 
   const context = results.map(r => r.text).join('\n---\n');
-  const sources = results.map((r, i) => r.metadata?.source || r.metadata?.file || `Source ${i + 1}`);
-  
-  // Query inference
-  const answer = await queryInference(query, context, settings);
+  const sources = results.map(r => r.metadata?.source || r.metadata?.file || 'Source').slice(0, 3);
+
+  const answer = await queryInference(q, context, settings);
   addMessage('assistant', answer, sources);
 }
 
 async function queryInference(query, context, settings) {
-  const provider = settings.provider || 'ollama';
+  const provider = localStorage.getItem('know3_provider') || 'ollama';
+  const temp = (parseInt(localStorage.getItem('know3_temperature')) || 70) / 100;
 
-  if (provider === 'ollama') {
-    return await queryOllama(query, context, settings);
-  } else if (provider === 'openai') {
-    return await queryOpenAI(query, context, settings);
+  switch(provider) {
+    case 'google':
+      return await queryGoogle(query, context, temp);
+    case 'groq':
+      return await queryGroq(query, context, temp);
+    case 'together':
+      return await queryTogether(query, context, temp);
+    case 'github':
+      return await queryGitHub(query, context, temp);
+    case 'openrouter':
+      return await queryOpenRouter(query, context, temp);
+    case 'mistral':
+      return await queryMistral(query, context, temp);
+    case 'deepseek':
+      return await queryDeepSeek(query, context, temp);
+    case 'openai':
+      return await queryOpenAI(query, context, temp);
+    case 'anthropic':
+      return await queryAnthropic(query, context, temp);
+    default:
+      return await queryOllama(query, context, temp);
   }
-  
-  return 'Inference provider not configured.';
 }
 
-async function queryOllama(query, context, settings) {
-  const url = settings.ollamaUrl || 'http://localhost:11434';
-  const model = settings.ollamaModel || 'mistral';
-  const temperature = parseFloat(settings.temperature) || 0.7;
-
-  const prompt = `Based on the following context, answer the question. Be concise and accurate.
-
-Context:
-${context}
-
-Question: ${query}
-
-Answer:`;
-
+async function queryOllama(q, ctx, temp) {
+  const url = localStorage.getItem('know3_ollama_url') || 'http://localhost:11434';
+  const model = localStorage.getItem('know3_ollama_model') || 'mistral';
   try {
-    const response = await fetch(`${url}/api/generate`, {
+    const res = await fetch(`${url}/api/generate`, {
+      method: 'POST',
+      body: JSON.stringify({ model, prompt: `Context:\n${ctx}\n\nQ: ${q}\n\nA:`, temperature: temp, stream: false })
+    });
+    if (!res.ok) return `❌ Ollama error (${res.status})`;
+    return (await res.json()).response || 'No response';
+  } catch (e) {
+    return `❌ Connection failed: ${e.message}`;
+  }
+}
+
+async function queryGoogle(q, ctx, temp) {
+  const key = localStorage.getItem('know3_google_key');
+  if (!key) return '🔑 Google API key not set. Get at https://aistudio.google.com/app/apikey';
+  const model = localStorage.getItem('know3_google_model') || 'gemini-2.5-flash';
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        prompt,
-        temperature,
-        stream: false
-      })
+      body: JSON.stringify({ contents: [{ parts: [{ text: `Context:\n${ctx}\n\nQ: ${q}\n\nA:` }] }], generationConfig: { temperature: temp } })
     });
-
-    if (!response.ok) return `Error: ${response.statusText}`;
-    const data = await response.json();
-    return data.response || 'No response generated.';
+    if (!res.ok) return `❌ Google error`;
+    return (await res.json()).candidates?.[0]?.content?.parts?.[0]?.text || 'No response';
   } catch (e) {
-    const msg = e.message || 'Unknown error';
-    if (msg.includes('Failed to fetch')) {
-      return `🚨 Cannot connect to Ollama at ${url}\n\n✅ Fix:\n1. Start Ollama: \`ollama serve\`\n2. Check Settings → Ollama URL\n3. If using file://, start local server:\n   \`python3 -m http.server 8000\`\n   Then visit: http://localhost:8000`;
-    }
-    return `Connection error: ${msg}`;
+    return `❌ Error: ${e.message}`;
   }
 }
 
-async function queryOpenAI(query, context, settings) {
-  // Placeholder: requires API key management
-  return 'OpenAI provider not yet implemented. Use Ollama or configure API key in settings.';
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// SETTINGS
-// ════════════════════════════════════════════════════════════════════════════
-
-function loadSettings() {
-  const stored = localStorage.getItem('know3_settings');
-  if (stored) {
-    try {
-      return JSON.parse(stored);
-    } catch (e) {
-      return getDefaultSettings();
-    }
+async function queryGroq(q, ctx, temp) {
+  const key = localStorage.getItem('know3_groq_key');
+  if (!key) return '🔑 Groq API key not set. Get at https://console.groq.com';
+  const model = localStorage.getItem('know3_groq_model') || 'llama-3.3-70b-versatile';
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: `Context:\n${ctx}\n\nQ: ${q}\n\nA:` }], temperature: temp })
+    });
+    if (!res.ok) return `❌ Groq error`;
+    return (await res.json()).choices?.[0]?.message?.content || 'No response';
+  } catch (e) {
+    return `❌ Error: ${e.message}`;
   }
-  return getDefaultSettings();
 }
 
-function getDefaultSettings() {
-  return {
-    provider: 'ollama',
-    ollamaUrl: 'http://localhost:11434',
-    ollamaModel: 'mistral',
-    searchMode: 'hybrid',
-    topK: '3',
-    temperature: '0.7'
-  };
+async function queryTogether(q, ctx, temp) {
+  const key = localStorage.getItem('know3_together_key');
+  if (!key) return '🔑 Together AI key not set. Get $25 free at https://api.together.xyz';
+  const model = localStorage.getItem('know3_together_model') || 'meta-llama/Llama-3.3-70B-Instruct-Turbo';
+  try {
+    const res = await fetch('https://api.together.xyz/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: `Context:\n${ctx}\n\nQ: ${q}\n\nA:` }], temperature: temp })
+    });
+    if (!res.ok) return `❌ Together error`;
+    return (await res.json()).choices?.[0]?.message?.content || 'No response';
+  } catch (e) {
+    return `❌ Error: ${e.message}`;
+  }
 }
 
-function saveSettings() {
-  const settings = {
-    provider: document.getElementById('provider-select').value,
-    ollamaUrl: document.getElementById('setting-ollama-url').value,
-    ollamaModel: document.getElementById('setting-ollama-model').value,
-    searchMode: document.getElementById('setting-search-mode').value,
-    topK: document.getElementById('setting-top-k').value,
-    temperature: document.getElementById('setting-temperature').value
-  };
-
-  localStorage.setItem('know3_settings', JSON.stringify(settings));
-  closeModal('settings-modal');
-  alert('Settings saved!');
+async function queryGitHub(q, ctx, temp) {
+  const key = localStorage.getItem('know3_github_key');
+  if (!key) return '🔑 GitHub PAT token not set. Create at https://github.com/settings/tokens';
+  const model = localStorage.getItem('know3_github_model') || 'gpt-4o';
+  try {
+    const res = await fetch('https://models.inference.ai.azure.com/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: `Context:\n${ctx}\n\nQ: ${q}\n\nA:` }], temperature: temp })
+    });
+    if (!res.ok) return `❌ GitHub error`;
+    return (await res.json()).choices?.[0]?.message?.content || 'No response';
+  } catch (e) {
+    return `❌ Error: ${e.message}`;
+  }
 }
 
-function saveQuickSettings() {
-  const settings = {
-    ollamaUrl: document.getElementById('ollama-url').value,
-    ollamaModel: document.getElementById('ollama-model').value,
-    searchMode: document.getElementById('search-mode').value,
-    topK: document.getElementById('top-k').value
-  };
+async function queryOpenRouter(q, ctx, temp) {
+  const key = localStorage.getItem('know3_openrouter_key');
+  if (!key) return '🔑 OpenRouter key not set. Free account at https://openrouter.ai/keys';
+  const model = localStorage.getItem('know3_openrouter_model') || 'openrouter/auto';
+  try {
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://khalecl.github.io/know3' },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: `Context:\n${ctx}\n\nQ: ${q}\n\nA:` }], temperature: temp })
+    });
+    if (!res.ok) return `❌ OpenRouter error`;
+    return (await res.json()).choices?.[0]?.message?.content || 'No response';
+  } catch (e) {
+    return `❌ Error: ${e.message}`;
+  }
+}
 
-  const current = loadSettings();
-  Object.assign(current, settings);
-  localStorage.setItem('know3_settings', JSON.stringify(current));
-  alert('Quick settings saved!');
+async function queryMistral(q, ctx, temp) {
+  const key = localStorage.getItem('know3_mistral_key');
+  if (!key) return '🔑 Mistral key not set. Free at https://console.mistral.ai';
+  const model = localStorage.getItem('know3_mistral_model') || 'mistral-small-latest';
+  try {
+    const res = await fetch('https://api.mistral.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: `Context:\n${ctx}\n\nQ: ${q}\n\nA:` }], temperature: temp })
+    });
+    if (!res.ok) return `❌ Mistral error`;
+    return (await res.json()).choices?.[0]?.message?.content || 'No response';
+  } catch (e) {
+    return `❌ Error: ${e.message}`;
+  }
+}
+
+async function queryDeepSeek(q, ctx, temp) {
+  const key = localStorage.getItem('know3_deepseek_key');
+  if (!key) return '🔑 DeepSeek key not set. Get at https://platform.deepseek.com';
+  const model = localStorage.getItem('know3_deepseek_model') || 'deepseek-chat';
+  try {
+    const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: `Context:\n${ctx}\n\nQ: ${q}\n\nA:` }], temperature: temp })
+    });
+    if (!res.ok) return `❌ DeepSeek error`;
+    return (await res.json()).choices?.[0]?.message?.content || 'No response';
+  } catch (e) {
+    return `❌ Error: ${e.message}`;
+  }
+}
+
+async function queryOpenAI(q, ctx, temp) {
+  const key = localStorage.getItem('know3_openai_key');
+  if (!key) return '🔑 OpenAI key not set. Get at https://platform.openai.com';
+  const model = localStorage.getItem('know3_openai_model') || 'gpt-4o-mini';
+  try {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: `Context:\n${ctx}\n\nQ: ${q}\n\nA:` }], temperature: temp })
+    });
+    if (!res.ok) return `❌ OpenAI error`;
+    return (await res.json()).choices?.[0]?.message?.content || 'No response';
+  } catch (e) {
+    return `❌ Error: ${e.message}`;
+  }
+}
+
+async function queryAnthropic(q, ctx, temp) {
+  const key = localStorage.getItem('know3_anthropic_key');
+  if (!key) return '🔑 Anthropic key not set. Get at https://console.anthropic.com';
+  const model = localStorage.getItem('know3_anthropic_model') || 'claude-3-5-haiku-latest';
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, max_tokens: 1024, messages: [{ role: 'user', content: `Context:\n${ctx}\n\nQ: ${q}\n\nA:` }], temperature: temp })
+    });
+    if (!res.ok) return `❌ Anthropic error`;
+    return (await res.json()).content?.[0]?.text || 'No response';
+  } catch (e) {
+    return `❌ Error: ${e.message}`;
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// DATA LOADING
+// DATA LOADING & UTILITIES
 // ════════════════════════════════════════════════════════════════════════════
 
 let selectedDataFile = null;
-let githubDatasets = [];
 
-function switchLoadMethod(method) {
-  const manualSection = document.getElementById('manual-load-section');
-  const githubSection = document.getElementById('github-load-section');
-  
-  if (method === 'manual') {
-    manualSection.style.display = 'block';
-    githubSection.style.display = 'none';
-  } else {
-    manualSection.style.display = 'none';
-    githubSection.style.display = 'block';
-    loadGitHubDatasets();
-  }
+function switchLoadMethod(m) {
+  document.getElementById('manual-load-section').style.display = m === 'manual' ? 'block' : 'none';
+  document.getElementById('github-load-section').style.display = m === 'github' ? 'block' : 'none';
+  if (m === 'github') loadGitHubDatasets();
 }
 
-function handleDataFileSelect(event) {
-  selectedDataFile = event.target.files[0];
+function handleDataFileSelect(e) {
+  selectedDataFile = e.target.files[0];
   if (selectedDataFile) {
-    const preview = document.getElementById('file-preview');
-    preview.textContent = `📄 ${selectedDataFile.name} (${(selectedDataFile.size / 1024).toFixed(1)} KB)`;
+    document.getElementById('file-preview').textContent = `📄 ${selectedDataFile.name} (${(selectedDataFile.size/1024).toFixed(1)}KB)`;
   }
-}
-
-async function parseJSONL(text) {
-  const lines = text.trim().split('\n');
-  const items = [];
-  
-  for (const line of lines) {
-    if (!line.trim()) continue;
-    try {
-      items.push(JSON.parse(line));
-    } catch (e) {
-      console.warn('Skipped invalid JSONL line:', line.substring(0, 50));
-    }
-  }
-  
-  return items;
 }
 
 async function loadDataFile() {
-  if (!selectedDataFile) {
-    alert('Please select a file');
-    return;
-  }
-
-  const reader = new FileReader();
-  reader.onload = async (e) => {
-    try {
-      let data;
-      const content = e.target.result;
-      const isJSONL = selectedDataFile.name.endsWith('.jsonl');
-      
-      if (isJSONL) {
-        data = await parseJSONL(content);
-      } else {
-        data = JSON.parse(content);
-      }
-      
-      window.vectorStore.addChunksFromJSON(data);
-      
-      const stats = window.vectorStore.getStats();
-      alert(`✅ Loaded ${stats.chunks} chunks`);
-      
-      updateSourcesUI();
-      closeModal('load-data-modal');
-      document.getElementById('data-file-input').value = '';
-      selectedDataFile = null;
-    } catch (err) {
-      alert('Error parsing file: ' + err.message);
+  if (!selectedDataFile) { alert('Select a file'); return; }
+  const text = await selectedDataFile.text();
+  try {
+    let data;
+    if (selectedDataFile.name.endsWith('.jsonl')) {
+      data = text.trim().split('\n').map(l => JSON.parse(l));
+    } else {
+      data = JSON.parse(text);
     }
-  };
-  reader.readAsText(selectedDataFile);
+    window.vectorStore.addChunksFromJSON(data);
+    alert(`✅ Loaded ${window.vectorStore.chunks.length} chunks`);
+    updateSourcesUI();
+    closeModal('load-data-modal');
+  } catch (e) {
+    alert('Parse error: ' + e.message);
+  }
 }
 
 async function loadGitHubDatasets() {
   const select = document.getElementById('github-dataset-select');
-  select.innerHTML = '<option value="">Loading...</option>';
-  
   try {
-    const response = await fetch('https://api.github.com/repos/khalecl/know3/contents/prelude', {
-      headers: { Accept: 'application/vnd.github.v3+json' }
-    });
-    
-    if (!response.ok) throw new Error(`GitHub API error: ${response.status}`);
-    
-    const files = await response.json();
-    githubDatasets = files.filter(f => f.name.endsWith('.json') || f.name.endsWith('.jsonl'));
-    
-    select.innerHTML = githubDatasets.map(f => 
-      `<option value="${f.download_url}">${f.name}</option>`
-    ).join('');
-    
-    if (githubDatasets.length === 0) {
-      select.innerHTML = '<option value="">No datasets found</option>';
-    }
-  } catch (err) {
-    console.error('GitHub load error:', err);
-    select.innerHTML = '<option value="">⚠️ Failed to load (check console)</option>';
-    
-    // Fallback: manual list
-    const fallback = [
-      { name: 'oil.jsonl', download_url: 'https://khalecl.github.io/know3/prelude/oil.jsonl' }
-    ];
-    githubDatasets = fallback;
-    select.innerHTML = fallback.map(f => 
-      `<option value="${f.download_url}">${f.name} (fallback)</option>`
-    ).join('');
+    const res = await fetch('https://api.github.com/repos/khalecl/know3/contents/prelude');
+    const files = await res.json();
+    const datasets = files.filter(f => f.name.endsWith('.json') || f.name.endsWith('.jsonl'));
+    select.innerHTML = datasets.map(f => `<option value="${f.download_url}">${f.name}</option>`).join('');
+  } catch (e) {
+    select.innerHTML = '<option value="https://khalecl.github.io/know3/prelude/oil.jsonl">oil.jsonl (fallback)</option>';
   }
 }
 
 async function loadGitHubDataset() {
-  const select = document.getElementById('github-dataset-select');
-  const url = select.value;
-  
-  if (!url) {
-    alert('Please select a dataset');
-    return;
-  }
-  
+  const url = document.getElementById('github-dataset-select').value;
+  if (!url) { alert('Select dataset'); return; }
   try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
-    
-    const content = await response.text();
-    let data;
-    
-    if (url.endsWith('.jsonl')) {
-      data = await parseJSONL(content);
-    } else {
-      data = JSON.parse(content);
-    }
-    
+    const res = await fetch(url);
+    const text = await res.text();
+    let data = url.endsWith('.jsonl') ? text.trim().split('\n').map(l => JSON.parse(l)) : JSON.parse(text);
     window.vectorStore.addChunksFromJSON(data);
-    
-    const stats = window.vectorStore.getStats();
-    alert(`✅ Loaded ${stats.chunks} chunks from GitHub`);
-    
+    alert(`✅ Loaded ${window.vectorStore.chunks.length} chunks`);
     updateSourcesUI();
     closeModal('load-data-modal');
-  } catch (err) {
-    alert('Error loading from GitHub: ' + err.message);
+  } catch (e) {
+    alert('Error: ' + e.message);
   }
 }
 
 function updateSourcesUI() {
-  const stats = window.vectorStore.getStats();
   const list = document.getElementById('sources-list');
-  
-  // Group chunks by collection
-  const collections = {};
-  window.vectorStore.chunks.forEach(chunk => {
-    const col = chunk.metadata?.collection || 'Default';
-    if (!collections[col]) collections[col] = 0;
-    collections[col]++;
+  const cols = {};
+  window.vectorStore.chunks.forEach(c => {
+    const col = c.metadata?.collection || 'Default';
+    cols[col] = (cols[col] || 0) + 1;
   });
-
-  list.innerHTML = Object.entries(collections).map(([name, count]) => `
-    <div class="collection-item">
-      <div class="collection-name">📁 ${escapeHtml(name)}</div>
-      <div class="collection-stats">${count} chunks</div>
-    </div>
-  `).join('') || '<div style="color: var(--text3); font-size: 0.75rem;">No data loaded</div>';
+  list.innerHTML = Object.entries(cols).map(([n, c]) => `<div style="padding: 0.5rem; background: var(--surface2); border-radius: 6px; margin-bottom: 0.4rem; font-size: 0.75rem;"><div style="color: var(--accent); font-weight: 600;">📁 ${escapeHtml(n)}</div><div style="color: var(--text3);">${c} chunks</div></div>`).join('') || '<div style="color: var(--text3); font-size: 0.75rem;">No data</div>';
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// EXPORT
-// ════════════════════════════════════════════════════════════════════════════
+function updateProviderUI() {
+  const provider = document.getElementById('provider-select').value;
+  document.querySelectorAll('.provider-config').forEach(e => e.style.display = 'none');
+  const config = document.getElementById(`${provider}-config`);
+  if (config) config.style.display = 'block';
+  
+  const PROVIDERS_INFO = {
+    ollama: '🖥️ Local | ∞ requests | https://ollama.ai',
+    google: '🌐 Free tier: 5-15 RPM | https://aistudio.google.com/app/apikey',
+    groq: '⚡ Fast: 300+ tok/sec | Free: 30 RPM | https://console.groq.com',
+    together: '🚀 $25 free credits | 200+ models | https://api.together.xyz',
+    github: '🐙 GitHub PAT token | 10-15 RPM free | https://github.com/settings/tokens',
+    openrouter: '🔄 Route to cheapest | 20 RPM free | https://openrouter.ai/keys',
+    mistral: '✨ EU-based | 1 req/s | 1B tok/mo | https://console.mistral.ai',
+    deepseek: '💰 $0.14/1M input | Fast reasoning | https://platform.deepseek.com',
+    openai: 'Industry standard | $0.15/1M (mini) | https://platform.openai.com',
+    anthropic: 'Claude | $1/1M (Haiku) | https://console.anthropic.com'
+  };
+  const info = document.getElementById('provider-info');
+  if (info) info.innerHTML = `<strong>${PROVIDERS_INFO[provider] || ''}</strong>`;
+}
+
+function saveSettings() {
+  localStorage.setItem('know3_provider', document.getElementById('provider-select').value);
+  localStorage.setItem('know3_temperature', document.getElementById('setting-temperature').value);
+  localStorage.setItem('know3_top_k', document.getElementById('setting-top-k').value);
+  
+  const p = document.getElementById('provider-select').value;
+  if (p === 'ollama') {
+    localStorage.setItem('know3_ollama_url', document.getElementById('setting-ollama-url').value);
+    localStorage.setItem('know3_ollama_model', document.getElementById('setting-ollama-model').value);
+  } else if (p === 'google') {
+    localStorage.setItem('know3_google_key', document.getElementById('setting-google-key').value);
+    localStorage.setItem('know3_google_model', document.getElementById('setting-google-model').value);
+  } else if (p === 'groq') {
+    localStorage.setItem('know3_groq_key', document.getElementById('setting-groq-key').value);
+    localStorage.setItem('know3_groq_model', document.getElementById('setting-groq-model').value);
+  } else if (p === 'together') {
+    localStorage.setItem('know3_together_key', document.getElementById('setting-together-key').value);
+    localStorage.setItem('know3_together_model', document.getElementById('setting-together-model').value);
+  } else if (p === 'github') {
+    localStorage.setItem('know3_github_key', document.getElementById('setting-github-key').value);
+    localStorage.setItem('know3_github_model', document.getElementById('setting-github-model').value);
+  } else if (p === 'openrouter') {
+    localStorage.setItem('know3_openrouter_key', document.getElementById('setting-openrouter-key').value);
+    localStorage.setItem('know3_openrouter_model', document.getElementById('setting-openrouter-model').value);
+  } else if (p === 'mistral') {
+    localStorage.setItem('know3_mistral_key', document.getElementById('setting-mistral-key').value);
+    localStorage.setItem('know3_mistral_model', document.getElementById('setting-mistral-model').value);
+  } else if (p === 'deepseek') {
+    localStorage.setItem('know3_deepseek_key', document.getElementById('setting-deepseek-key').value);
+    localStorage.setItem('know3_deepseek_model', document.getElementById('setting-deepseek-model').value);
+  } else if (p === 'openai') {
+    localStorage.setItem('know3_openai_key', document.getElementById('setting-openai-key').value);
+    localStorage.setItem('know3_openai_model', document.getElementById('setting-openai-model').value);
+  } else if (p === 'anthropic') {
+    localStorage.setItem('know3_anthropic_key', document.getElementById('setting-anthropic-key').value);
+    localStorage.setItem('know3_anthropic_model', document.getElementById('setting-anthropic-model').value);
+  }
+
+  localStorage.setItem('know3_matrix_enabled', document.getElementById('matrix-enabled').checked);
+  localStorage.setItem('know3_matrix_color', document.getElementById('matrix-color').value);
+  localStorage.setItem('know3_matrix_intensity', document.getElementById('matrix-intensity').value);
+
+  alert('✅ Saved');
+  closeModal('settings-modal');
+}
+
+function loadSettings() {
+  return {
+    provider: localStorage.getItem('know3_provider') || 'ollama',
+    temperature: parseInt(localStorage.getItem('know3_temperature')) || 70,
+    topK: parseInt(localStorage.getItem('know3_top_k')) || 3
+  };
+}
+
+function switchProvider() {
+  const p = document.getElementById('quick-provider').value;
+  localStorage.setItem('know3_provider', p);
+  document.getElementById('provider-select').value = p;
+  updateProviderUI();
+  document.getElementById('provider-status').textContent = `Provider: ${p}`;
+}
+
+function updateTemp() {
+  const val = parseInt(document.getElementById('temp-slider').value);
+  const temp = (val / 100).toFixed(2);
+  document.getElementById('temp-display').textContent = temp;
+  localStorage.setItem('know3_temperature', val);
+}
+
+function updateTempDisplay() {
+  const val = parseInt(document.getElementById('setting-temperature').value);
+  document.getElementById('temp-number').textContent = (val/100).toFixed(2);
+}
 
 function exportCurrentChat() {
-  const conv = conversations[currentConversationId];
-  if (!conv) return;
-
-  const json = JSON.stringify(conv, null, 2);
-  downloadJSON(json, `chat_${Date.now()}.json`);
-}
-
-function exportAllChats() {
-  const json = JSON.stringify(conversations, null, 2);
-  downloadJSON(json, `conversations_${Date.now()}.json`);
-}
-
-function downloadJSON(json, filename) {
-  const blob = new Blob([json], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
+  const c = conversations[currentConversationId];
+  if (!c) return;
+  const blob = new Blob([JSON.stringify(c, null, 2)], {type: 'application/json'});
   const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
+  a.href = URL.createObjectURL(blob);
+  a.download = `chat_${Date.now()}.json`;
   a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// UTILITIES
-// ════════════════════════════════════════════════════════════════════════════
-
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-function openModal(id) {
-  const modal = document.getElementById(id);
-  if (modal) modal.classList.add('active');
-}
-
-function closeModal(id) {
-  const modal = document.getElementById(id);
-  if (modal) modal.classList.remove('active');
-}
-
-function switchSidebarTab(tab) {
-  document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.sidebar-content').forEach(c => c.classList.remove('active'));
-  
-  // Find clicked tab and mark active
-  const tabs = document.querySelectorAll('.sidebar-tab');
-  for (let t of tabs) {
-    if (t.textContent.toLowerCase().includes(tab.split('-')[1])) {
-      t.classList.add('active');
-      break;
-    }
-  }
-  
-  const content = document.getElementById(`sidebar-${tab}`);
-  if (content) content.classList.add('active');
 }
 
 function clearAllData() {
-  if (confirm('⚠️ Delete ALL conversations and data? This cannot be undone.')) {
+  if (confirm('⚠️ Delete ALL data?')) {
     conversations = {};
     window.vectorStore.clear();
     localStorage.clear();
     startNewConversation();
     updateSourcesUI();
     closeModal('settings-modal');
-    alert('All data cleared.');
+    alert('Cleared');
   }
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// EXPOSE FUNCTIONS TO GLOBAL SCOPE (for inline onclick)
-// ════════════════════════════════════════════════════════════════════════════
+function openModal(id) {
+  const m = document.getElementById(id);
+  if (m) m.classList.add('active');
+}
 
-window.switchSidebarTab = switchSidebarTab;
-window.openModal = openModal;
-window.closeModal = closeModal;
-window.switchLoadMethod = switchLoadMethod;
-window.handleDataFileSelect = handleDataFileSelect;
-window.loadDataFile = loadDataFile;
-window.loadGitHubDataset = loadGitHubDataset;
-window.sendMessage = sendMessage;
-window.startNewConversation = startNewConversation;
-window.switchConversation = switchConversation;
-window.saveSettings = saveSettings;
-window.saveQuickSettings = saveQuickSettings;
-window.exportCurrentChat = exportCurrentChat;
-window.exportAllChats = exportAllChats;
-window.clearAllData = clearAllData;
-window.toggleMatrixBg = toggleMatrixBg;
-window.updateMatrixColor = updateMatrixColor;
-window.updateMatrixIntensity = updateMatrixIntensity;
+function closeModal(id) {
+  const m = document.getElementById(id);
+  if (m) m.classList.remove('active');
+}
 
-// ════════════════════════════════════════════════════════════════════════════
-// EXPOSE TO GLOBAL SCOPE (for onclick handlers)
-// ════════════════════════════════════════════════════════════════════════════
+function switchSidebarTab(tab) {
+  document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.sidebar-content').forEach(c => c.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById(`sidebar-${tab}`).classList.add('active');
+}
 
-window.sendMessage = sendMessage;
-window.openModal = openModal;
-window.closeModal = closeModal;
-window.switchSidebarTab = switchSidebarTab;
-window.startNewConversation = startNewConversation;
-window.switchConversation = switchConversation;
-window.deleteConversation = deleteConversation;
-window.handleDataFileSelect = handleDataFileSelect;
-window.loadDataFile = loadDataFile;
-window.saveSettings = saveSettings;
-window.saveQuickSettings = saveQuickSettings;
-window.exportCurrentChat = exportCurrentChat;
-window.exportAllChats = exportAllChats;
-window.clearAllData = clearAllData;
+function escapeHtml(t) {
+  const d = document.createElement('div');
+  d.textContent = t;
+  return d.innerHTML;
+}
 
 // ════════════════════════════════════════════════════════════════════════════
-// MATRIX BACKGROUND ANIMATION
+// MATRIX BACKGROUND
 // ════════════════════════════════════════════════════════════════════════════
 
 class MatrixRain {
-  constructor(canvas, primaryColor = '#00ff00') {
+  constructor(canvas, color = '#00ff00') {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
-    this.primaryColor = primaryColor;
+    this.color = color;
     this.intensity = 0.8;
     this.chars = 'アィゥェォカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワン0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     this.fontSize = 14;
     this.enabled = true;
-    
     this.resize();
     window.addEventListener('resize', () => this.resize());
     this.animate();
@@ -1468,150 +1319,89 @@ class MatrixRain {
   resize() {
     this.canvas.width = window.innerWidth;
     this.canvas.height = window.innerHeight;
-    this.columns = Math.floor(this.canvas.width / this.fontSize);
-    this.drops = new Array(this.columns).fill(1);
+    this.cols = Math.floor(this.canvas.width / this.fontSize);
+    this.drops = new Array(this.cols).fill(1);
   }
 
   hexToRgb(hex) {
-    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    if (result) {
-      return {
-        r: parseInt(result[1], 16),
-        g: parseInt(result[2], 16),
-        b: parseInt(result[3], 16)
-      };
-    }
-    return { r: 0, g: 255, b: 0 };
+    const r = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return r ? { r: parseInt(r[1], 16), g: parseInt(r[2], 16), b: parseInt(r[3], 16) } : { r: 0, g: 255, b: 0 };
   }
 
-  getRainColor() {
-    if (!this.enabled) return 'rgba(0,0,0,0)';
-    
-    const baseColor = this.hexToRgb(this.primaryColor);
-    const intensity = 0.4 + Math.random() * 0.6 * this.intensity;
-    
-    const r = Math.floor(baseColor.r * (1 - intensity * 0.3));
-    const g = Math.floor(baseColor.g * (0.6 + intensity * 0.4));
-    const b = Math.floor(baseColor.b * (1 - intensity * 0.2));
-    
-    return `rgba(${r},${g},${b},${0.7 + intensity * 0.3})`;
+  getColor() {
+    const rgb = this.hexToRgb(this.color);
+    const i = 0.4 + Math.random() * 0.6 * this.intensity;
+    return `rgba(${Math.floor(rgb.r*(1-i*0.3))},${Math.floor(rgb.g*(0.6+i*0.4))},${Math.floor(rgb.b*(1-i*0.2))},${0.7+i*0.3})`;
   }
 
   draw() {
-    if (!this.enabled) {
-      this.ctx.fillStyle = 'rgba(0, 0, 0, 0)';
-      this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-      return;
-    }
-
-    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+    this.ctx.fillStyle = 'rgba(0,0,0,0.05)';
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     this.ctx.font = `${this.fontSize}px monospace`;
-
     for (let i = 0; i < this.drops.length; i++) {
-      const text = this.chars[Math.floor(Math.random() * this.chars.length)];
-      this.ctx.fillStyle = this.getRainColor();
-      this.ctx.fillText(text, i * this.fontSize, this.drops[i] * this.fontSize);
-
-      if (this.drops[i] * this.fontSize > this.canvas.height && Math.random() > 0.975) {
-        this.drops[i] = 0;
-      }
+      this.ctx.fillStyle = this.getColor();
+      this.ctx.fillText(this.chars[Math.floor(Math.random() * this.chars.length)], i * this.fontSize, this.drops[i] * this.fontSize);
+      if (this.drops[i] * this.fontSize > this.canvas.height && Math.random() > 0.975) this.drops[i] = 0;
       this.drops[i]++;
     }
   }
 
   animate() {
-    this.draw();
+    if (this.enabled) this.draw();
     requestAnimationFrame(() => this.animate());
   }
 
-  setColor(hex) {
-    this.primaryColor = hex;
-  }
-
-  setIntensity(value) {
-    this.intensity = Math.max(0, Math.min(1, value / 100));
-  }
-
-  setEnabled(enabled) {
-    this.enabled = enabled;
-  }
+  setColor(hex) { this.color = hex; }
+  setIntensity(v) { this.intensity = Math.max(0, Math.min(1, v/100)); }
+  setEnabled(e) { this.enabled = e; }
 }
 
 let matrixRain = null;
 
-// Matrix background controls
 function toggleMatrixBg() {
-  const enabled = document.getElementById('matrix-enabled')?.checked;
-  if (matrixRain) matrixRain.setEnabled(enabled);
+  const e = document.getElementById('matrix-enabled')?.checked;
+  if (matrixRain) matrixRain.setEnabled(e);
 }
 
 function updateMatrixColor() {
-  const color = document.getElementById('matrix-color-primary')?.value || '#00ff00';
-  if (matrixRain) matrixRain.setColor(color);
-  saveMatrixSettings();
+  const c = document.getElementById('matrix-color')?.value || '#00ff00';
+  if (matrixRain) matrixRain.setColor(c);
 }
 
 function updateMatrixIntensity() {
-  const intensity = parseInt(document.getElementById('matrix-intensity')?.value) || 80;
-  if (matrixRain) matrixRain.setIntensity(intensity);
-  const display = document.getElementById('intensity-display');
-  if (display) display.textContent = intensity;
-  saveMatrixSettings();
-}
-
-function saveMatrixSettings() {
-  const settings = loadSettings();
-  settings.matrixColor = document.getElementById('matrix-color-primary')?.value || '#00ff00';
-  settings.matrixIntensity = document.getElementById('matrix-intensity')?.value || '80';
-  settings.matrixEnabled = document.getElementById('matrix-enabled')?.checked ?? true;
-  localStorage.setItem('know3_settings', JSON.stringify(settings));
-}
-
-function loadMatrixSettings() {
-  const settings = loadSettings();
-  return {
-    color: settings.matrixColor || '#00ff00',
-    intensity: parseInt(settings.matrixIntensity) || 80,
-    enabled: settings.matrixEnabled !== false
-  };
+  const i = parseInt(document.getElementById('matrix-intensity')?.value) || 80;
+  if (matrixRain) matrixRain.setIntensity(i);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
 // INIT
 // ════════════════════════════════════════════════════════════════════════════
 
-window.addEventListener('DOMContentLoaded', function() {
-  // Initialize matrix rain background
+window.addEventListener('DOMContentLoaded', () => {
   const canvas = document.getElementById('matrix-canvas');
-  const matrixSettings = loadMatrixSettings();
-  matrixRain = new MatrixRain(canvas, matrixSettings.color);
-  matrixRain.setIntensity(matrixSettings.intensity);
-  matrixRain.setEnabled(matrixSettings.enabled);
+  const matrixColor = localStorage.getItem('know3_matrix_color') || '#00ff00';
+  const matrixIntensity = parseInt(localStorage.getItem('know3_matrix_intensity')) || 80;
+  const matrixEnabled = localStorage.getItem('know3_matrix_enabled') !== 'false';
 
-  // Set matrix UI elements
-  const matrixColorInput = document.getElementById('matrix-color-primary');
-  if (matrixColorInput) matrixColorInput.value = matrixSettings.color;
+  matrixRain = new MatrixRain(canvas, matrixColor);
+  matrixRain.setIntensity(matrixIntensity);
+  matrixRain.setEnabled(matrixEnabled);
+
+  const matrixColorInput = document.getElementById('matrix-color');
+  if (matrixColorInput) matrixColorInput.value = matrixColor;
 
   const matrixEnabledInput = document.getElementById('matrix-enabled');
-  if (matrixEnabledInput) matrixEnabledInput.checked = matrixSettings.enabled;
+  if (matrixEnabledInput) matrixEnabledInput.checked = matrixEnabled;
 
   const matrixIntensityInput = document.getElementById('matrix-intensity');
-  if (matrixIntensityInput) {
-    matrixIntensityInput.value = matrixSettings.intensity;
-    const display = document.getElementById('intensity-display');
-    if (display) display.textContent = matrixSettings.intensity;
-  }
+  if (matrixIntensityInput) matrixIntensityInput.value = matrixIntensity;
 
-  // Auto-resize textarea
   const chatInput = document.getElementById('chat-input');
   if (chatInput) {
     chatInput.addEventListener('input', function() {
       this.style.height = 'auto';
       this.style.height = Math.min(this.scrollHeight, 100) + 'px';
     });
-
-    // Enter to send
     chatInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
@@ -1620,46 +1410,54 @@ window.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  // Load settings on startup
   const settings = loadSettings();
-  
   const providerSelect = document.getElementById('provider-select');
-  if (providerSelect) providerSelect.value = settings.provider || 'ollama';
-  
-  const ollamaUrl = document.getElementById('setting-ollama-url');
-  if (ollamaUrl) ollamaUrl.value = settings.ollamaUrl || 'http://localhost:11434';
-  
-  const ollamaModel = document.getElementById('setting-ollama-model');
-  if (ollamaModel) ollamaModel.value = settings.ollamaModel || 'mistral';
-  
-  const searchMode = document.getElementById('setting-search-mode');
-  if (searchMode) searchMode.value = settings.searchMode || 'hybrid';
-  
+  if (providerSelect) providerSelect.value = settings.provider;
+
+  const tempSlider = document.getElementById('setting-temperature');
+  if (tempSlider) {
+    tempSlider.value = settings.temperature;
+    updateTempDisplay();
+  }
+
   const topK = document.getElementById('setting-top-k');
-  if (topK) topK.value = settings.topK || '3';
-  
-  const temp = document.getElementById('setting-temperature');
-  if (temp) temp.value = settings.temperature || '0.7';
+  if (topK) topK.value = settings.topK;
 
-  // Quick settings sync
-  const quickOllamaUrl = document.getElementById('ollama-url');
-  if (quickOllamaUrl) quickOllamaUrl.value = settings.ollamaUrl || 'http://localhost:11434';
-  
-  const quickOllamaModel = document.getElementById('ollama-model');
-  if (quickOllamaModel) quickOllamaModel.value = settings.ollamaModel || 'mistral';
-  
-  const quickSearchMode = document.getElementById('search-mode');
-  if (quickSearchMode) quickSearchMode.value = settings.searchMode || 'hybrid';
-  
-  const quickTopK = document.getElementById('top-k');
-  if (quickTopK) quickTopK.value = settings.topK || '3';
+  const quickProvider = document.getElementById('quick-provider');
+  if (quickProvider) quickProvider.value = settings.provider;
 
-  // Initialize conversations
+  const tempDisplay = document.getElementById('temp-slider');
+  if (tempDisplay) {
+    tempDisplay.value = settings.temperature;
+    updateTemp();
+  }
+
+  updateProviderUI();
   initConversations();
-
-  // Update sources UI
   updateSourcesUI();
 });
+
+// Expose globals
+window.openModal = openModal;
+window.closeModal = closeModal;
+window.switchSidebarTab = switchSidebarTab;
+window.sendMessage = sendMessage;
+window.switchLoadMethod = switchLoadMethod;
+window.handleDataFileSelect = handleDataFileSelect;
+window.loadDataFile = loadDataFile;
+window.loadGitHubDatasets = loadGitHubDatasets;
+window.loadGitHubDataset = loadGitHubDataset;
+window.startNewConversation = startNewConversation;
+window.switchConversation = switchConversation;
+window.updateProviderUI = updateProviderUI;
+window.saveSettings = saveSettings;
+window.switchProvider = switchProvider;
+window.updateTemp = updateTemp;
+window.exportCurrentChat = exportCurrentChat;
+window.clearAllData = clearAllData;
+window.toggleMatrixBg = toggleMatrixBg;
+window.updateMatrixColor = updateMatrixColor;
+window.updateMatrixIntensity = updateMatrixIntensity;
 </script>
 
 </body>
