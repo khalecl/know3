@@ -1227,6 +1227,7 @@ OUTPUT: [your output here]</textarea>
 
     <div class="btn-row">
       <button class="btn btn-primary" id="btn-start" disabled>⚡ Generate Training Data</button>
+      <button class="btn btn-primary" id="btn-pause" disabled style="display:none">⏸ Pause</button>
       <button class="btn btn-stop" id="btn-stop" disabled style="display:none">■ Stop</button>
     </div>
 
@@ -3431,6 +3432,7 @@ const vectorStore = {
 // Training pairs store
 let allPairs = [];
 let running = false;
+let paused = false;
 let abortCtrl = null;
 let currentFileName = '';
 let documentsIngested = 0;
@@ -3568,50 +3570,53 @@ async function ollamaGenerate(prompt, model, temperature = 0.7) {
 }
 
 let _lastCloudCall = 0;
-const _CLOUD_MIN_DELAY = 2200; // ms between calls (~27 RPM, under 30 RPM limit)
-const _CLOUD_MAX_RETRIES = 3;
+const _CLOUD_MIN_DELAY = 2500; // ms between calls (~24 RPM, safely under 30 RPM limit)
+const _CLOUD_MAX_RETRIES = 5;
 
 async function cloudGenerate(prompt, model, temperature = 0.7) {
-  // Rate limiter: enforce minimum delay between calls
-  const now = Date.now();
-  const wait = _CLOUD_MIN_DELAY - (now - _lastCloudCall);
-  if (wait > 0) await new Promise(r => setTimeout(r, wait));
-  _lastCloudCall = Date.now();
-
   const base = getCloudBaseUrl();
   const useModel = CLOUD_MODEL || model;
 
   for (let attempt = 0; attempt <= _CLOUD_MAX_RETRIES; attempt++) {
-    const r = await fetch(`${base}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${CLOUD_API_KEY}`
-    },
-    body: JSON.stringify({
-      model: useModel,
-      messages: [{ role: 'user', content: prompt }],
-      temperature, max_tokens: 800, stream: false
-    }),
-    signal: abortCtrl?.signal,
-  });
-if (r.status === 429) {
-      const retryAfter = parseInt(r.headers.get('retry-after') || '0') * 1000;
-      const backoff = retryAfter || (Math.pow(2, attempt) * 3000); // 3s, 6s, 12s
+    // Rate limiter: enforce minimum delay between calls
+    const now = Date.now();
+    const wait = _CLOUD_MIN_DELAY - (now - _lastCloudCall);
+    if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));
+    _lastCloudCall = Date.now();
+
+    const resp = await fetch(`${base}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${CLOUD_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: useModel,
+        messages: [{ role: 'user', content: prompt }],
+        temperature, max_tokens: 800, stream: false
+      }),
+      signal: abortCtrl?.signal,
+    });
+
+    if (resp.status === 429) {
+      const retryAfter = parseInt(resp.headers.get('retry-after') || '0') * 1000;
+      const backoff = retryAfter || (Math.pow(2, attempt + 1) * 3000); // 6s, 12s, 24s, 48s, 96s
       console.warn(`⏳ Rate limited (429). Retry ${attempt + 1}/${_CLOUD_MAX_RETRIES} in ${(backoff/1000).toFixed(0)}s...`);
-      await new Promise(r => setTimeout(r, backoff));
+      await new Promise(resolve => setTimeout(resolve, backoff));
       _lastCloudCall = Date.now();
       continue;
     }
-    if (!r.ok) {
-      const err = await r.text().catch(() => r.status);
-      throw new Error(`Cloud API error: ${err}`);
-    }
-const data = await r.json();
-    return data.choices?.[0]?.message?.content || '';
-  } // end for-loop
 
-  throw new Error('Cloud API: max retries exceeded (rate limited)');
+    if (!resp.ok) {
+      const err = await resp.text().catch(() => resp.status);
+      throw new Error(`Cloud API error (${resp.status}): ${err}`);
+    }
+
+    const data = await resp.json();
+    return data.choices?.[0]?.message?.content || '';
+  }
+
+  throw new Error('Cloud API: max retries exceeded (rate limited). Daily quota may be exhausted — try again tomorrow or switch providers.');
 }
 
 // Streaming variant for RAG conversation — shows tokens as they arrive
@@ -3977,6 +3982,10 @@ async function generatePairsFromSelected() {
   btnStart.disabled = true;
   btnStop.disabled = false;
   btnStop.style.display = '';
+  btnPause.disabled = false;
+  btnPause.style.display = '';
+  btnPause.textContent = '⏸ Pause';
+  paused = false;
 
   // Use only selected chunks
   const chunksToProcess = [];
@@ -3992,8 +4001,19 @@ async function generatePairsFromSelected() {
   const startTime = Date.now();
   let newPairsCount = 0;
 
-  for (let i = 0; i < chunksToProcess.length; i++) {
-    if (!running) { log('Stopped by user', 'err'); break; }
+  // Check for saved progress — resume from where we left off
+    const savedProgress = parseInt(localStorage.getItem('know3_gen_progress') || '0');
+    const startIdx = (savedProgress > 0 && savedProgress < chunksToProcess.length) ? savedProgress : 0;
+    if (startIdx > 0) log(`📂 Resuming from chunk ${startIdx + 1}/${chunksToProcess.length}`, 'info');
+  
+    for (let i = startIdx; i < chunksToProcess.length; i++) {
+      if (!running) { log('Stopped by user', 'err'); break; }
+  
+      // Pause loop — wait until unpaused
+      while (paused && running) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      if (!running) { log('Stopped by user', 'err'); break; }
 
     const pct = ((i + 1) / chunksToProcess.length * 100).toFixed(0);
     progressFill.style.width = pct + '%';
@@ -4018,8 +4038,12 @@ async function generatePairsFromSelected() {
           allPairs.push(pair);
           newPairsCount++;
           addPairToUI(pair, allPairs.length);
-          log(`✓ #${allPairs.length}: "${pair.instruction.substring(0, 55)}..."`, 'ok');
+        log(`✓ #${allPairs.length}: "${pair.instruction.substring(0, 55)}..."`, 'ok');
         }
+        // Auto-save progress every 10 chunks
+        if ((i + 1) % 10 === 0) {
+          localStorage.setItem('know3_saved_pairs', JSON.stringify(allPairs));
+          localStorage.setItem('know3_gen_progress', String(i + 1));        }
       } else {
         log(`⚠ Chunk ${i+1}: no quality pairs (gate filter)`, 'warn');
       }
@@ -4103,7 +4127,7 @@ async function generatePairs() {
     const remaining = ((chunksToProcess.length - i - 1) / rate / 60).toFixed(1);
     progressLabel.textContent = `Chunk ${i + 1}/${chunksToProcess.length} · ~${remaining} min left · ${newPairsCount} pairs`;
 
-    try {
+try {
       const chunk = chunksToProcess[i];
       const prompt = `${systemPrompt}\n\nText:\n${chunk.text}`;
       const response = await ollamaGenerate(prompt, model);
@@ -4122,11 +4146,29 @@ async function generatePairs() {
       } else {
         log(`⚠ Chunk ${i+1}: no quality pairs (filtered by gate)`, 'warn');
       }
+      // Auto-save progress every 10 chunks
+      if ((i + 1) % 10 === 0) {
+        localStorage.setItem('know3_saved_pairs', JSON.stringify(allPairs));
+        localStorage.setItem('know3_gen_progress', String(i + 1));
+        log(`💾 Auto-saved ${allPairs.length} pairs at chunk ${i + 1}`, 'info');
+      }
     } catch(e) {
       if (e.name === 'AbortError') { log('Stopped', 'err'); break; }
       log(`✗ Chunk ${i+1}: ${e.message}`, 'err');
+      // On rate limit error, auto-pause instead of losing progress
+      if (e.message.includes('429') || e.message.includes('rate limit') || e.message.includes('max retries')) {
+        localStorage.setItem('know3_saved_pairs', JSON.stringify(allPairs));
+        localStorage.setItem('know3_gen_progress', String(i));
+        log(`💾 Saved ${allPairs.length} pairs. Rate limited — pausing. Resume when quota resets.`, 'warn');
+        paused = true;
+        btnPause.textContent = '▶ Resume';
+        btnPause.style.background = 'linear-gradient(135deg, var(--accent), #40b080)';
+        while (paused && running) { await new Promise(resolve => setTimeout(resolve, 500)); }
+        if (!running) break;
+        i--; // retry this chunk
+      }
     }
-  }
+  
 
   // Done
   running = false;
@@ -4146,7 +4188,16 @@ async function generatePairs() {
     log(`\n✨ Complete! ${newPairsCount} new pairs this run, ${allPairs.length} total.`, 'ok');
     $('btn-export').disabled = false;
   }
-
+// Clear saved progress on completion
+  localStorage.removeItem('know3_gen_progress');
+  // Final save
+  if (allPairs.length > 0) {
+    localStorage.setItem('know3_saved_pairs', JSON.stringify(allPairs));
+  }
+  btnPause.disabled = true;
+  btnPause.style.display = 'none';
+  btnPause.textContent = '⏸ Pause';
+  btnPause.style.background = '';
   updateStoreUI();
 }
 
@@ -5300,8 +5351,36 @@ dropZone.addEventListener('drop', async e => {
 });
 
 btnStart.addEventListener('click', generatePairs);
-btnStop.addEventListener('click', () => { running = false; abortCtrl?.abort(); if (window.neuralBG) window.neuralBG.state = 'idle'; });
-
+const btnPause = $('btn-pause');
+btnPause.addEventListener('click', () => {
+  if (!paused) {
+    paused = true;
+    btnPause.textContent = '▶ Resume';
+    btnPause.style.background = 'linear-gradient(135deg, var(--accent), #40b080)';
+    progressLabel.textContent += ' [PAUSED — pairs saved]';
+    // Auto-save pairs on pause
+    if (allPairs.length > 0) {
+      localStorage.setItem('know3_saved_pairs', JSON.stringify(allPairs));
+      log(`💾 Auto-saved ${allPairs.length} pairs on pause`, 'ok');
+    }
+  } else {
+    paused = false;
+    btnPause.textContent = '⏸ Pause';
+    btnPause.style.background = '';
+    log('▶ Resumed generation', 'info');
+  }
+});
+btnStop.addEventListener('click', () => {
+  running = false;
+  paused = false;
+  abortCtrl?.abort();
+  if (window.neuralBG) window.neuralBG.state = 'idle';
+  // Auto-save on stop too
+  if (allPairs.length > 0) {
+    localStorage.setItem('know3_saved_pairs', JSON.stringify(allPairs));
+    log(`💾 Auto-saved ${allPairs.length} pairs on stop`, 'ok');
+  }
+});
 // ── Review Tab: Chunk Preview & Selection ──
 document.querySelectorAll('.tab').forEach(tab => {
   if (tab.dataset.tab === 'review') {
