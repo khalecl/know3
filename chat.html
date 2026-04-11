@@ -501,15 +501,22 @@ async function sendMessage() {
   const results = await window.vectorStore.search(q, topK, mode);
 
   if (!results.length) {
-    addMessage('assistant', '⚠️ No data loaded. Go to Settings → Load RAG Data.');
+    addMessage('assistant', '⚠️ No data loaded.');
     return;
   }
 
   const context = results.map(r => r.text).join('\n---\n');
   const sources = results.map(r => r.metadata?.source || 'Source').slice(0, 3);
 
-  const answer = await queryInference(q, context);
-  addMessage('assistant', answer, sources);
+  // Create empty bubble for streaming
+  const conv = conversations[currentConversationId];
+  conv.messages.push({ role: 'assistant', content: '', sources, timestamp: Date.now() });
+  localStorage.setItem('know3_conversations', JSON.stringify(conversations));
+  renderChat();
+  currentStreamingIndex = conv.messages.length - 1;
+  currentStreamingSources = sources;
+
+  await queryInference(q, context);
 }
 
 async function queryInference(q, ctx) {
@@ -526,19 +533,35 @@ Question: ${q}
 Answer:`;
 
   if (provider === 'ollama') {
-    const url = localStorage.getItem('know3_ollama_url') || 'http://localhost:11434';
-    const model = localStorage.getItem('know3_ollama_model') || 'mistral';
-    try {
-      const res = await fetch(`${url}/api/generate`, {
-        method: 'POST',
-        body: JSON.stringify({ model, prompt, temperature: temp, stream: false })
+  const url = localStorage.getItem('know3_ollama_url') || 'http://localhost:11434';
+  const model = localStorage.getItem('know3_ollama_model') || 'mistral';
+  try {
+    const res = await fetch(`${url}/api/generate`, {
+      method: 'POST',
+      body: JSON.stringify({ model, prompt, temperature: temp, stream: true })
+    });
+    if (!res.ok) return `❌ Ollama unavailable`;
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let fullText = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      chunk.trim().split('\n').forEach(line => {
+        try {
+          const json = JSON.parse(line);
+          if (json.response) fullText += json.response;
+          updateStreamingMessage(fullText);
+        } catch (e) {}
       });
-      if (!res.ok) return `❌ Ollama unavailable at ${url}`;
-      return (await res.json()).response || 'No response';
-    } catch (e) {
-      return `❌ Connection failed: ${e.message}`;
     }
+    return fullText;
+    currentStreamingIndex = -1;
+  } catch (e) {
+    return `❌ Connection failed`;
   }
+}
 
   if (provider === 'google') {
     const key = localStorage.getItem('know3_google_key');
@@ -557,21 +580,42 @@ Answer:`;
     }
   }
 
-  if (provider === 'groq') {
-    const key = localStorage.getItem('know3_groq_key');
-    if (!key) return '🔑 Add API key in Settings > Groq';
-    try {
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], temperature: temp })
+if (provider === 'groq') {
+  const key = localStorage.getItem('know3_groq_key');
+  if (!key) return '🔑 Add API key';
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], temperature: temp, stream: true })
+    });
+    if (!res.ok) return '❌ Groq error';
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let fullText = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      chunk.trim().split('\n').forEach(line => {
+        if (line.startsWith('data: ')) {
+          try {
+            const json = JSON.parse(line.slice(6));
+            const token = json.choices?.[0]?.delta?.content || '';
+            if (token) {
+              fullText += token;
+              updateStreamingMessage(fullText);
+            }
+          } catch (e) {}
+        }
       });
-      if (!res.ok) return '❌ Groq error';
-      return (await res.json()).choices?.[0]?.message?.content || 'No response';
-    } catch (e) {
-      return `❌ Error: ${e.message}`;
     }
+    return fullText;
+    currentStreamingIndex = -1;
+  } catch (e) {
+    return `❌ Error`;
   }
+}
 
   if (provider === 'together') {
     const key = localStorage.getItem('know3_together_key');
@@ -685,9 +729,28 @@ Answer:`;
     }
   }
 
+  currentStreamingIndex = -1;
   return 'Provider not configured.';
 }
 
+  function updateStreamingMessage(text) {
+  if (currentStreamingIndex < 0) return;
+  const conv = conversations[currentConversationId];
+  if (!conv || !conv.messages[currentStreamingIndex]) return;
+  
+  conv.messages[currentStreamingIndex].content = text;
+  localStorage.setItem('know3_conversations', JSON.stringify(conversations));
+  
+  const msgs = document.getElementById('chat-messages');
+  const allMsgs = msgs.querySelectorAll('.msg');
+  if (allMsgs.length > 0) {
+    const lastBubble = allMsgs[allMsgs.length - 1].querySelector('.msg-bubble');
+    if (lastBubble) {
+      lastBubble.innerHTML = renderMarkdown(text) + (currentStreamingSources ? `<div class="msg-source">📚 ${currentStreamingSources.map(s => escapeHtml(s.substring(0, 20))).join(', ')}</div>` : '');
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+  }
+}
 // Data Loading
 let selectedDataFile = null;
 
@@ -837,7 +900,10 @@ function switchSidebarTab(tab) {
 }
 
 // Matrix
-class MatrixRain {
+let currentStreamingIndex = -1;
+let currentStreamingSources = null;
+  
+  class MatrixRain {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
