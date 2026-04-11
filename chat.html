@@ -1,0 +1,1486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>know3 Chat — RAG Query Interface</title>
+
+<!-- PDF.js for inline preview -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs" type="module"></script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --bg: #050911;
+  --surface: rgba(12,16,28,0.85);
+  --surface2: rgba(20,25,45,0.9);
+  --border: rgba(40,50,80,0.5);
+  --text: #e8eaf4;
+  --text2: #8690b8;
+  --text3: #505878;
+  --accent: #00e5a0;
+  --accent-dim: rgba(0,229,160,0.06);
+  --accent-glow: rgba(0,229,160,0.12);
+  --purple: #a78bfa;
+  --blue: #38bdf8;
+  --orange: #fb923c;
+  --warn: #fbbf24;
+  --err: #f87171;
+  --mono: 'IBM Plex Mono', monospace;
+  --sans: 'Outfit', system-ui, sans-serif;
+  --radius: 12px;
+  --glass: blur(20px) saturate(1.4);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  top: -20%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 800px;
+  height: 800px;
+  background: radial-gradient(circle, rgba(0,229,160,0.04) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  bottom: -30%;
+  right: -10%;
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(167,139,250,0.03) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.app {
+  position: relative;
+  z-index: 1;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1rem 1.5rem 1rem;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── HEADER ── */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.8rem 1rem;
+  background: var(--surface);
+  backdrop-filter: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 1rem;
+  gap: 1.2rem;
+}
+
+.logo h1 {
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.logo h1 .k { color: var(--accent); text-shadow: 0 0 20px rgba(0,229,160,0.3); }
+
+.header-right {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--text2);
+  font-family: var(--mono);
+  padding: 0.3rem 0.6rem;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--err);
+  transition: all 0.3s;
+}
+
+.status-dot.ok {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+
+.btn-icon {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text2);
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.25s;
+}
+
+.btn-icon:hover {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── CHAT LAYOUT ── */
+.chat-container {
+  display: flex;
+  flex: 1;
+  gap: 1rem;
+  min-height: 0;
+}
+
+.chat-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  backdrop-filter: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.chat-panel {
+  flex: 0 0 300px;
+  background: var(--surface);
+  backdrop-filter: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── CHAT MESSAGES ── */
+#chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.msg {
+  display: flex;
+  gap: 0.6rem;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.msg.user {
+  justify-content: flex-end;
+}
+
+.msg-bubble {
+  max-width: 80%;
+  padding: 0.8rem 1rem;
+  border-radius: 10px;
+  word-wrap: break-word;
+}
+
+.msg.user .msg-bubble {
+  background: var(--accent-dim);
+  border: 1px solid var(--accent);
+  color: var(--text);
+}
+
+.msg.assistant .msg-bubble {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.msg-time {
+  font-size: 0.7rem;
+  color: var(--text3);
+  align-self: flex-end;
+  margin-right: 0.2rem;
+}
+
+.msg-source {
+  font-size: 0.75rem;
+  color: var(--text2);
+  margin-top: 0.4rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--border);
+}
+
+/* ── INPUT ── */
+.chat-input-box {
+  padding: 1rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-end;
+}
+
+#chat-input {
+  flex: 1;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 0.7rem 0.9rem;
+  border-radius: 8px;
+  font-family: var(--sans);
+  font-size: 0.9rem;
+  resize: none;
+  max-height: 100px;
+  transition: border-color 0.25s;
+}
+
+#chat-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+.btn-send {
+  background: var(--accent);
+  border: none;
+  color: var(--bg);
+  padding: 0.7rem 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.25s;
+  font-family: var(--sans);
+}
+
+.btn-send:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,229,160,0.3);
+}
+
+.btn-send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ── SIDEBAR TABS ── */
+.sidebar-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-tab {
+  flex: 1;
+  padding: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: center;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text3);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.25s;
+}
+
+.sidebar-tab:hover {
+  background: var(--surface2);
+  color: var(--text2);
+}
+
+.sidebar-tab.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.sidebar-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.8rem;
+  display: none;
+}
+
+.sidebar-content.active {
+  display: block;
+}
+
+/* ── HISTORY ── */
+.history-item {
+  padding: 0.6rem;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.25s;
+  margin-bottom: 0.5rem;
+}
+
+.history-item:hover {
+  background: rgba(0,229,160,0.1);
+  border-color: var(--accent);
+}
+
+.history-item.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.history-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text2);
+  font-size: 0.75rem;
+}
+
+.history-time {
+  color: var(--text3);
+  font-size: 0.7rem;
+  margin-top: 0.2rem;
+}
+
+/* ── SETTINGS ── */
+.setting-group {
+  margin-bottom: 1rem;
+}
+
+.setting-label {
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: var(--accent);
+  margin-bottom: 0.3rem;
+  display: block;
+}
+
+.setting-desc {
+  font-size: 0.7rem;
+  color: var(--text3);
+  margin-bottom: 0.4rem;
+}
+
+input[type="file"],
+input[type="text"],
+textarea,
+select {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 0.5rem;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  margin-bottom: 0.4rem;
+  transition: border-color 0.25s;
+}
+
+input[type="file"] {
+  padding: 0.3rem;
+  cursor: pointer;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+input[type="text"]:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+.btn-small {
+  background: var(--accent);
+  border: none;
+  color: var(--bg);
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s;
+  font-family: var(--sans);
+  width: 100%;
+  margin-bottom: 0.3rem;
+}
+
+.btn-small:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0,229,160,0.2);
+}
+
+.btn-small.secondary {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text2);
+}
+
+.btn-small.secondary:hover {
+  background: var(--surface2);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btn-small.danger {
+  background: var(--err);
+  color: white;
+}
+
+.btn-small.danger:hover {
+  box-shadow: 0 2px 8px rgba(248,113,113,0.2);
+}
+
+/* ── COLLECTIONS LIST ── */
+.collection-item {
+  padding: 0.6rem;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 0.4rem;
+  font-size: 0.75rem;
+}
+
+.collection-name {
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 0.2rem;
+}
+
+.collection-stats {
+  color: var(--text3);
+  font-size: 0.7rem;
+}
+
+.collection-checkbox {
+  margin-right: 0.4rem;
+}
+
+/* ── MODALS ── */
+.modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal.active {
+  display: flex;
+}
+
+.modal-content {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  max-width: 500px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  color: var(--accent);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+/* ── RESPONSIVE ── */
+@media (max-width: 900px) {
+  .chat-container {
+    flex-direction: column;
+  }
+  
+  .chat-panel {
+    flex: 0 0 200px;
+    max-height: 300px;
+  }
+  
+  .msg-bubble {
+    max-width: 100%;
+  }
+}
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--surface);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-bright, var(--border));
+}
+</style>
+
+</head>
+<body>
+
+<div class="app">
+  <!-- HEADER -->
+  <div class="header">
+    <div class="logo">
+      <h1><span class="k">k</span><span class="n">now3</span> Chat</h1>
+    </div>
+    <div class="header-right">
+      <div class="status-indicator">
+        <div class="status-dot"></div>
+        <span id="status-text">Offline</span>
+      </div>
+      <button class="btn-icon" onclick="openModal('load-data-modal')" title="Load JSON data">📂</button>
+      <button class="btn-icon" onclick="openModal('settings-modal')" title="Settings">⚙️</button>
+    </div>
+  </div>
+
+  <!-- MAIN CHAT LAYOUT -->
+  <div class="chat-container">
+    <!-- CHAT MAIN -->
+    <div class="chat-main">
+      <div id="chat-messages"></div>
+      <div class="chat-input-box">
+        <textarea id="chat-input" placeholder="Ask a question..." rows="2"></textarea>
+        <button class="btn-send" id="btn-send" onclick="sendMessage()">Send</button>
+      </div>
+    </div>
+
+    <!-- SIDEBAR PANEL -->
+    <div class="chat-panel">
+      <div class="sidebar-tabs">
+        <button class="sidebar-tab active" onclick="switchSidebarTab('history')">History</button>
+        <button class="sidebar-tab" onclick="switchSidebarTab('sources')">Sources</button>
+        <button class="sidebar-tab" onclick="switchSidebarTab('settings-panel')">Settings</button>
+      </div>
+
+      <!-- HISTORY TAB -->
+      <div id="sidebar-history" class="sidebar-content active">
+        <div style="font-size: 0.75rem; color: var(--text3); margin-bottom: 0.6rem;">
+          <strong>Conversations:</strong>
+        </div>
+        <div id="history-list"></div>
+        <button class="btn-small secondary" style="margin-top: 0.6rem;" onclick="startNewConversation()">
+          ➕ New Chat
+        </button>
+      </div>
+
+      <!-- SOURCES TAB -->
+      <div id="sidebar-sources" class="sidebar-content">
+        <div style="font-size: 0.75rem; color: var(--text3); margin-bottom: 0.6rem;">
+          <strong>Loaded Collections:</strong>
+        </div>
+        <div id="sources-list"></div>
+      </div>
+
+      <!-- QUICK SETTINGS TAB -->
+      <div id="sidebar-settings-panel" class="sidebar-content">
+        <div class="setting-group">
+          <label class="setting-label">Model</label>
+          <select id="model-select">
+            <option value="ollama">Ollama (Local)</option>
+            <option value="openai">OpenAI</option>
+          </select>
+        </div>
+
+        <div class="setting-group">
+          <label class="setting-label">Ollama URL</label>
+          <input type="text" id="ollama-url" placeholder="http://localhost:11434" value="http://localhost:11434">
+        </div>
+
+        <div class="setting-group">
+          <label class="setting-label">Ollama Model</label>
+          <input type="text" id="ollama-model" placeholder="mistral" value="mistral">
+        </div>
+
+        <div class="setting-group">
+          <label class="setting-label">Search Mode</label>
+          <select id="search-mode">
+            <option value="hybrid">Hybrid (Vector + BM25)</option>
+            <option value="vector">Vector Only</option>
+            <option value="bm25">BM25 Only</option>
+          </select>
+        </div>
+
+        <div class="setting-group">
+          <label class="setting-label">Top K Results</label>
+          <input type="text" id="top-k" placeholder="3" value="3">
+        </div>
+
+        <button class="btn-small" onclick="saveQuickSettings()">💾 Save</button>
+        <button class="btn-small secondary" onclick="openModal('settings-modal')">⚙️ Full Settings</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODALS -->
+
+<!-- LOAD DATA MODAL -->
+<div id="load-data-modal" class="modal">
+  <div class="modal-content">
+    <div class="modal-title">Load RAG Data</div>
+    
+    <div class="setting-group">
+      <label class="setting-label">Load Method</label>
+      <select id="load-method" onchange="switchLoadMethod(this.value)">
+        <option value="manual">Manual Upload (JSON/JSONL)</option>
+        <option value="github">Auto-Load from GitHub</option>
+      </select>
+    </div>
+
+    <!-- MANUAL UPLOAD -->
+    <div id="manual-load-section">
+      <p style="font-size: 0.85rem; color: var(--text2); margin-bottom: 1rem;">
+        Upload JSON or JSONL from know3 export.
+      </p>
+      <div class="setting-group">
+        <label class="setting-label">Select File:</label>
+        <input type="file" id="data-file-input" accept=".json,.jsonl" onchange="handleDataFileSelect(event)">
+      </div>
+      <div id="file-preview" style="font-size: 0.75rem; color: var(--text3); margin: 0.8rem 0;"></div>
+      <div class="modal-actions">
+        <button class="btn-small" onclick="loadDataFile()">✅ Load</button>
+        <button class="btn-small secondary" onclick="closeModal('load-data-modal')">Cancel</button>
+      </div>
+    </div>
+
+    <!-- GITHUB PRELUDE -->
+    <div id="github-load-section" style="display: none;">
+      <p style="font-size: 0.85rem; color: var(--text2); margin-bottom: 1rem;">
+        Auto-load from khalecl.github.io/know3/prelude/
+      </p>
+      <div class="setting-group">
+        <label class="setting-label">Available Datasets:</label>
+        <select id="github-dataset-select">
+          <option value="">Loading...</option>
+        </select>
+      </div>
+      <div id="github-preview" style="font-size: 0.75rem; color: var(--text3); margin: 0.8rem 0;"></div>
+      <div class="modal-actions">
+        <button class="btn-small" onclick="loadGitHubDataset()">✅ Load</button>
+        <button class="btn-small secondary" onclick="closeModal('load-data-modal')">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div id="settings-modal" class="modal">
+  <div class="modal-content">
+    <div class="modal-title">Settings</div>
+    
+    <div class="setting-group">
+      <label class="setting-label">Inference Provider</label>
+      <select id="provider-select">
+        <option value="ollama">Ollama (Local)</option>
+        <option value="openai">OpenAI API</option>
+        <option value="anthropic">Anthropic</option>
+      </select>
+    </div>
+
+    <div class="setting-group">
+      <label class="setting-label">Ollama Configuration</label>
+      <div class="setting-desc">Local inference endpoint</div>
+      <input type="text" id="setting-ollama-url" placeholder="http://localhost:11434">
+      <input type="text" id="setting-ollama-model" placeholder="Model name (mistral, neural-chat, etc.)">
+    </div>
+
+    <div class="setting-group">
+      <label class="setting-label">OpenAI API Key</label>
+      <input type="text" id="setting-openai-key" placeholder="sk-...">
+    </div>
+
+    <div class="setting-group">
+      <label class="setting-label">RAG Settings</label>
+      <div class="setting-desc">Retrieval and ranking</div>
+      <select id="setting-search-mode">
+        <option value="hybrid">Hybrid Search (Recommended)</option>
+        <option value="vector">Vector Similarity Only</option>
+        <option value="bm25">BM25 Only</option>
+      </select>
+      <input type="text" id="setting-top-k" placeholder="Number of results (default: 3)" value="3">
+    </div>
+
+    <div class="setting-group">
+      <label class="setting-label">Temperature</label>
+      <div class="setting-desc">Creativity (0.0 = deterministic, 1.0 = creative)</div>
+      <input type="text" id="setting-temperature" placeholder="0.7" value="0.7">
+    </div>
+
+    <div class="setting-group">
+      <label class="setting-label">Chat Export</label>
+      <button class="btn-small secondary" onclick="exportCurrentChat()">📥 Export Chat</button>
+      <button class="btn-small secondary" onclick="exportAllChats()">📥 Export All Chats</button>
+    </div>
+
+    <div class="setting-group">
+      <label class="setting-label">Danger Zone</label>
+      <button class="btn-small danger" onclick="clearAllData()">🗑️ Clear Everything</button>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-small" onclick="saveSettings()">✅ Save Settings</button>
+      <button class="btn-small secondary" onclick="closeModal('settings-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+// VECTOR STORE (In-memory RAG)
+// ════════════════════════════════════════════════════════════════════════════
+
+class VectorStore {
+  constructor() {
+    this.chunks = [];
+    this.metadata = {};
+    this.collections = {};
+  }
+
+  addChunk(text, embedding, metadata = {}) {
+    const chunk = { text, embedding, metadata };
+    this.chunks.push(chunk);
+    return chunk;
+  }
+
+  addChunksFromJSON(data) {
+    if (!data || typeof data !== 'object') return;
+
+    // Support different JSON formats
+    if (Array.isArray(data)) {
+      // Array of chunks
+      data.forEach((item, idx) => {
+        const text = item.text || item.content || JSON.stringify(item);
+        const embedding = item.embedding || null;
+        const meta = item.metadata || { index: idx };
+        this.addChunk(text, embedding, meta);
+      });
+    } else if (data.chunks && Array.isArray(data.chunks)) {
+      // know3 export format
+      data.chunks.forEach((chunk, idx) => {
+        const text = chunk.text || chunk.content || '';
+        const embedding = chunk.embedding || null;
+        const meta = { ...chunk.metadata, collection: data.collection };
+        this.addChunk(text, embedding, meta);
+      });
+    } else if (data.vectors && Array.isArray(data.vectors)) {
+      // Vector store format
+      data.vectors.forEach((vec, idx) => {
+        const text = vec.text || vec.content || '';
+        const embedding = vec.vector || vec.embedding || null;
+        const meta = { ...vec.metadata, index: idx };
+        this.addChunk(text, embedding, meta);
+      });
+    }
+  }
+
+  search(query, topK = 3, mode = 'hybrid') {
+    if (this.chunks.length === 0) return [];
+
+    // Simple embedding: tf-idf-like scoring
+    const queryTerms = query.toLowerCase().split(/\s+/);
+    
+    const scores = this.chunks.map((chunk, idx) => {
+      const text = chunk.text.toLowerCase();
+      let score = 0;
+
+      queryTerms.forEach(term => {
+        const count = (text.match(new RegExp(term, 'g')) || []).length;
+        score += count;
+      });
+
+      return { chunk, score, idx };
+    });
+
+    return scores
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topK)
+      .map(({ chunk }) => chunk);
+  }
+
+  getStats() {
+    return {
+      chunks: this.chunks.length,
+      collections: Object.keys(this.collections).length
+    };
+  }
+
+  clear() {
+    this.chunks = [];
+    this.metadata = {};
+    this.collections = {};
+  }
+}
+
+window.vectorStore = new VectorStore();
+
+// ════════════════════════════════════════════════════════════════════════════
+// CONVERSATION MANAGEMENT
+// ════════════════════════════════════════════════════════════════════════════
+
+let conversations = {};
+let currentConversationId = null;
+
+function initConversations() {
+  const stored = localStorage.getItem('know3_conversations');
+  if (stored) {
+    try {
+      conversations = JSON.parse(stored);
+    } catch (e) {
+      conversations = {};
+    }
+  }
+  const stored_id = localStorage.getItem('know3_current_id');
+  if (stored_id && conversations[stored_id]) {
+    currentConversationId = stored_id;
+  } else {
+    startNewConversation();
+  }
+  updateHistoryUI();
+}
+
+function startNewConversation() {
+  const id = Date.now().toString();
+  conversations[id] = {
+    id,
+    title: 'Chat ' + new Date().toLocaleString(),
+    messages: [],
+    created: Date.now()
+  };
+  currentConversationId = id;
+  saveConversations();
+  renderChat();
+  updateHistoryUI();
+  document.getElementById('chat-input').focus();
+}
+
+function saveConversations() {
+  localStorage.setItem('know3_conversations', JSON.stringify(conversations));
+  localStorage.setItem('know3_current_id', currentConversationId);
+}
+
+function deleteConversation(id) {
+  if (confirm('Delete this conversation?')) {
+    delete conversations[id];
+    if (currentConversationId === id) {
+      startNewConversation();
+    } else {
+      saveConversations();
+      updateHistoryUI();
+    }
+  }
+}
+
+function switchConversation(id) {
+  if (conversations[id]) {
+    currentConversationId = id;
+    saveConversations();
+    renderChat();
+    updateHistoryUI();
+  }
+}
+
+function updateHistoryUI() {
+  const list = document.getElementById('history-list');
+  list.innerHTML = Object.values(conversations)
+    .sort((a, b) => b.created - a.created)
+    .map(conv => `
+      <div class="history-item ${conv.id === currentConversationId ? 'active' : ''}" onclick="switchConversation('${conv.id}')">
+        <div class="history-label">${escapeHtml(conv.title.substring(0, 25))}</div>
+        <div class="history-time">${new Date(conv.created).toLocaleString()}</div>
+      </div>
+    `).join('');
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// CHAT UI
+// ════════════════════════════════════════════════════════════════════════════
+
+function renderChat() {
+  const conv = conversations[currentConversationId];
+  if (!conv) return;
+
+  const messagesDiv = document.getElementById('chat-messages');
+  messagesDiv.innerHTML = conv.messages.map((msg, idx) => `
+    <div class="msg ${msg.role}">
+      <div class="msg-bubble">
+        ${escapeHtml(msg.content)}
+        ${msg.sources ? `<div class="msg-source">📚 ${msg.sources.map(s => escapeHtml(s.substring(0, 20))).join(', ')}</div>` : ''}
+      </div>
+      <div class="msg-time">${new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+    </div>
+  `).join('');
+  
+  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
+
+function addMessage(role, content, sources = null) {
+  const conv = conversations[currentConversationId];
+  if (!conv) return;
+
+  conv.messages.push({
+    role,
+    content,
+    sources,
+    timestamp: Date.now()
+  });
+
+  // Update title from first user message
+  if (role === 'user' && conv.messages.length === 1) {
+    conv.title = content.substring(0, 50) + (content.length > 50 ? '...' : '');
+  }
+
+  saveConversations();
+  renderChat();
+  updateHistoryUI();
+}
+
+async function sendMessage() {
+  const input = document.getElementById('chat-input');
+  const query = input.value.trim();
+  if (!query) return;
+
+  input.value = '';
+  input.style.height = 'auto';
+  
+  addMessage('user', query);
+  
+  const settings = loadSettings();
+  const topK = parseInt(settings.topK) || 3;
+  const mode = settings.searchMode || 'hybrid';
+  
+  // RAG search
+  const results = window.vectorStore.search(query, topK, mode);
+  
+  if (results.length === 0) {
+    addMessage('assistant', 'No relevant sources found. Load a JSON dataset to enable RAG search.');
+    return;
+  }
+
+  const context = results.map(r => r.text).join('\n---\n');
+  const sources = results.map((r, i) => r.metadata?.source || r.metadata?.file || `Source ${i + 1}`);
+  
+  // Query inference
+  const answer = await queryInference(query, context, settings);
+  addMessage('assistant', answer, sources);
+}
+
+async function queryInference(query, context, settings) {
+  const provider = settings.provider || 'ollama';
+
+  if (provider === 'ollama') {
+    return await queryOllama(query, context, settings);
+  } else if (provider === 'openai') {
+    return await queryOpenAI(query, context, settings);
+  }
+  
+  return 'Inference provider not configured.';
+}
+
+async function queryOllama(query, context, settings) {
+  const url = settings.ollamaUrl || 'http://localhost:11434';
+  const model = settings.ollamaModel || 'mistral';
+  const temperature = parseFloat(settings.temperature) || 0.7;
+
+  const prompt = `Based on the following context, answer the question. Be concise and accurate.
+
+Context:
+${context}
+
+Question: ${query}
+
+Answer:`;
+
+  try {
+    const response = await fetch(`${url}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        prompt,
+        temperature,
+        stream: false
+      })
+    });
+
+    if (!response.ok) return `Error: ${response.statusText}`;
+    const data = await response.json();
+    return data.response || 'No response generated.';
+  } catch (e) {
+    const msg = e.message || 'Unknown error';
+    if (msg.includes('Failed to fetch')) {
+      return `🚨 Cannot connect to Ollama at ${url}\n\n✅ Fix:\n1. Start Ollama: \`ollama serve\`\n2. Check Settings → Ollama URL\n3. If using file://, start local server:\n   \`python3 -m http.server 8000\`\n   Then visit: http://localhost:8000`;
+    }
+    return `Connection error: ${msg}`;
+  }
+}
+
+async function queryOpenAI(query, context, settings) {
+  // Placeholder: requires API key management
+  return 'OpenAI provider not yet implemented. Use Ollama or configure API key in settings.';
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SETTINGS
+// ════════════════════════════════════════════════════════════════════════════
+
+function loadSettings() {
+  const stored = localStorage.getItem('know3_settings');
+  if (stored) {
+    try {
+      return JSON.parse(stored);
+    } catch (e) {
+      return getDefaultSettings();
+    }
+  }
+  return getDefaultSettings();
+}
+
+function getDefaultSettings() {
+  return {
+    provider: 'ollama',
+    ollamaUrl: 'http://localhost:11434',
+    ollamaModel: 'mistral',
+    searchMode: 'hybrid',
+    topK: '3',
+    temperature: '0.7'
+  };
+}
+
+function saveSettings() {
+  const settings = {
+    provider: document.getElementById('provider-select').value,
+    ollamaUrl: document.getElementById('setting-ollama-url').value,
+    ollamaModel: document.getElementById('setting-ollama-model').value,
+    searchMode: document.getElementById('setting-search-mode').value,
+    topK: document.getElementById('setting-top-k').value,
+    temperature: document.getElementById('setting-temperature').value
+  };
+
+  localStorage.setItem('know3_settings', JSON.stringify(settings));
+  closeModal('settings-modal');
+  alert('Settings saved!');
+}
+
+function saveQuickSettings() {
+  const settings = {
+    ollamaUrl: document.getElementById('ollama-url').value,
+    ollamaModel: document.getElementById('ollama-model').value,
+    searchMode: document.getElementById('search-mode').value,
+    topK: document.getElementById('top-k').value
+  };
+
+  const current = loadSettings();
+  Object.assign(current, settings);
+  localStorage.setItem('know3_settings', JSON.stringify(current));
+  alert('Quick settings saved!');
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// DATA LOADING
+// ════════════════════════════════════════════════════════════════════════════
+
+let selectedDataFile = null;
+let githubDatasets = [];
+
+function switchLoadMethod(method) {
+  const manualSection = document.getElementById('manual-load-section');
+  const githubSection = document.getElementById('github-load-section');
+  
+  if (method === 'manual') {
+    manualSection.style.display = 'block';
+    githubSection.style.display = 'none';
+  } else {
+    manualSection.style.display = 'none';
+    githubSection.style.display = 'block';
+    loadGitHubDatasets();
+  }
+}
+
+function handleDataFileSelect(event) {
+  selectedDataFile = event.target.files[0];
+  if (selectedDataFile) {
+    const preview = document.getElementById('file-preview');
+    preview.textContent = `📄 ${selectedDataFile.name} (${(selectedDataFile.size / 1024).toFixed(1)} KB)`;
+  }
+}
+
+async function parseJSONL(text) {
+  const lines = text.trim().split('\n');
+  const items = [];
+  
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    try {
+      items.push(JSON.parse(line));
+    } catch (e) {
+      console.warn('Skipped invalid JSONL line:', line.substring(0, 50));
+    }
+  }
+  
+  return items;
+}
+
+async function loadDataFile() {
+  if (!selectedDataFile) {
+    alert('Please select a file');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      let data;
+      const content = e.target.result;
+      const isJSONL = selectedDataFile.name.endsWith('.jsonl');
+      
+      if (isJSONL) {
+        data = await parseJSONL(content);
+      } else {
+        data = JSON.parse(content);
+      }
+      
+      window.vectorStore.addChunksFromJSON(data);
+      
+      const stats = window.vectorStore.getStats();
+      alert(`✅ Loaded ${stats.chunks} chunks`);
+      
+      updateSourcesUI();
+      closeModal('load-data-modal');
+      document.getElementById('data-file-input').value = '';
+      selectedDataFile = null;
+    } catch (err) {
+      alert('Error parsing file: ' + err.message);
+    }
+  };
+  reader.readAsText(selectedDataFile);
+}
+
+async function loadGitHubDatasets() {
+  const select = document.getElementById('github-dataset-select');
+  select.innerHTML = '<option value="">Loading...</option>';
+  
+  try {
+    const response = await fetch('https://api.github.com/repos/khalecl/know3/contents/prelude', {
+      headers: { Accept: 'application/vnd.github.v3+json' }
+    });
+    
+    if (!response.ok) throw new Error(`GitHub API error: ${response.status}`);
+    
+    const files = await response.json();
+    githubDatasets = files.filter(f => f.name.endsWith('.json') || f.name.endsWith('.jsonl'));
+    
+    select.innerHTML = githubDatasets.map(f => 
+      `<option value="${f.download_url}">${f.name}</option>`
+    ).join('');
+    
+    if (githubDatasets.length === 0) {
+      select.innerHTML = '<option value="">No datasets found</option>';
+    }
+  } catch (err) {
+    console.error('GitHub load error:', err);
+    select.innerHTML = '<option value="">⚠️ Failed to load (check console)</option>';
+    
+    // Fallback: manual list
+    const fallback = [
+      { name: 'oil.jsonl', download_url: 'https://khalecl.github.io/know3/prelude/oil.jsonl' }
+    ];
+    githubDatasets = fallback;
+    select.innerHTML = fallback.map(f => 
+      `<option value="${f.download_url}">${f.name} (fallback)</option>`
+    ).join('');
+  }
+}
+
+async function loadGitHubDataset() {
+  const select = document.getElementById('github-dataset-select');
+  const url = select.value;
+  
+  if (!url) {
+    alert('Please select a dataset');
+    return;
+  }
+  
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
+    
+    const content = await response.text();
+    let data;
+    
+    if (url.endsWith('.jsonl')) {
+      data = await parseJSONL(content);
+    } else {
+      data = JSON.parse(content);
+    }
+    
+    window.vectorStore.addChunksFromJSON(data);
+    
+    const stats = window.vectorStore.getStats();
+    alert(`✅ Loaded ${stats.chunks} chunks from GitHub`);
+    
+    updateSourcesUI();
+    closeModal('load-data-modal');
+  } catch (err) {
+    alert('Error loading from GitHub: ' + err.message);
+  }
+}
+
+function updateSourcesUI() {
+  const stats = window.vectorStore.getStats();
+  const list = document.getElementById('sources-list');
+  
+  // Group chunks by collection
+  const collections = {};
+  window.vectorStore.chunks.forEach(chunk => {
+    const col = chunk.metadata?.collection || 'Default';
+    if (!collections[col]) collections[col] = 0;
+    collections[col]++;
+  });
+
+  list.innerHTML = Object.entries(collections).map(([name, count]) => `
+    <div class="collection-item">
+      <div class="collection-name">📁 ${escapeHtml(name)}</div>
+      <div class="collection-stats">${count} chunks</div>
+    </div>
+  `).join('') || '<div style="color: var(--text3); font-size: 0.75rem;">No data loaded</div>';
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// EXPORT
+// ════════════════════════════════════════════════════════════════════════════
+
+function exportCurrentChat() {
+  const conv = conversations[currentConversationId];
+  if (!conv) return;
+
+  const json = JSON.stringify(conv, null, 2);
+  downloadJSON(json, `chat_${Date.now()}.json`);
+}
+
+function exportAllChats() {
+  const json = JSON.stringify(conversations, null, 2);
+  downloadJSON(json, `conversations_${Date.now()}.json`);
+}
+
+function downloadJSON(json, filename) {
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// UTILITIES
+// ════════════════════════════════════════════════════════════════════════════
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function openModal(id) {
+  const modal = document.getElementById(id);
+  if (modal) modal.classList.add('active');
+}
+
+function closeModal(id) {
+  const modal = document.getElementById(id);
+  if (modal) modal.classList.remove('active');
+}
+
+function switchSidebarTab(tab) {
+  document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.sidebar-content').forEach(c => c.classList.remove('active'));
+  
+  // Find clicked tab and mark active
+  const tabs = document.querySelectorAll('.sidebar-tab');
+  for (let t of tabs) {
+    if (t.textContent.toLowerCase().includes(tab.split('-')[1])) {
+      t.classList.add('active');
+      break;
+    }
+  }
+  
+  const content = document.getElementById(`sidebar-${tab}`);
+  if (content) content.classList.add('active');
+}
+
+function clearAllData() {
+  if (confirm('⚠️ Delete ALL conversations and data? This cannot be undone.')) {
+    conversations = {};
+    window.vectorStore.clear();
+    localStorage.clear();
+    startNewConversation();
+    updateSourcesUI();
+    closeModal('settings-modal');
+    alert('All data cleared.');
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// EXPOSE FUNCTIONS TO GLOBAL SCOPE (for inline onclick)
+// ════════════════════════════════════════════════════════════════════════════
+
+window.switchSidebarTab = switchSidebarTab;
+window.openModal = openModal;
+window.closeModal = closeModal;
+window.switchLoadMethod = switchLoadMethod;
+window.handleDataFileSelect = handleDataFileSelect;
+window.loadDataFile = loadDataFile;
+window.loadGitHubDataset = loadGitHubDataset;
+window.sendMessage = sendMessage;
+window.startNewConversation = startNewConversation;
+window.switchConversation = switchConversation;
+window.saveSettings = saveSettings;
+window.saveQuickSettings = saveQuickSettings;
+window.exportCurrentChat = exportCurrentChat;
+window.exportAllChats = exportAllChats;
+window.clearAllData = clearAllData;
+
+// ════════════════════════════════════════════════════════════════════════════
+// EXPOSE TO GLOBAL SCOPE (for onclick handlers)
+// ════════════════════════════════════════════════════════════════════════════
+
+window.sendMessage = sendMessage;
+window.openModal = openModal;
+window.closeModal = closeModal;
+window.switchSidebarTab = switchSidebarTab;
+window.startNewConversation = startNewConversation;
+window.switchConversation = switchConversation;
+window.deleteConversation = deleteConversation;
+window.handleDataFileSelect = handleDataFileSelect;
+window.loadDataFile = loadDataFile;
+window.saveSettings = saveSettings;
+window.saveQuickSettings = saveQuickSettings;
+window.exportCurrentChat = exportCurrentChat;
+window.exportAllChats = exportAllChats;
+window.clearAllData = clearAllData;
+
+// ════════════════════════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════════════════════════
+
+window.addEventListener('DOMContentLoaded', function() {
+  // Auto-resize textarea
+  const chatInput = document.getElementById('chat-input');
+  if (chatInput) {
+    chatInput.addEventListener('input', function() {
+      this.style.height = 'auto';
+      this.style.height = Math.min(this.scrollHeight, 100) + 'px';
+    });
+
+    // Enter to send
+    chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+  }
+
+  // Load settings on startup
+  const settings = loadSettings();
+  
+  const providerSelect = document.getElementById('provider-select');
+  if (providerSelect) providerSelect.value = settings.provider || 'ollama';
+  
+  const ollamaUrl = document.getElementById('setting-ollama-url');
+  if (ollamaUrl) ollamaUrl.value = settings.ollamaUrl || 'http://localhost:11434';
+  
+  const ollamaModel = document.getElementById('setting-ollama-model');
+  if (ollamaModel) ollamaModel.value = settings.ollamaModel || 'mistral';
+  
+  const searchMode = document.getElementById('setting-search-mode');
+  if (searchMode) searchMode.value = settings.searchMode || 'hybrid';
+  
+  const topK = document.getElementById('setting-top-k');
+  if (topK) topK.value = settings.topK || '3';
+  
+  const temp = document.getElementById('setting-temperature');
+  if (temp) temp.value = settings.temperature || '0.7';
+
+  // Quick settings sync
+  const quickOllamaUrl = document.getElementById('ollama-url');
+  if (quickOllamaUrl) quickOllamaUrl.value = settings.ollamaUrl || 'http://localhost:11434';
+  
+  const quickOllamaModel = document.getElementById('ollama-model');
+  if (quickOllamaModel) quickOllamaModel.value = settings.ollamaModel || 'mistral';
+  
+  const quickSearchMode = document.getElementById('search-mode');
+  if (quickSearchMode) quickSearchMode.value = settings.searchMode || 'hybrid';
+  
+  const quickTopK = document.getElementById('top-k');
+  if (quickTopK) quickTopK.value = settings.topK || '3';
+
+  // Initialize conversations
+  initConversations();
+
+  // Update sources UI
+  updateSourcesUI();
+});
+</script>
+
+</body>
+</html>
