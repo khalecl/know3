@@ -104,6 +104,46 @@ input, select, textarea { width: 100%; background: var(--surface2); border: 1px 
 ::-webkit-scrollbar-track { background: var(--surface); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 @media (max-width: 900px) { .chat-container { flex-direction: column; } .chat-panel { flex: 0 0 200px; max-height: 300px; } .msg-bubble { max-width: 100%; } }
+.source-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 0.6rem;
+  overflow: hidden;
+}
+
+.source-header {
+  padding: 0.6rem;
+  background: var(--surface2);
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: background 0.25s;
+}
+
+.source-header:hover {
+  background: rgba(0, 229, 160, 0.1);
+}
+
+.source-title { color: var(--accent); font-weight: 600; }
+.source-count { color: var(--text3); font-size: 0.7rem; }
+.chevron { color: var(--text2); font-size: 0.7rem; transition: transform 0.3s; }
+
+.source-card.open .chevron { transform: rotate(90deg); }
+
+.source-body {
+  display: none;
+  padding: 0.6rem;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+
+.source-card.open .source-body { display: block; }
+
+.source-info {
+  color: var(--text3);
+  font-size: 0.75rem;
+}
 </style>
 </head>
 <body>
@@ -122,6 +162,10 @@ input, select, textarea { width: 100%; background: var(--surface2); border: 1px 
       <div class="chat-input-box">
         <textarea id="chat-input" placeholder="Ask a question..." rows="2"></textarea>
         <button class="btn-send" id="btn-send" onclick="sendMessage()">Send</button>
+          <div id="loading-spinner" class="loading-state" style="display: none;">
+            <div class="spinner"></div>
+            <span>Thinking...</span>
+          </div>
       </div>
     </div>
     <div class="chat-panel">
@@ -404,7 +448,55 @@ class VectorStore {
     this.embeddings = [];
   }
 }
+// IndexedDB for embeddings persistence
+async function initDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('know3-embeddings', 1);
+    req.onerror = () => reject('IDB init failed');
+    req.onsuccess = () => resolve(req.result);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('embeddings')) {
+        db.createObjectStore('embeddings', { keyPath: 'id' });
+      }
+    };
+  });
+}
 
+async function saveEmbeddings(chunks, embeddings) {
+  try {
+    const db = await initDB();
+    const tx = db.transaction('embeddings', 'readwrite');
+    const store = tx.objectStore('embeddings');
+    await new Promise((resolve, reject) => {
+      const req = store.put({
+        id: 'cache_v1',
+        chunks: chunks,
+        embeddings: embeddings,
+        timestamp: Date.now()
+      });
+      req.onsuccess = resolve;
+      req.onerror = reject;
+    });
+  } catch (e) {
+    console.warn('IDB save failed:', e);
+  }
+}
+
+async function loadEmbeddings() {
+  try {
+    const db = await initDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('embeddings', 'readonly');
+      const req = tx.objectStore('embeddings').get('cache_v1');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = reject;
+    });
+  } catch (e) {
+    console.warn('IDB load failed:', e);
+    return null;
+  }
+}
 window.vectorStore = new VectorStore();
 
 // Conversations
@@ -499,7 +591,7 @@ async function sendMessage() {
   input.style.height = 'auto';
 
   addMessage('user', q);
-
+    document.getElementById('loading-spinner').style.display = 'flex';
   const topK = parseInt(localStorage.getItem('know3_top_k')) || 3;
   const mode = document.getElementById('search-mode')?.value || 'hybrid';
   const results = await window.vectorStore.search(q, topK, mode);
@@ -732,7 +824,7 @@ if (provider === 'groq') {
       return `❌ Error: ${e.message}`;
     }
   }
-
+    document.getElementById('loading-spinner').style.display = 'none';
   currentStreamingIndex = -1;
   return 'Provider not configured.';
 }
@@ -782,6 +874,10 @@ async function loadDataFile() {
       data = JSON.parse(text);
     }
     await window.vectorStore.addChunksFromJSON(data);
+          if (embeddingReady && this.chunks.length > 0) {
+        await this.computeEmbeddings();
+        await saveEmbeddings(this.chunks, this.embeddings);  // ← ADD THIS
+      }
     alert(`✅ Loaded ${window.vectorStore.chunks.length} chunks. Computing embeddings...`);
     updateSourcesUI();
   } catch (e) {
@@ -810,6 +906,10 @@ async function loadGitHubDataset() {
     const text = await res.text();
     let data = url.endsWith('.jsonl') ? text.trim().split('\n').map(l => JSON.parse(l)) : JSON.parse(text);
     await window.vectorStore.addChunksFromJSON(data);
+    if (embeddingReady && this.chunks.length > 0) {
+        await this.computeEmbeddings();
+        await saveEmbeddings(this.chunks, this.embeddings);  // ← ADD THIS
+      }
     alert(`✅ Loaded ${window.vectorStore.chunks.length} chunks. Computing embeddings...`);
     updateSourcesUI();
   } catch (e) {
@@ -823,7 +923,21 @@ function updateSourcesUI() {
     const col = c.metadata?.collection || 'Default';
     cols[col] = (cols[col] || 0) + 1;
   });
-  document.getElementById('sources-list').innerHTML = Object.entries(cols).map(([n, c]) => `<div style="padding: 0.5rem; background: var(--surface2); border-radius: 6px; margin-bottom: 0.4rem;"><div style="color: var(--accent); font-weight: 600;">📁 ${escapeHtml(n)}</div><div style="color: var(--text3);">${c} chunks ${embeddingReady ? '📊' : ''}</div></div>`).join('') || '<div style="color: var(--text3);">Upload JSON</div>';
+  
+  document.getElementById('sources-list').innerHTML = Object.entries(cols).map(([n, c]) => `
+    <div class="source-card">
+      <div class="source-header" onclick="this.parentElement.classList.toggle('open')">
+        <span class="source-title">📁 ${escapeHtml(n)}</span>
+        <span class="source-count">${c} chunks</span>
+        <span class="chevron">▶</span>
+      </div>
+      <div class="source-body">
+        <div class="source-info">
+          <small>Indexed: ${embeddingReady ? '✅ Semantic' : '⚠️ Keyword'}</small>
+        </div>
+      </div>
+    </div>
+  `).join('') || '<div style="color: var(--text3);">Upload JSON</div>';
 }
 
 // Settings
@@ -975,6 +1089,13 @@ window.addEventListener('DOMContentLoaded', () => {
   initConversations();
   updateSourcesUI();
   initEmbeddings();
+  // Load cached embeddings
+    const cached = await loadEmbeddings();
+    if (cached && cached.chunks) {
+      window.vectorStore.chunks = cached.chunks;
+      window.vectorStore.embeddings = cached.embeddings;
+      updateEmbeddingStatus(`✅ Semantic (${cached.chunks.length} cached)`);
+    }
 });
 
 // Globals
