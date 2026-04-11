@@ -44,6 +44,18 @@ body {
   overflow-x: hidden;
   font-size: 15px;
   line-height: 1.55;
+  position: relative;
+}
+
+#matrix-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.8;
 }
 
 body::before {
@@ -573,6 +585,8 @@ select:focus {
 </head>
 <body>
 
+<canvas id="matrix-canvas"></canvas>
+
 <div class="app">
   <!-- HEADER -->
   <div class="header">
@@ -757,9 +771,20 @@ select:focus {
     </div>
 
     <div class="setting-group">
-      <label class="setting-label">Temperature</label>
-      <div class="setting-desc">Creativity (0.0 = deterministic, 1.0 = creative)</div>
-      <input type="text" id="setting-temperature" placeholder="0.7" value="0.7">
+      <label class="setting-label">Background Effects</label>
+      <div class="setting-desc">Matrix rain & custom colors</div>
+      
+      <label style="font-size: 0.8rem; color: var(--text2); margin: 0.5rem 0; display: flex; align-items: center; gap: 0.4rem;">
+        <input type="checkbox" id="matrix-enabled" checked onchange="toggleMatrixBg()"> Enable Matrix BG
+      </label>
+      
+      <label style="font-size: 0.8rem; color: var(--text2); margin: 0.5rem 0; display: block;">
+        Matrix Rain Color:
+        <input type="color" id="matrix-color-primary" value="#00ff00" onchange="updateMatrixColor()" style="width: 100%; height: 40px; cursor: pointer; margin-top: 0.3rem;">
+      </label>
+      
+      <input type="range" id="matrix-intensity" min="0" max="100" value="80" onchange="updateMatrixIntensity()" style="width: 100%; margin-top: 0.3rem;">
+      <div style="font-size: 0.7rem; color: var(--text3); text-align: center;">Intensity: <span id="intensity-display">80</span>%</div>
     </div>
 
     <div class="setting-group">
@@ -1398,6 +1423,9 @@ window.saveQuickSettings = saveQuickSettings;
 window.exportCurrentChat = exportCurrentChat;
 window.exportAllChats = exportAllChats;
 window.clearAllData = clearAllData;
+window.toggleMatrixBg = toggleMatrixBg;
+window.updateMatrixColor = updateMatrixColor;
+window.updateMatrixIntensity = updateMatrixIntensity;
 
 // ════════════════════════════════════════════════════════════════════════════
 // EXPOSE TO GLOBAL SCOPE (for onclick handlers)
@@ -1419,10 +1447,162 @@ window.exportAllChats = exportAllChats;
 window.clearAllData = clearAllData;
 
 // ════════════════════════════════════════════════════════════════════════════
+// MATRIX BACKGROUND ANIMATION
+// ════════════════════════════════════════════════════════════════════════════
+
+class MatrixRain {
+  constructor(canvas, primaryColor = '#00ff00') {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.primaryColor = primaryColor;
+    this.intensity = 0.8;
+    this.chars = 'アィゥェォカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワン0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    this.fontSize = 14;
+    this.enabled = true;
+    
+    this.resize();
+    window.addEventListener('resize', () => this.resize());
+    this.animate();
+  }
+
+  resize() {
+    this.canvas.width = window.innerWidth;
+    this.canvas.height = window.innerHeight;
+    this.columns = Math.floor(this.canvas.width / this.fontSize);
+    this.drops = new Array(this.columns).fill(1);
+  }
+
+  hexToRgb(hex) {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    if (result) {
+      return {
+        r: parseInt(result[1], 16),
+        g: parseInt(result[2], 16),
+        b: parseInt(result[3], 16)
+      };
+    }
+    return { r: 0, g: 255, b: 0 };
+  }
+
+  getRainColor() {
+    if (!this.enabled) return 'rgba(0,0,0,0)';
+    
+    const baseColor = this.hexToRgb(this.primaryColor);
+    const intensity = 0.4 + Math.random() * 0.6 * this.intensity;
+    
+    const r = Math.floor(baseColor.r * (1 - intensity * 0.3));
+    const g = Math.floor(baseColor.g * (0.6 + intensity * 0.4));
+    const b = Math.floor(baseColor.b * (1 - intensity * 0.2));
+    
+    return `rgba(${r},${g},${b},${0.7 + intensity * 0.3})`;
+  }
+
+  draw() {
+    if (!this.enabled) {
+      this.ctx.fillStyle = 'rgba(0, 0, 0, 0)';
+      this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+      return;
+    }
+
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.font = `${this.fontSize}px monospace`;
+
+    for (let i = 0; i < this.drops.length; i++) {
+      const text = this.chars[Math.floor(Math.random() * this.chars.length)];
+      this.ctx.fillStyle = this.getRainColor();
+      this.ctx.fillText(text, i * this.fontSize, this.drops[i] * this.fontSize);
+
+      if (this.drops[i] * this.fontSize > this.canvas.height && Math.random() > 0.975) {
+        this.drops[i] = 0;
+      }
+      this.drops[i]++;
+    }
+  }
+
+  animate() {
+    this.draw();
+    requestAnimationFrame(() => this.animate());
+  }
+
+  setColor(hex) {
+    this.primaryColor = hex;
+  }
+
+  setIntensity(value) {
+    this.intensity = Math.max(0, Math.min(1, value / 100));
+  }
+
+  setEnabled(enabled) {
+    this.enabled = enabled;
+  }
+}
+
+let matrixRain = null;
+
+// Matrix background controls
+function toggleMatrixBg() {
+  const enabled = document.getElementById('matrix-enabled')?.checked;
+  if (matrixRain) matrixRain.setEnabled(enabled);
+}
+
+function updateMatrixColor() {
+  const color = document.getElementById('matrix-color-primary')?.value || '#00ff00';
+  if (matrixRain) matrixRain.setColor(color);
+  saveMatrixSettings();
+}
+
+function updateMatrixIntensity() {
+  const intensity = parseInt(document.getElementById('matrix-intensity')?.value) || 80;
+  if (matrixRain) matrixRain.setIntensity(intensity);
+  const display = document.getElementById('intensity-display');
+  if (display) display.textContent = intensity;
+  saveMatrixSettings();
+}
+
+function saveMatrixSettings() {
+  const settings = loadSettings();
+  settings.matrixColor = document.getElementById('matrix-color-primary')?.value || '#00ff00';
+  settings.matrixIntensity = document.getElementById('matrix-intensity')?.value || '80';
+  settings.matrixEnabled = document.getElementById('matrix-enabled')?.checked ?? true;
+  localStorage.setItem('know3_settings', JSON.stringify(settings));
+}
+
+function loadMatrixSettings() {
+  const settings = loadSettings();
+  return {
+    color: settings.matrixColor || '#00ff00',
+    intensity: parseInt(settings.matrixIntensity) || 80,
+    enabled: settings.matrixEnabled !== false
+  };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // INIT
 // ════════════════════════════════════════════════════════════════════════════
 
 window.addEventListener('DOMContentLoaded', function() {
+  // Initialize matrix rain background
+  const canvas = document.getElementById('matrix-canvas');
+  const matrixSettings = loadMatrixSettings();
+  matrixRain = new MatrixRain(canvas, matrixSettings.color);
+  matrixRain.setIntensity(matrixSettings.intensity);
+  matrixRain.setEnabled(matrixSettings.enabled);
+
+  // Set matrix UI elements
+  const matrixColorInput = document.getElementById('matrix-color-primary');
+  if (matrixColorInput) matrixColorInput.value = matrixSettings.color;
+
+  const matrixEnabledInput = document.getElementById('matrix-enabled');
+  if (matrixEnabledInput) matrixEnabledInput.checked = matrixSettings.enabled;
+
+  const matrixIntensityInput = document.getElementById('matrix-intensity');
+  if (matrixIntensityInput) {
+    matrixIntensityInput.value = matrixSettings.intensity;
+    const display = document.getElementById('intensity-display');
+    if (display) display.textContent = matrixSettings.intensity;
+  }
+
   // Auto-resize textarea
   const chatInput = document.getElementById('chat-input');
   if (chatInput) {
