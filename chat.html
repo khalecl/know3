@@ -565,7 +565,10 @@ body {
             </div>
             <div class="field">
               <label class="field-label">Model</label>
-              <input type="text" id="s-ollama-model" placeholder="mistral">
+              <div style="display:flex;gap:0.3rem">
+                <select id="s-ollama-model" style="flex:1"><option value="">— click Refresh —</option></select>
+                <button class="btn-secondary" onclick="fetchOllamaModels()" style="width:auto;padding:0.4rem 0.6rem;white-space:nowrap" title="Refresh models">↻</button>
+              </div>
             </div>
           </div>
           <button class="btn-secondary" onclick="testOllama()" style="width:100%">Test Connection</button>
@@ -806,7 +809,11 @@ class VectorStore {
       for (let i = 0; i < this.chunks.length; i++) {
         const emb = await embeddingModel(this.chunks[i].text, { pooling: 'mean', normalize: true });
         this.embeddings.push(Array.from(emb.data));
-        if (i % 10 === 0) setEmbedStatus('loading', `Indexing ${i+1}/${this.chunks.length}...`);
+        if (i % 5 === 0) {
+          setEmbedStatus('loading', `Indexing ${i+1}/${this.chunks.length}...`);
+          // Yield to UI thread every 5 chunks to prevent freeze
+          await new Promise(r => setTimeout(r, 0));
+        }
       }
       setEmbedStatus('ready', `✓ ${this.chunks.length} indexed`);
     } catch (e) {
@@ -1300,23 +1307,28 @@ function openSettings() {
   // Populate fields from storage
   document.getElementById('s-provider').value = getSetting('provider', 'ollama');
   document.getElementById('s-ollama-url').value = getSetting('ollama_url', 'http://localhost:11434');
-  document.getElementById('s-ollama-model').value = getSetting('ollama_model', 'mistral');
   document.getElementById('s-temperature').value = getSetting('temperature', '70');
   document.getElementById('temp-val').textContent = (parseInt(getSetting('temperature','70'))/100).toFixed(2);
   document.getElementById('s-system-prompt').value = getSetting('system_prompt', DEFAULT_SYSTEM_PROMPT);
   document.getElementById('s-max-context').value = getSetting('max_context', '5');
   document.getElementById('s-streaming').value = getSetting('streaming', 'true');
 
-  // Provider keys & models
+  // Provider keys & models (skip ollama model — it's a select populated by fetchOllamaModels)
   for (const p of Object.keys(PROVIDERS)) {
     const keyEl = document.getElementById(`s-${p}-key`);
     if (keyEl) keyEl.value = getSetting(`${p}_key`, '');
+    if (p === 'ollama') continue; // handled separately
     const modelEl = document.getElementById(`s-${p}-model`);
-    if (modelEl && !modelEl.value) modelEl.value = getSetting(`${p}_model`, modelEl.placeholder);
+    if (modelEl) modelEl.value = getSetting(`${p}_model`, '') || modelEl.placeholder || '';
   }
 
   onProviderChange();
   document.getElementById('settings-overlay').classList.add('active');
+
+  // Auto-fetch Ollama models when settings open and provider is ollama
+  if (getSetting('provider', 'ollama') === 'ollama') {
+    fetchOllamaModels();
+  }
 }
 
 function closeSettings() {
@@ -1334,6 +1346,8 @@ function onProviderChange() {
   const p = document.getElementById('s-provider').value;
   document.querySelectorAll('.provider-config').forEach(el => el.classList.remove('active'));
   document.getElementById(`cfg-${p}`)?.classList.add('active');
+  // Auto-fetch models when switching to Ollama
+  if (p === 'ollama') fetchOllamaModels();
 }
 
 function saveSettings() {
@@ -1367,6 +1381,28 @@ function resetSystemPrompt() {
   document.getElementById('s-system-prompt').value = DEFAULT_SYSTEM_PROMPT;
 }
 
+async function fetchOllamaModels() {
+  const url = document.getElementById('s-ollama-url').value || 'http://localhost:11434';
+  const sel = document.getElementById('s-ollama-model');
+  const saved = getSetting('ollama_model', '');
+  sel.innerHTML = '<option value="">Loading...</option>';
+  sel.disabled = true;
+  try {
+    const res = await fetch(`${url}/api/tags`);
+    if (!res.ok) throw new Error(res.status);
+    const data = await res.json();
+    const models = data.models || [];
+    if (!models.length) { sel.innerHTML = '<option value="">No models found</option>'; return; }
+    sel.innerHTML = models.map(m => `<option value="${m.name}" ${m.name === saved ? 'selected' : ''}>${m.name}</option>`).join('');
+    // If no saved match, select first
+    if (!saved || !models.find(m => m.name === saved)) sel.selectedIndex = 0;
+  } catch (e) {
+    sel.innerHTML = `<option value="">Failed: ${e.message}</option>`;
+  } finally {
+    sel.disabled = false;
+  }
+}
+
 async function testOllama() {
   const url = document.getElementById('s-ollama-url').value || 'http://localhost:11434';
   const el = document.getElementById('ollama-test-result');
@@ -1376,9 +1412,11 @@ async function testOllama() {
     const res = await fetch(`${url}/api/tags`);
     if (!res.ok) throw new Error(res.status);
     const data = await res.json();
-    const models = data.models?.map(m => m.name).join(', ') || 'No models found';
-    el.textContent = `✓ Connected. Models: ${models}`;
+    const count = data.models?.length || 0;
+    el.textContent = `✓ Connected. ${count} model${count !== 1 ? 's' : ''} available.`;
     el.style.color = 'var(--accent)';
+    // Also populate model dropdown
+    await fetchOllamaModels();
   } catch (e) {
     el.textContent = `✕ Failed: ${e.message}`;
     el.style.color = 'var(--danger)';
@@ -1386,9 +1424,10 @@ async function testOllama() {
 }
 
 // ═══════════════════════════════════════════════
-// DATA LOADING
+// DATA LOADING (non-blocking, double-click safe)
 // ═══════════════════════════════════════════════
 let selectedFile = null;
+let _isLoadingData = false;  // double-click guard
 
 function toggleLoadMethod() {
   const m = document.getElementById('s-load-method').value;
@@ -1403,8 +1442,31 @@ function previewDataFile(e) {
   if (selectedFile) el.textContent = `${selectedFile.name} (${(selectedFile.size/1024).toFixed(1)} KB)`;
 }
 
+function setLoadBtn(id, loading) {
+  const btn = document.querySelector(`#${id}`)?.closest('div')?.querySelector('.btn-primary') 
+    || document.querySelector(`#${id}`)?.parentElement?.querySelector('.btn-primary');
+  // Fallback: find by context
+  const btns = {
+    'load-manual': document.querySelector('#load-manual .btn-primary'),
+    'load-github': document.querySelector('#load-github .btn-primary'),
+  };
+  const el = btns[id];
+  if (!el) return;
+  if (loading) {
+    el.disabled = true;
+    el._origText = el.textContent;
+    el.textContent = 'Loading...';
+  } else {
+    el.disabled = false;
+    el.textContent = el._origText || 'Load';
+  }
+}
+
 async function loadDataFile() {
   if (!selectedFile) { alert('Select a file first'); return; }
+  if (_isLoadingData) return;
+  _isLoadingData = true;
+  setLoadBtn('load-manual', true);
   try {
     const text = await selectedFile.text();
     let data;
@@ -1413,37 +1475,72 @@ async function loadDataFile() {
     } else {
       data = JSON.parse(text);
     }
+    // Non-blocking: yield to UI between embedding batches
     await vectorStore.addChunksFromJSON(data);
     alert(`✓ Loaded. Total: ${vectorStore.chunks.length} chunks`);
     updateChunkCount();
   } catch (e) {
     alert('Error: ' + e.message);
+  } finally {
+    _isLoadingData = false;
+    setLoadBtn('load-manual', false);
   }
 }
 
+let _ghDatasetCache = null;
 async function fetchGitHubDatasets() {
   const sel = document.getElementById('s-github-dataset');
+  if (_ghDatasetCache) { sel.innerHTML = _ghDatasetCache; return; }
+  sel.innerHTML = '<option value="">Loading list...</option>';
+  sel.disabled = true;
   try {
     const res = await fetch('https://api.github.com/repos/khalecl/know3/contents/prelude');
     if (!res.ok) throw new Error();
     const files = (await res.json()).filter(f => f.name.endsWith('.json') || f.name.endsWith('.jsonl'));
-    sel.innerHTML = files.map(f => `<option value="${f.download_url}">${f.name}</option>`).join('');
+    const html = files.map(f => `<option value="${f.download_url}">${f.name} (${(f.size/1024).toFixed(0)} KB)</option>`).join('');
+    sel.innerHTML = html || '<option value="">No datasets found</option>';
+    _ghDatasetCache = sel.innerHTML;
   } catch {
-    sel.innerHTML = '<option value="https://khalecl.github.io/know3/prelude/oil.jsonl">oil.jsonl</option>';
+    sel.innerHTML = '<option value="https://khalecl.github.io/know3/prelude/oil.jsonl">oil.jsonl (fallback)</option>';
+  } finally {
+    sel.disabled = false;
   }
 }
 
 async function loadGitHubDataset() {
+  if (_isLoadingData) return;  // double-click guard
   const url = document.getElementById('s-github-dataset').value;
   if (!url) return;
+
+  _isLoadingData = true;
+  setLoadBtn('load-github', true);
+  const statusEl = document.getElementById('data-summary');
+  const origStatus = statusEl.innerHTML;
+
   try {
-    const text = await (await fetch(url)).text();
+    statusEl.innerHTML = '<span style="color:var(--warn)">⏳ Downloading dataset...</span>';
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+
+    statusEl.innerHTML = '<span style="color:var(--warn)">⏳ Parsing...</span>';
+    // Yield to UI
+    await new Promise(r => setTimeout(r, 0));
+
     const data = url.endsWith('.jsonl') ? text.trim().split('\n').map(l => JSON.parse(l)) : JSON.parse(text);
+
+    statusEl.innerHTML = `<span style="color:var(--warn)">⏳ Indexing ${Array.isArray(data) ? data.length : '?'} chunks...</span>`;
+    await new Promise(r => setTimeout(r, 0));
+
     await vectorStore.addChunksFromJSON(data);
-    alert(`✓ Loaded. Total: ${vectorStore.chunks.length} chunks`);
     updateChunkCount();
+    alert(`✓ Loaded. Total: ${vectorStore.chunks.length} chunks`);
   } catch (e) {
+    statusEl.innerHTML = origStatus;
     alert('Error: ' + e.message);
+  } finally {
+    _isLoadingData = false;
+    setLoadBtn('load-github', false);
   }
 }
 
