@@ -7,530 +7,716 @@
 <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
 <script type="importmap">
-{
-  "imports": {
-    "@xenova/transformers": "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2"
-  }
-}
+{ "imports": { "@xenova/transformers": "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2" } }
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
+/* ── RESET & VARIABLES ── */
 :root {
   --bg: #050911;
   --surface: rgba(12,16,28,0.85);
   --surface2: rgba(20,25,45,0.9);
+  --surface3: rgba(30,36,60,0.7);
   --border: rgba(40,50,80,0.5);
+  --border-hover: rgba(60,75,120,0.6);
   --text: #e8eaf4;
   --text2: #8690b8;
   --text3: #505878;
   --accent: #00e5a0;
-  --accent-dim: rgba(0,229,160,0.06);
+  --accent-dim: rgba(0,229,160,0.08);
+  --accent-glow: rgba(0,229,160,0.25);
+  --danger: #f87171;
+  --danger-dim: rgba(248,113,113,0.1);
+  --warn: #fbbf24;
   --mono: 'IBM Plex Mono', monospace;
   --sans: 'Outfit', system-ui, sans-serif;
   --radius: 12px;
+  --radius-sm: 8px;
   --glass: blur(20px) saturate(1.4);
+  --transition: 0.2s ease;
 }
-* { margin: 0; padding: 0; box-sizing: border-box; }
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { height: 100%; }
-body { font-family: var(--sans); background: var(--bg); color: var(--text); overflow: hidden; position: relative; }
-#matrix-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; opacity: 0.8; }
-.app { position: relative; z-index: 1; width: 100%; margin: 0; padding: 1rem; height: 100vh; display: flex; flex-direction: column; }
-  .header { display: flex; justify-content: space-between; align-items: center; padding: 0.8rem 1rem; background: var(--surface); backdrop-filter: var(--glass); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 1rem; gap: 1.2rem; }
-.logo h1 { font-size: 1.1rem; font-weight: 800; letter-spacing: -0.02em; margin: 0; }
-.logo h1 .k { color: var(--accent); text-shadow: 0 0 20px rgba(0,229,160,0.3); }
-.header-right { display: flex; gap: 0.5rem; align-items: center; }
-.btn-icon { background: transparent; border: 1px solid var(--border); color: var(--text2); padding: 0.5rem 0.7rem; border-radius: 8px; cursor: pointer; font-size: 0.9rem; transition: all 0.25s; }
-.btn-icon:hover { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
-.chat-container { display: flex; flex: 1; gap: 1rem; min-height: 0; }
-.chat-main { flex: 1; display: flex; flex-direction: column; background: var(--surface); backdrop-filter: var(--glass); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
-.chat-panel { flex: 0 0 300px; background: var(--surface); backdrop-filter: var(--glass); border: 1px solid var(--border); border-radius: var(--radius); display: flex; flex-direction: column; overflow: hidden; }
-#chat-messages { flex: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 0.8rem; }
-.msg { display: flex; gap: 0.6rem; animation: slideIn 0.3s ease-out; }
-@keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-.msg.user { justify-content: flex-end; }
-.msg-bubble { max-width: 80%; padding: 0.8rem 1rem; border-radius: 10px; word-wrap: break-word; overflow-x: auto; }
-.msg.user .msg-bubble { background: var(--accent-dim); border: 1px solid var(--accent); color: var(--text); }
-.msg.assistant .msg-bubble { background: var(--surface2); border: 1px solid var(--border); color: var(--text); }
-.msg-bubble h1, .msg-bubble h2, .msg-bubble h3, .msg-bubble h4, .msg-bubble h5, .msg-bubble h6 { margin: 1rem 0 0.5rem 0; font-weight: 700; color: var(--accent); line-height: 1.4; }
-.msg-bubble h1 { font-size: 1.3rem; }
-.msg-bubble h2 { font-size: 1.15rem; }
-.msg-bubble h3 { font-size: 1rem; }
-.msg-bubble p { margin: 0.5rem 0; line-height: 1.6; }
-.msg-bubble ul, .msg-bubble ol { margin: 0.5rem 0 0.5rem 1.5rem; line-height: 1.6; }
-.msg-bubble li { margin: 0.2rem 0; }
-.msg-bubble code { background: var(--surface2); border: 1px solid var(--border); padding: 0.2rem 0.4rem; border-radius: 4px; font-family: var(--mono); font-size: 0.85rem; color: var(--accent); }
-.msg-bubble pre { background: var(--surface2); border: 1px solid var(--border); padding: 0.8rem; border-radius: 6px; overflow-x: auto; margin: 0.5rem 0; font-size: 0.75rem; }
-.msg-bubble pre code { background: none; border: none; padding: 0; color: var(--text2); font-family: var(--mono); }
-.msg-bubble blockquote { border-left: 4px solid var(--accent); padding-left: 0.8rem; margin: 0.5rem 0; color: var(--text2); font-style: italic; }
-.msg-bubble strong { color: var(--accent); font-weight: 600; }
-.msg-bubble table { width: 100%; border-collapse: collapse; margin: 0.5rem 0; font-size: 0.8rem; }
-.msg-bubble th, .msg-bubble td { border: 1px solid var(--border); padding: 0.4rem; text-align: left; }
-.msg-bubble th { background: var(--surface2); color: var(--accent); font-weight: 600; }
-.msg-bubble a { color: var(--accent); text-decoration: none; }
-.msg-time { font-size: 0.7rem; color: var(--text3); align-self: flex-end; margin-right: 0.2rem; }
-.msg-source { font-size: 0.75rem; color: var(--text2); margin-top: 0.4rem; padding-top: 0.4rem; border-top: 1px solid var(--border); }
-.chat-input-box { padding: 1rem; border-top: 1px solid var(--border); display: flex; gap: 0.6rem; align-items: flex-end; }
-#chat-input { flex: 1; background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 0.7rem 0.9rem; border-radius: 8px; font-family: var(--sans); font-size: 0.9rem; resize: none; max-height: 100px; }
-#chat-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
-.btn-send { background: var(--accent); border: none; color: var(--bg); padding: 0.7rem 1rem; border-radius: 8px; cursor: pointer; font-weight: 600; transition: all 0.25s; font-family: var(--sans); }
-.btn-send:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,229,160,0.3); }
-.btn-send:disabled { opacity: 0.5; cursor: not-allowed; }
-.sidebar-tabs { display: flex; gap: 2px; padding: 0.5rem; border-bottom: 1px solid var(--border); }
-.sidebar-tab { flex: 1; padding: 0.5rem; font-size: 0.75rem; font-weight: 600; text-align: center; background: transparent; border: 1px solid transparent; color: var(--text3); cursor: pointer; border-radius: 6px; transition: all 0.25s; }
-.sidebar-tab:hover { background: var(--surface2); color: var(--text2); }
-.sidebar-tab.active { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
-.sidebar-content { flex: 1; overflow-y: auto; padding: 0.8rem; display: none; font-size: 0.75rem; }
-.sidebar-content.active { display: block; }
-.history-item { padding: 0.6rem; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; font-size: 0.8rem; cursor: pointer; transition: all 0.25s; margin-bottom: 0.5rem; }
-.history-item:hover { background: rgba(0,229,160,0.1); border-color: var(--accent); }
-.history-item.active { background: var(--accent-dim); border-color: var(--accent); }
-.modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
-.modal.active { display: flex; }
-.modal-content { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.5rem; max-width: 95vw; width: 1000px; max-height: 95vh; overflow-y: auto; font-size: 0.9rem; display: flex; flex-direction: column; }
-.modal-title { flex-shrink: 0; }
-.modal-content > div:not(.modal-title):not(:last-child) { flex-shrink: 0; }
-.modal-content .setting-group { flex-shrink: 0; }
-body.modal-open { overflow: hidden; }
-.modal-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 1rem; color: var(--accent); }
-.setting-group { margin-bottom: 1rem; }
-.setting-label { font-weight: 600; font-size: 0.8rem; color: var(--accent); margin-bottom: 0.3rem; display: block; }
-input, select, textarea { width: 100%; background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 0.6rem 0.8rem; border-radius: 6px; font-family: var(--mono); font-size: 0.85rem; margin-bottom: 0.5rem; min-height: 36px; }
-  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
-.btn-small { background: var(--accent); border: none; color: var(--bg); padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.75rem; font-weight: 600; cursor: pointer; transition: all 0.25s; font-family: var(--sans); width: 100%; margin-bottom: 0.3rem; }
-.btn-small:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,229,160,0.2); }
-.btn-small.secondary { background: transparent; border: 1px solid var(--border); color: var(--text2); }
-.btn-small.secondary:hover { background: var(--surface2); border-color: var(--accent); color: var(--accent); }
-.btn-small.danger { background: #f87171; }
-.provider-info { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 0.8rem; margin: 1rem 0; font-size: 0.75rem; color: var(--text2); }
-.status-badge { display: inline-block; padding: 0.3rem 0.6rem; border-radius: 4px; font-size: 0.7rem; margin-right: 0.4rem; }
-.status-embedding { background: rgba(0,229,160,0.2); color: var(--accent); }
-.status-loading { background: rgba(255,193,7,0.2); color: #ffc107; }
-::-webkit-scrollbar { width: 8px; }
-::-webkit-scrollbar-track { background: var(--surface); }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-@media (max-width: 900px) { .chat-container { flex-direction: column; } .chat-panel { flex: 0 0 200px; max-height: 300px; } .msg-bubble { max-width: 100%; } }
-.source-card {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  margin-bottom: 0.6rem;
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
   overflow: hidden;
+  position: relative;
 }
 
-.source-header {
-  padding: 0.6rem;
-  background: var(--surface2);
-  cursor: pointer;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  transition: background 0.25s;
+/* ── MATRIX CANVAS ── */
+#matrix-canvas {
+  position: fixed; inset: 0;
+  z-index: 0; pointer-events: none; opacity: 0.7;
 }
 
-.source-header:hover {
-  background: rgba(0, 229, 160, 0.1);
+/* ── LAYOUT ── */
+.app {
+  position: relative; z-index: 1;
+  width: 100%; height: 100vh;
+  display: flex; flex-direction: column;
+  padding: 0.75rem;
+  gap: 0.75rem;
 }
 
-.source-title { color: var(--accent); font-weight: 600; }
-.source-count { color: var(--text3); font-size: 0.7rem; }
-.chevron { color: var(--text2); font-size: 0.7rem; transition: transform 0.3s; }
-
-.source-card.open .chevron { transform: rotate(90deg); }
-
-.source-body {
-  display: none;
-  padding: 0.6rem;
+/* ── HEADER ── */
+.header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0.6rem 1rem;
   background: var(--surface);
+  backdrop-filter: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  flex-shrink: 0;
+}
+.logo h1 { font-size: 1.1rem; font-weight: 800; letter-spacing: -0.02em; }
+.logo .k { color: var(--accent); text-shadow: 0 0 20px var(--accent-glow); }
+.header-controls { display: flex; gap: 0.4rem; align-items: center; }
+.header-status {
+  font-size: 0.7rem; color: var(--text3);
+  padding: 0.3rem 0.6rem;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  white-space: nowrap;
+}
+.header-status.ready { color: var(--accent); border-color: rgba(0,229,160,0.3); }
+.header-status.loading { color: var(--warn); border-color: rgba(251,191,36,0.3); }
+
+/* ── BUTTONS ── */
+.btn-icon {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text2);
+  width: 34px; height: 34px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.85rem;
+  display: flex; align-items: center; justify-content: center;
+  transition: all var(--transition);
+}
+.btn-icon:hover { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+.btn-icon.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+.btn-primary {
+  background: var(--accent); border: none; color: var(--bg);
+  padding: 0.5rem 1rem; border-radius: var(--radius-sm);
+  cursor: pointer; font-weight: 600; font-family: var(--sans); font-size: 0.85rem;
+  transition: all var(--transition);
+}
+.btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 16px var(--accent-glow); }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-secondary {
+  background: transparent; border: 1px solid var(--border); color: var(--text2);
+  padding: 0.45rem 0.8rem; border-radius: var(--radius-sm);
+  cursor: pointer; font-weight: 500; font-family: var(--sans); font-size: 0.8rem;
+  transition: all var(--transition);
+}
+.btn-secondary:hover { background: var(--surface2); border-color: var(--accent); color: var(--accent); }
+.btn-danger {
+  background: var(--danger-dim); border: 1px solid rgba(248,113,113,0.3); color: var(--danger);
+  padding: 0.45rem 0.8rem; border-radius: var(--radius-sm);
+  cursor: pointer; font-weight: 500; font-family: var(--sans); font-size: 0.8rem;
+  transition: all var(--transition);
+}
+.btn-danger:hover { background: rgba(248,113,113,0.2); border-color: var(--danger); }
+
+/* ── MAIN LAYOUT ── */
+.main-area {
+  flex: 1; display: flex; gap: 0.75rem; min-height: 0;
+}
+
+/* ── SIDEBAR ── */
+.sidebar {
+  width: 260px; flex-shrink: 0;
+  background: var(--surface);
+  backdrop-filter: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  transition: width 0.3s ease, opacity 0.3s ease;
+}
+.sidebar.collapsed { width: 0; border: none; padding: 0; opacity: 0; pointer-events: none; }
+.sidebar-header {
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.sidebar-header span { font-size: 0.75rem; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.05em; }
+.sidebar-list {
+  flex: 1; overflow-y: auto; padding: 0.5rem;
+  display: flex; flex-direction: column; gap: 0.3rem;
+}
+.conv-item {
+  padding: 0.55rem 0.7rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition);
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 0.4rem;
+}
+.conv-item:hover { background: var(--surface2); border-color: var(--border); }
+.conv-item.active { background: var(--accent-dim); border-color: rgba(0,229,160,0.3); }
+.conv-title {
+  flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 0.8rem; color: var(--text2);
+}
+.conv-item.active .conv-title { color: var(--accent); }
+.conv-date { font-size: 0.65rem; color: var(--text3); white-space: nowrap; }
+.conv-delete {
+  opacity: 0; background: none; border: none; color: var(--text3);
+  cursor: pointer; font-size: 0.7rem; padding: 0.15rem 0.3rem;
+  border-radius: 4px; transition: all var(--transition);
+}
+.conv-item:hover .conv-delete { opacity: 1; }
+.conv-delete:hover { color: var(--danger); background: var(--danger-dim); }
+
+/* ── CHAT AREA ── */
+.chat-area {
+  flex: 1; display: flex; flex-direction: column;
+  background: var(--surface);
+  backdrop-filter: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden; min-width: 0;
+}
+
+/* ── CHAT TOOLBAR ── */
+.chat-toolbar {
+  padding: 0.5rem 0.8rem;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 0.6rem;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+.toolbar-group { display: flex; align-items: center; gap: 0.4rem; }
+.toolbar-label { font-size: 0.7rem; color: var(--text3); font-weight: 500; }
+.toolbar-select {
+  background: var(--surface2); border: 1px solid var(--border); color: var(--text2);
+  padding: 0.3rem 0.5rem; border-radius: 6px;
+  font-family: var(--mono); font-size: 0.72rem;
+  cursor: pointer; outline: none;
+}
+.toolbar-select:focus { border-color: var(--accent); }
+.toolbar-toggle {
+  display: flex; align-items: center; gap: 0.3rem;
+  font-size: 0.72rem; color: var(--text3); cursor: pointer; user-select: none;
+}
+.toolbar-toggle input[type="checkbox"] { accent-color: var(--accent); }
+.toolbar-toggle:has(input:checked) { color: var(--accent); }
+.toolbar-divider {
+  width: 1px; height: 18px; background: var(--border); margin: 0 0.2rem;
+}
+
+/* ── MESSAGES ── */
+#chat-messages {
+  flex: 1; overflow-y: auto; padding: 1rem;
+  display: flex; flex-direction: column; gap: 0.8rem;
+}
+
+/* Welcome state */
+.welcome-state {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  text-align: center; gap: 1rem; padding: 2rem;
+}
+.welcome-logo { font-size: 2.5rem; font-weight: 800; letter-spacing: -0.03em; }
+.welcome-logo .k { color: var(--accent); text-shadow: 0 0 30px var(--accent-glow); }
+.welcome-sub { color: var(--text3); font-size: 0.9rem; max-width: 400px; line-height: 1.6; }
+.welcome-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; margin-top: 0.5rem; }
+.welcome-chip {
+  padding: 0.4rem 0.8rem;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 20px; font-size: 0.78rem; color: var(--text2);
+  cursor: pointer; transition: all var(--transition);
+}
+.welcome-chip:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+/* Messages */
+.msg { display: flex; gap: 0.5rem; animation: msgIn 0.3s ease-out; }
+@keyframes msgIn { from { opacity: 0; transform: translateY(8px); } }
+.msg.user { justify-content: flex-end; }
+.msg-avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.7rem; flex-shrink: 0; margin-top: 2px;
+}
+.msg.user .msg-avatar { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(0,229,160,0.3); order: 2; }
+.msg.assistant .msg-avatar { background: var(--surface3); color: var(--text2); border: 1px solid var(--border); }
+.msg-content { max-width: 75%; display: flex; flex-direction: column; gap: 0.2rem; }
+.msg.user .msg-content { align-items: flex-end; }
+.msg-bubble {
+  padding: 0.7rem 0.9rem;
+  border-radius: 10px;
+  word-wrap: break-word; overflow-x: auto;
+  line-height: 1.55; font-size: 0.88rem;
+}
+.msg.user .msg-bubble {
+  background: var(--accent-dim); border: 1px solid rgba(0,229,160,0.25);
+  border-bottom-right-radius: 3px;
+}
+.msg.assistant .msg-bubble {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-bottom-left-radius: 3px;
+}
+.msg-meta {
+  font-size: 0.65rem; color: var(--text3);
+  display: flex; gap: 0.5rem; align-items: center;
+  padding: 0 0.3rem;
+}
+.msg-sources {
+  font-size: 0.72rem; color: var(--text2);
+  margin-top: 0.3rem; padding-top: 0.3rem;
   border-top: 1px solid var(--border);
 }
+.msg-sources summary { cursor: pointer; color: var(--accent); font-weight: 500; }
+.msg-sources .source-chunk {
+  margin-top: 0.3rem; padding: 0.4rem;
+  background: var(--surface); border-radius: 4px;
+  font-size: 0.7rem; color: var(--text3);
+  max-height: 80px; overflow-y: auto;
+}
 
-.source-card.open .source-body { display: block; }
+/* Markdown in messages */
+.msg-bubble h1,.msg-bubble h2,.msg-bubble h3,.msg-bubble h4 { margin: 0.8rem 0 0.3rem; font-weight: 700; color: var(--accent); }
+.msg-bubble h1 { font-size: 1.2rem; } .msg-bubble h2 { font-size: 1.05rem; } .msg-bubble h3 { font-size: 0.95rem; }
+.msg-bubble p { margin: 0.3rem 0; }
+.msg-bubble ul,.msg-bubble ol { margin: 0.3rem 0 0.3rem 1.3rem; }
+.msg-bubble li { margin: 0.15rem 0; }
+.msg-bubble code {
+  background: var(--surface); border: 1px solid var(--border);
+  padding: 0.15rem 0.35rem; border-radius: 4px;
+  font-family: var(--mono); font-size: 0.82rem; color: var(--accent);
+}
+.msg-bubble pre {
+  background: var(--surface); border: 1px solid var(--border);
+  padding: 0.7rem; border-radius: 6px; overflow-x: auto;
+  margin: 0.4rem 0; font-size: 0.75rem;
+}
+.msg-bubble pre code { background: none; border: none; padding: 0; color: var(--text2); }
+.msg-bubble blockquote { border-left: 3px solid var(--accent); padding-left: 0.7rem; margin: 0.4rem 0; color: var(--text2); font-style: italic; }
+.msg-bubble strong { color: var(--accent); font-weight: 600; }
+.msg-bubble table { width: 100%; border-collapse: collapse; margin: 0.4rem 0; font-size: 0.78rem; }
+.msg-bubble th,.msg-bubble td { border: 1px solid var(--border); padding: 0.35rem 0.5rem; text-align: left; }
+.msg-bubble th { background: var(--surface); color: var(--accent); font-weight: 600; }
+.msg-bubble a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
 
-.source-info {
-  color: var(--text3);
-  font-size: 0.75rem;
+/* Thinking indicator */
+.thinking-indicator {
+  display: flex; gap: 4px; padding: 0.6rem 0.9rem;
+  align-items: center;
+}
+.thinking-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.thinking-dot:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes pulse { 0%,80%,100% { opacity: 0.2; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1); } }
+
+/* ── INPUT AREA ── */
+.input-area {
+  padding: 0.75rem;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.input-row { display: flex; gap: 0.5rem; align-items: flex-end; }
+#chat-input {
+  flex: 1; background: var(--surface2);
+  border: 1px solid var(--border); color: var(--text);
+  padding: 0.65rem 0.85rem; border-radius: var(--radius-sm);
+  font-family: var(--sans); font-size: 0.88rem;
+  resize: none; max-height: 120px; min-height: 40px;
+  line-height: 1.5;
+}
+#chat-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
+#chat-input::placeholder { color: var(--text3); }
+.input-hint {
+  font-size: 0.65rem; color: var(--text3);
+  margin-top: 0.3rem; padding: 0 0.2rem;
+  display: flex; justify-content: space-between;
+}
+
+/* ── MODALS ── */
+.modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.65);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  align-items: center; justify-content: center;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+  background: var(--surface);
+  backdrop-filter: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: 560px; max-width: 95vw; max-height: 85vh;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.modal-header {
+  padding: 1rem 1.2rem;
+  border-bottom: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center;
+  flex-shrink: 0;
+}
+.modal-header h2 { font-size: 1rem; font-weight: 700; color: var(--accent); }
+.modal-body { padding: 1rem 1.2rem; overflow-y: auto; flex: 1; }
+.modal-footer {
+  padding: 0.8rem 1.2rem;
+  border-top: 1px solid var(--border);
+  display: flex; justify-content: flex-end; gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* Modal tabs */
+.modal-tabs {
+  display: flex; border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.modal-tab {
+  flex: 1; padding: 0.6rem; text-align: center;
+  font-size: 0.78rem; font-weight: 600; color: var(--text3);
+  background: none; border: none; cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all var(--transition);
+}
+.modal-tab:hover { color: var(--text2); background: var(--surface2); }
+.modal-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.modal-pane { display: none; }
+.modal-pane.active { display: block; }
+
+/* Form elements in modal */
+.field { margin-bottom: 1rem; }
+.field-label {
+  display: block; font-size: 0.75rem; font-weight: 600;
+  color: var(--accent); margin-bottom: 0.3rem;
+  letter-spacing: 0.02em;
+}
+.field-hint { font-size: 0.68rem; color: var(--text3); margin-top: 0.15rem; }
+.field input, .field select, .field textarea {
+  width: 100%; background: var(--surface2);
+  border: 1px solid var(--border); color: var(--text);
+  padding: 0.55rem 0.75rem; border-radius: 6px;
+  font-family: var(--mono); font-size: 0.82rem;
+}
+.field input:focus, .field select:focus, .field textarea:focus {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim);
+}
+.field textarea { font-family: var(--mono); resize: vertical; min-height: 80px; }
+.field-row { display: flex; gap: 0.8rem; }
+.field-row .field { flex: 1; }
+.range-display {
+  text-align: center; font-size: 0.72rem; color: var(--text3);
+  font-family: var(--mono); margin-top: 0.2rem;
+}
+.provider-config { display: none; }
+.provider-config.active { display: block; }
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text3); }
+
+/* ── MOBILE ── */
+@media (max-width: 768px) {
+  .sidebar { position: fixed; left: 0; top: 0; bottom: 0; z-index: 100; width: 280px; border-radius: 0 var(--radius) var(--radius) 0; }
+  .sidebar.collapsed { width: 0; }
+  .msg-content { max-width: 90%; }
+  .chat-toolbar { overflow-x: auto; flex-wrap: nowrap; }
+  .modal { width: 95vw; }
 }
 </style>
 </head>
 <body>
+
 <canvas id="matrix-canvas"></canvas>
+
 <div class="app">
+  <!-- HEADER -->
   <div class="header">
-    <div class="logo"><h1><span class="k">k</span><span class="n">now3</span> Chat</h1></div>
-    <div class="header-right">
-      <span id="embedding-status" style="font-size: 0.75rem; color: var(--text3);"></span>
-      <button class="btn-icon" onclick="openModal('settings-modal')" title="Settings">⚙️</button>
+    <div class="logo"><h1><span class="k">k</span>now3 Chat</h1></div>
+    <div class="header-controls">
+      <span id="embed-status" class="header-status">⏳ Loading...</span>
+      <button class="btn-icon" onclick="startNewConversation()" title="New Chat">✚</button>
+      <button class="btn-icon" id="btn-sidebar" onclick="toggleSidebar()" title="Toggle History">☰</button>
+      <button class="btn-icon" onclick="openSettings()" title="Settings">⚙</button>
     </div>
   </div>
-  <div class="chat-container">
-    <div class="chat-main">
-      <div id="chat-messages"></div>
-      <div class="chat-input-box">
-        <textarea id="chat-input" placeholder="Ask a question..." rows="2"></textarea>
-        <button class="btn-send" id="btn-send" onclick="sendMessage()">Send</button>
-          <div id="loading-spinner" class="loading-state" style="display: none;">
-            <div class="spinner"></div>
-            <span>Thinking...</span>
-          </div>
+
+  <!-- MAIN -->
+  <div class="main-area">
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <span>Chat History</span>
+        <button class="btn-icon" onclick="toggleSidebar()" style="width:26px;height:26px;font-size:0.7rem;">✕</button>
       </div>
+      <div class="sidebar-list" id="history-list"></div>
     </div>
-    <div class="chat-panel">
-      <div class="sidebar-tabs">
-        <button class="sidebar-tab active" onclick="switchSidebarTab('history')">History</button>
-        <button class="sidebar-tab" onclick="switchSidebarTab('sources')">Sources</button>
+
+    <!-- Chat -->
+    <div class="chat-area">
+      <!-- Toolbar -->
+      <div class="chat-toolbar">
+        <div class="toolbar-group">
+          <span class="toolbar-label">Search:</span>
+          <select class="toolbar-select" id="toolbar-search-mode">
+            <option value="hybrid">Hybrid</option>
+            <option value="semantic">Semantic</option>
+            <option value="keyword">Keyword</option>
+          </select>
+        </div>
+        <div class="toolbar-divider"></div>
+        <label class="toolbar-toggle" title="When off, sends directly to LLM without RAG context">
+          <input type="checkbox" id="toolbar-rag-toggle" checked> RAG
+        </label>
+        <div class="toolbar-divider"></div>
+        <div class="toolbar-group">
+          <span class="toolbar-label">Top-K:</span>
+          <select class="toolbar-select" id="toolbar-topk">
+            <option value="2">2</option>
+            <option value="3" selected>3</option>
+            <option value="5">5</option>
+            <option value="8">8</option>
+          </select>
+        </div>
+        <div class="toolbar-divider"></div>
+        <div class="toolbar-group">
+          <span class="toolbar-label" id="toolbar-chunks-label">0 chunks</span>
+        </div>
+        <div style="flex:1"></div>
+        <button class="btn-secondary" onclick="exportCurrentChat()" style="padding:0.25rem 0.6rem;font-size:0.7rem;">Export</button>
       </div>
-      <div id="sidebar-history" class="sidebar-content active">
-        <div style="color: var(--text3); margin-bottom: 0.6rem;"><strong>Chats:</strong></div>
-        <div id="history-list"></div>
-        <button class="btn-small secondary" style="margin-top: 0.6rem;" onclick="startNewConversation()">➕ New</button>
+
+      <!-- Messages -->
+      <div id="chat-messages">
+        <div class="welcome-state" id="welcome-state">
+          <div class="welcome-logo"><span class="k">k</span>now3</div>
+          <div class="welcome-sub">Local-first semantic RAG chat. Load your data, pick a provider, and ask away — or toggle RAG off for free-form chat.</div>
+          <div class="welcome-chips">
+            <span class="welcome-chip" onclick="quickPrompt('Summarize the key concepts')">Summarize key concepts</span>
+            <span class="welcome-chip" onclick="quickPrompt('What are the main topics covered?')">Main topics covered?</span>
+            <span class="welcome-chip" onclick="quickPrompt('Explain this in simple terms')">Explain simply</span>
+          </div>
+        </div>
       </div>
-      <div id="sidebar-sources" class="sidebar-content">
-        <div style="color: var(--text3); margin-bottom: 0.6rem;"><strong>Data:</strong></div>
-        <div id="sources-list"></div>
+
+      <!-- Input -->
+      <div class="input-area">
+        <div class="input-row">
+          <textarea id="chat-input" placeholder="Ask a question..." rows="1"></textarea>
+          <button class="btn-primary" id="btn-send" onclick="sendMessage()">Send</button>
+        </div>
+        <div class="input-hint">
+          <span>Enter to send · Shift+Enter for newline</span>
+          <span id="provider-label">Ollama / mistral</span>
+        </div>
       </div>
     </div>
   </div>
 </div>
 
 <!-- SETTINGS MODAL -->
-<div id="settings-modal" class="modal">
-  <div class="modal-content">
-    <div class="modal-title">Settings & Data</div>
-    
-    <!-- DATA LOADING SECTION -->
-    <div class="setting-group">
-      <label class="setting-label">📂 Load RAG Data</label>
-      <select id="load-method" onchange="switchLoadMethod(this.value)">
-        <option value="manual">Manual Upload (JSON/JSONL)</option>
-        <option value="github">From GitHub Prelude</option>
-      </select>
+<div class="modal-overlay" id="settings-overlay" onclick="if(event.target===this)closeSettings()">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Settings</h2>
+      <button class="btn-icon" onclick="closeSettings()" style="width:28px;height:28px;font-size:0.75rem;">✕</button>
     </div>
-    
-    <div id="manual-load-section">
-      <input type="file" id="data-file-input" accept=".json,.jsonl" onchange="handleDataFileSelect(event)">
-      <div id="file-preview" style="font-size: 0.75rem; color: var(--text3); margin: 0.6rem 0;"></div>
-      <button class="btn-small" onclick="loadDataFile()">✅ Load File</button>
+    <div class="modal-tabs">
+      <button class="modal-tab active" onclick="switchSettingsTab('tab-provider',this)">Provider</button>
+      <button class="modal-tab" onclick="switchSettingsTab('tab-data',this)">Data</button>
+      <button class="modal-tab" onclick="switchSettingsTab('tab-prompt',this)">System Prompt</button>
+      <button class="modal-tab" onclick="switchSettingsTab('tab-advanced',this)">Advanced</button>
     </div>
-    
-    <div id="github-load-section" style="display: none;">
-      <select id="github-dataset-select"><option>Loading...</option></select>
-      <button class="btn-small" onclick="loadGitHubDataset()">✅ Load Dataset</button>
-    </div>
+    <div class="modal-body">
 
-    <!-- SEARCH MODE -->
-    <div class="setting-group" style="margin-top: 1.5rem;">
-      <label class="setting-label">🔍 Search Mode</label>
-      <select id="search-mode">
-        <option value="hybrid">Hybrid (Semantic + Keyword)</option>
-        <option value="semantic">Semantic Only</option>
-        <option value="keyword">Keyword Only</option>
-      </select>
+      <!-- TAB: Provider -->
+      <div class="modal-pane active" id="tab-provider">
+        <div class="field">
+          <label class="field-label">Inference Provider</label>
+          <select id="s-provider" onchange="onProviderChange()">
+            <option value="ollama">Ollama (Local)</option>
+            <option value="google">Google Gemini (Free tier)</option>
+            <option value="groq">Groq (Free tier)</option>
+            <option value="together">Together AI</option>
+            <option value="github">GitHub Models</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="mistral">Mistral</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic</option>
+          </select>
+        </div>
+
+        <!-- Ollama -->
+        <div class="provider-config active" id="cfg-ollama">
+          <div class="field-row">
+            <div class="field">
+              <label class="field-label">Ollama URL</label>
+              <input type="text" id="s-ollama-url" placeholder="http://localhost:11434">
+            </div>
+            <div class="field">
+              <label class="field-label">Model</label>
+              <input type="text" id="s-ollama-model" placeholder="mistral">
+            </div>
+          </div>
+          <button class="btn-secondary" onclick="testOllama()" style="width:100%">Test Connection</button>
+          <div class="field-hint" id="ollama-test-result"></div>
+        </div>
+
+        <!-- Cloud providers -->
+        <div class="provider-config" id="cfg-google">
+          <div class="field"><label class="field-label">API Key</label><input type="password" id="s-google-key" placeholder="From aistudio.google.com"></div>
+          <div class="field"><label class="field-label">Model</label><input type="text" id="s-google-model" placeholder="gemini-2.5-flash" value="gemini-2.5-flash"></div>
+        </div>
+        <div class="provider-config" id="cfg-groq">
+          <div class="field"><label class="field-label">API Key</label><input type="password" id="s-groq-key" placeholder="From console.groq.com"></div>
+          <div class="field"><label class="field-label">Model</label><input type="text" id="s-groq-model" placeholder="llama-3.3-70b-versatile" value="llama-3.3-70b-versatile"></div>
+        </div>
+        <div class="provider-config" id="cfg-together">
+          <div class="field"><label class="field-label">API Key</label><input type="password" id="s-together-key" placeholder="From api.together.xyz"></div>
+          <div class="field"><label class="field-label">Model</label><input type="text" id="s-together-model" placeholder="meta-llama/Llama-3.3-70B-Instruct-Turbo" value="meta-llama/Llama-3.3-70B-Instruct-Turbo"></div>
+        </div>
+        <div class="provider-config" id="cfg-github">
+          <div class="field"><label class="field-label">PAT Token</label><input type="password" id="s-github-key" placeholder="From github.com/settings/tokens"></div>
+          <div class="field"><label class="field-label">Model</label><input type="text" id="s-github-model" placeholder="gpt-4o" value="gpt-4o"></div>
+        </div>
+        <div class="provider-config" id="cfg-openrouter">
+          <div class="field"><label class="field-label">API Key</label><input type="password" id="s-openrouter-key" placeholder="From openrouter.ai/keys"></div>
+          <div class="field"><label class="field-label">Model</label><input type="text" id="s-openrouter-model" placeholder="openrouter/auto" value="openrouter/auto"></div>
+        </div>
+        <div class="provider-config" id="cfg-mistral">
+          <div class="field"><label class="field-label">API Key</label><input type="password" id="s-mistral-key" placeholder="From console.mistral.ai"></div>
+          <div class="field"><label class="field-label">Model</label><input type="text" id="s-mistral-model" placeholder="mistral-small-latest" value="mistral-small-latest"></div>
+        </div>
+        <div class="provider-config" id="cfg-deepseek">
+          <div class="field"><label class="field-label">API Key</label><input type="password" id="s-deepseek-key" placeholder="From platform.deepseek.com"></div>
+          <div class="field"><label class="field-label">Model</label><input type="text" id="s-deepseek-model" placeholder="deepseek-chat" value="deepseek-chat"></div>
+        </div>
+        <div class="provider-config" id="cfg-openai">
+          <div class="field"><label class="field-label">API Key</label><input type="password" id="s-openai-key" placeholder="sk-..."></div>
+          <div class="field"><label class="field-label">Model</label><input type="text" id="s-openai-model" placeholder="gpt-4o-mini" value="gpt-4o-mini"></div>
+        </div>
+        <div class="provider-config" id="cfg-anthropic">
+          <div class="field"><label class="field-label">API Key</label><input type="password" id="s-anthropic-key" placeholder="sk-ant-..."></div>
+          <div class="field"><label class="field-label">Model</label><input type="text" id="s-anthropic-model" placeholder="claude-3-5-haiku-latest" value="claude-3-5-haiku-latest"></div>
+        </div>
+
+        <div class="field" style="margin-top:1rem">
+          <label class="field-label">Temperature</label>
+          <input type="range" id="s-temperature" min="0" max="100" value="70" oninput="document.getElementById('temp-val').textContent=(this.value/100).toFixed(2)">
+          <div class="range-display" id="temp-val">0.70</div>
+        </div>
+      </div>
+
+      <!-- TAB: Data -->
+      <div class="modal-pane" id="tab-data">
+        <div class="field">
+          <label class="field-label">Load RAG Data</label>
+          <select id="s-load-method" onchange="toggleLoadMethod()">
+            <option value="manual">Upload JSON / JSONL</option>
+            <option value="github">From GitHub Prelude</option>
+          </select>
+        </div>
+        <div id="load-manual">
+          <div class="field">
+            <input type="file" id="data-file" accept=".json,.jsonl" onchange="previewDataFile(event)">
+            <div class="field-hint" id="file-preview-text"></div>
+          </div>
+          <button class="btn-primary" onclick="loadDataFile()" style="width:100%">Load File</button>
+        </div>
+        <div id="load-github" style="display:none">
+          <div class="field">
+            <select id="s-github-dataset"><option>Loading...</option></select>
+          </div>
+          <button class="btn-primary" onclick="loadGitHubDataset()" style="width:100%">Load Dataset</button>
+        </div>
+        <div style="margin-top:1rem; padding:0.7rem; background:var(--surface2); border:1px solid var(--border); border-radius:8px;">
+          <div style="font-size:0.75rem; color:var(--accent); font-weight:600; margin-bottom:0.3rem;">Loaded Data</div>
+          <div id="data-summary" style="font-size:0.72rem; color:var(--text3);">No data loaded</div>
+        </div>
+        <button class="btn-danger" onclick="clearAllData()" style="width:100%; margin-top:1rem;">Clear All Data & Chats</button>
+      </div>
+
+      <!-- TAB: System Prompt -->
+      <div class="modal-pane" id="tab-prompt">
+        <div class="field">
+          <label class="field-label">System Prompt</label>
+          <textarea id="s-system-prompt" rows="10" style="min-height:200px" placeholder="Customize how the AI responds. Leave empty for default."></textarea>
+          <div class="field-hint">This prompt is prepended to every request. Use it to set tone, persona, or response format.</div>
+        </div>
+        <button class="btn-secondary" onclick="resetSystemPrompt()" style="width:100%">Reset to Default</button>
+      </div>
+
+      <!-- TAB: Advanced -->
+      <div class="modal-pane" id="tab-advanced">
+        <div class="field">
+          <label class="field-label">Max Context Chunks</label>
+          <input type="number" id="s-max-context" value="5" min="1" max="20">
+          <div class="field-hint">Maximum chunks to include in the LLM context window</div>
+        </div>
+        <div class="field">
+          <label class="field-label">Embedding Model</label>
+          <input type="text" id="s-embed-model" value="Xenova/all-MiniLM-L6-v2" disabled>
+          <div class="field-hint">In-browser transformer for semantic search</div>
+        </div>
+        <div class="field">
+          <label class="field-label">Stream Responses</label>
+          <select id="s-streaming">
+            <option value="true">Enabled (where supported)</option>
+            <option value="false">Disabled</option>
+          </select>
+        </div>
+      </div>
     </div>
-
-    <!-- INFERENCE PROVIDER -->
-    <div class="setting-group" style="margin-top: 1rem;">
-      <label class="setting-label">🤖 Inference Provider</label>
-      <select id="provider-select" onchange="updateProviderUI()">
-        <option value="ollama">🖥️ Ollama (Local)</option>
-        <option value="google">🌐 Google Gemini (Free)</option>
-        <option value="groq">⚡ Groq (Free)</option>
-        <option value="together">🚀 Together AI (Free)</option>
-        <option value="github">🐙 GitHub Models (Free)</option>
-        <option value="openrouter">🔄 OpenRouter (Free)</option>
-        <option value="mistral">✨ Mistral (Free)</option>
-        <option value="deepseek">💰 DeepSeek (Cheap)</option>
-        <option value="openai">OpenAI</option>
-        <option value="anthropic">Anthropic</option>
-      </select>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeSettings()">Cancel</button>
+      <button class="btn-primary" onclick="saveSettings()">Save</button>
     </div>
-
-    <div id="provider-info" class="provider-info"></div>
-
-    <!-- PROVIDER CONFIGS (abbreviated) -->
-    <div id="ollama-config" class="provider-config">
-      <label class="setting-label">Ollama URL</label>
-      <input type="text" id="setting-ollama-url" placeholder="http://localhost:11434">
-      <label class="setting-label">Model</label>
-      <input type="text" id="setting-ollama-model" placeholder="mistral">
-    </div>
-
-    <div id="google-config" class="provider-config" style="display: none;">
-      <label class="setting-label">API Key</label>
-      <input type="password" id="setting-google-key" placeholder="Get at https://aistudio.google.com/app/apikey">
-    </div>
-
-    <div id="groq-config" class="provider-config" style="display: none;">
-      <label class="setting-label">API Key</label>
-      <input type="password" id="setting-groq-key" placeholder="Get at https://console.groq.com">
-    </div>
-
-    <div id="together-config" class="provider-config" style="display: none;">
-      <label class="setting-label">API Key</label>
-      <input type="password" id="setting-together-key" placeholder="https://api.together.xyz">
-    </div>
-
-    <div id="github-config" class="provider-config" style="display: none;">
-      <label class="setting-label">PAT Token</label>
-      <input type="password" id="setting-github-key" placeholder="https://github.com/settings/tokens">
-    </div>
-
-    <div id="openrouter-config" class="provider-config" style="display: none;">
-      <label class="setting-label">API Key</label>
-      <input type="password" id="setting-openrouter-key" placeholder="https://openrouter.ai/keys">
-    </div>
-
-    <div id="mistral-config" class="provider-config" style="display: none;">
-      <label class="setting-label">API Key</label>
-      <input type="password" id="setting-mistral-key" placeholder="https://console.mistral.ai">
-    </div>
-
-    <div id="deepseek-config" class="provider-config" style="display: none;">
-      <label class="setting-label">API Key</label>
-      <input type="password" id="setting-deepseek-key" placeholder="https://platform.deepseek.com">
-    </div>
-
-    <div id="openai-config" class="provider-config" style="display: none;">
-      <label class="setting-label">API Key</label>
-      <input type="password" id="setting-openai-key" placeholder="sk-...">
-    </div>
-
-    <div id="anthropic-config" class="provider-config" style="display: none;">
-      <label class="setting-label">API Key</label>
-      <input type="password" id="setting-anthropic-key" placeholder="sk-ant-...">
-    </div>
-
-    <!-- COMMON SETTINGS -->
-    <div class="setting-group" style="margin-top: 1.5rem;">
-      <label class="setting-label">Temperature</label>
-      <input type="range" id="setting-temperature" min="0" max="100" value="70" onchange="updateTempDisplay()">
-      <div style="text-align: center; font-size: 0.7rem; color: var(--text3);"><span id="temp-number">0.7</span></div>
-    </div>
-
-    <div class="setting-group">
-      <label class="setting-label">Top K Results</label>
-      <input type="text" id="setting-top-k" placeholder="3" value="3">
-    </div>
-
-    <!-- ACTIONS -->
-    <div class="setting-group" style="margin-top: 1.5rem;">
-      <button class="btn-small" onclick="saveSettings()">✅ Save All Settings</button>
-      <button class="btn-small secondary" onclick="exportCurrentChat()">📥 Export Chat</button>
-      <button class="btn-small danger" onclick="clearAllData()">🗑️ Clear Everything</button>
-    </div>
-
-    <button class="btn-small secondary" onclick="closeModal('settings-modal')" style="margin-top: 1rem;">✕ Close</button>
   </div>
 </div>
 
 <script>
+// ═══════════════════════════════════════════════
+// GLOBALS
+// ═══════════════════════════════════════════════
 let embeddingModel = null;
 let embeddingReady = false;
+let conversations = {};
+let currentConversationId = null;
+let currentStreamingIndex = -1;
+let isGenerating = false;
 
-// Initialize embeddings model
-async function initEmbeddings() {
-  try {
-    if (embeddingModel) return;
-    updateEmbeddingStatus('⏳ Loading embedding model...');
-    const { pipeline } = await import('@xenova/transformers');
-    embeddingModel = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
-    embeddingReady = true;
-    updateEmbeddingStatus('✅ Semantic');
-  } catch (e) {
-    console.warn('Embeddings unavailable:', e.message);
-    updateEmbeddingStatus('⚠️ Keyword only');
-    embeddingReady = false;
-  }
-  // Load cached embeddings
-const cached = await loadEmbeddings();
-if (cached && cached.chunks) {
-  window.vectorStore.chunks = cached.chunks;
-  window.vectorStore.embeddings = cached.embeddings;
-  updateEmbeddingStatus(`✅ Semantic (${cached.chunks.length} cached)`);
-}
-}
+const DEFAULT_SYSTEM_PROMPT = `You are a helpful assistant. When context is provided, answer based on that context. If unsure, say so. Be concise and accurate.`;
 
-function updateEmbeddingStatus(text) {
-  const el = document.getElementById('embedding-status');
-  if (el) el.textContent = text;
-}
+const PROVIDERS = {
+  ollama:     { name: 'Ollama',      stream: true,  fields: ['url','model','key'] },
+  google:     { name: 'Gemini',      stream: false, fields: ['key','model'] },
+  groq:       { name: 'Groq',        stream: true,  fields: ['key','model'] },
+  together:   { name: 'Together',    stream: false, fields: ['key','model'] },
+  github:     { name: 'GitHub',      stream: false, fields: ['key','model'] },
+  openrouter: { name: 'OpenRouter',  stream: false, fields: ['key','model'] },
+  mistral:    { name: 'Mistral',     stream: false, fields: ['key','model'] },
+  deepseek:   { name: 'DeepSeek',    stream: false, fields: ['key','model'] },
+  openai:     { name: 'OpenAI',      stream: false, fields: ['key','model'] },
+  anthropic:  { name: 'Anthropic',   stream: false, fields: ['key','model'] },
+};
 
-// Vector Store with semantic search
-class VectorStore {
-  constructor() {
-    this.chunks = [];
-    this.embeddings = [];
-  }
-
-  async addChunksFromJSON(data) {
-    if (Array.isArray(data)) {
-      data.forEach((item, i) => {
-        this.chunks.push({ text: item.text || item.content || '', metadata: item.metadata || {index: i} });
-      });
-    } else if (data.chunks) {
-      data.chunks.forEach((c, i) => {
-        this.chunks.push({ text: c.text || '', metadata: {...c.metadata, collection: data.collection} });
-      });
-    }
-
-    if (embeddingReady && this.chunks.length > 0) {
-      await this.computeEmbeddings();
-    }
-  }
-
-  async computeEmbeddings() {
-    try {
-      updateEmbeddingStatus('⏳ Computing embeddings...');
-      this.embeddings = [];
-      for (const chunk of this.chunks) {
-        const emb = await embeddingModel(chunk.text, { pooling: 'mean', normalize: true });
-        this.embeddings.push(Array.from(emb.data));
-      }
-      updateEmbeddingStatus(`✅ Semantic (${this.chunks.length} indexed)`);
-    } catch (e) {
-      console.warn('Embedding computation failed:', e.message);
-      updateEmbeddingStatus('⚠️ Keyword only');
-    }
-  }
-
-  cosineSimilarity(a, b) {
-    if (!a || !b || a.length !== b.length) return 0;
-    let dotProduct = 0, normA = 0, normB = 0;
-    for (let i = 0; i < a.length; i++) {
-      dotProduct += a[i] * b[i];
-      normA += a[i] * a[i];
-      normB += b[i] * b[i];
-    }
-    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-  }
-
-  keywordScore(query, text) {
-    const terms = query.toLowerCase().split(/\s+/);
-    const textLower = text.toLowerCase();
-    let score = 0;
-    terms.forEach(t => {
-      const matches = (textLower.match(new RegExp(t, 'g')) || []).length;
-      score += matches;
-    });
-    return score / Math.max(1, terms.length);
-  }
-
-  async search(query, topK = 3, mode = 'hybrid') {
-    if (!this.chunks.length) return [];
-
-    let results = [];
-
-    if (mode === 'semantic' || mode === 'hybrid') {
-      if (embeddingReady && this.embeddings.length > 0) {
-        try {
-          const queryEmb = await embeddingModel(query, { pooling: 'mean', normalize: true });
-          const queryVec = Array.from(queryEmb.data);
-          results = this.chunks.map((chunk, idx) => ({
-            chunk,
-            semScore: this.cosineSimilarity(queryVec, this.embeddings[idx])
-          }));
-        } catch (e) {
-          console.warn('Query embedding failed:', e.message);
-        }
-      }
-    }
-
-    if (mode === 'keyword' || (mode === 'hybrid' && results.length === 0)) {
-      results = this.chunks.map(chunk => ({
-        chunk,
-        keyScore: this.keywordScore(query, chunk.text)
-      }));
-    }
-
-    // Hybrid scoring
-    if (mode === 'hybrid') {
-      results = results.map(r => ({
-        chunk: r.chunk,
-        score: (r.semScore || 0) * 0.7 + (r.keyScore || 0) * 0.3
-      }));
-    } else if (mode === 'semantic') {
-      results = results.map(r => ({ chunk: r.chunk, score: r.semScore || 0 }));
-    } else {
-      results = results.map(r => ({ chunk: r.chunk, score: r.keyScore || 0 }));
-    }
-
-    return results.sort((a, b) => b.score - a.score).slice(0, topK).map(r => r.chunk);
-  }
-
-  clear() {
-    this.chunks = [];
-    this.embeddings = [];
-  }
-}
-// IndexedDB for embeddings persistence
-async function initDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open('know3-embeddings', 1);
-    req.onerror = () => reject('IDB init failed');
-    req.onsuccess = () => resolve(req.result);
-    req.onupgradeneeded = (e) => {
-      const db = e.target.result;
-      if (!db.objectStoreNames.contains('embeddings')) {
-        db.createObjectStore('embeddings', { keyPath: 'id' });
-      }
-    };
-  });
-}
-
-async function saveEmbeddings(chunks, embeddings) {
-  try {
-    const db = await initDB();
-    const tx = db.transaction('embeddings', 'readwrite');
-    const store = tx.objectStore('embeddings');
-    await new Promise((resolve, reject) => {
-      const req = store.put({
-        id: 'cache_v1',
-        chunks: chunks,
-        embeddings: embeddings,
-        timestamp: Date.now()
-      });
-      req.onsuccess = resolve;
-      req.onerror = reject;
-    });
-  } catch (e) {
-    console.warn('IDB save failed:', e);
-  }
-}
-
-async function loadEmbeddings() {
-  try {
-    const db = await initDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction('embeddings', 'readonly');
-      const req = tx.objectStore('embeddings').get('cache_v1');
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = reject;
-    });
-  } catch (e) {
-    console.warn('IDB load failed:', e);
-    return null;
-  }
-}
-window.vectorStore = new VectorStore();
-
-// Conversations
-let conversations = {}, currentConversationId = null;
-
-function initConversations() {
-  try { conversations = JSON.parse(localStorage.getItem('know3_conversations')) || {}; } catch (e) { conversations = {}; }
-  const id = localStorage.getItem('know3_current_id');
-  if (id && conversations[id]) { currentConversationId = id; } else { startNewConversation(); }
-  updateHistoryUI();
-}
-
-function startNewConversation() {
-  const id = Date.now().toString();
-  conversations[id] = { id, title: 'Chat ' + new Date().toLocaleString(), messages: [], created: Date.now() };
-  currentConversationId = id;
-  localStorage.setItem('know3_conversations', JSON.stringify(conversations));
-  localStorage.setItem('know3_current_id', id);
-  renderChat();
-  updateHistoryUI();
-  document.getElementById('chat-input').focus();
+// ═══════════════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════════════
+function escapeHtml(str) {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
 }
 
 function renderMarkdown(text) {
@@ -539,589 +725,799 @@ function renderMarkdown(text) {
     const html = marked.parse(text);
     if (typeof DOMPurify === 'undefined') return html;
     return DOMPurify.sanitize(html, {
-      ALLOWED_TAGS: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'br', 'strong', 'em', 'u', 'code', 'pre', 'blockquote', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'a', 'hr'],
-      ALLOWED_ATTR: ['href', 'target']
+      ALLOWED_TAGS: ['h1','h2','h3','h4','h5','h6','p','br','strong','em','u','code','pre','blockquote','ul','ol','li','table','thead','tbody','tr','th','td','a','hr','del','sup','sub'],
+      ALLOWED_ATTR: ['href','target']
     });
-  } catch (e) {
-    return escapeHtml(text);
+  } catch { return escapeHtml(text); }
+}
+
+function getSetting(key, fallback) {
+  return localStorage.getItem('k3_' + key) || fallback;
+}
+function setSetting(key, val) {
+  localStorage.setItem('k3_' + key, val);
+}
+
+// ═══════════════════════════════════════════════
+// MATRIX RAIN
+// ═══════════════════════════════════════════════
+function initMatrix() {
+  const canvas = document.getElementById('matrix-canvas');
+  const ctx = canvas.getContext('2d');
+  let w, h, cols, drops;
+
+  function resize() {
+    w = canvas.width = window.innerWidth;
+    h = canvas.height = window.innerHeight;
+    cols = Math.floor(w / 16);
+    drops = Array(cols).fill(1);
   }
+  resize();
+  window.addEventListener('resize', resize);
+
+  const chars = 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789';
+
+  function draw() {
+    ctx.fillStyle = 'rgba(5,9,17,0.12)';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = 'rgba(0,229,160,0.35)';
+    ctx.font = '14px monospace';
+
+    for (let i = 0; i < cols; i++) {
+      const char = chars[Math.floor(Math.random() * chars.length)];
+      ctx.fillText(char, i * 16, drops[i] * 16);
+      if (drops[i] * 16 > h && Math.random() > 0.975) drops[i] = 0;
+      drops[i]++;
+    }
+    requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+// ═══════════════════════════════════════════════
+// VECTOR STORE
+// ═══════════════════════════════════════════════
+class VectorStore {
+  constructor() { this.chunks = []; this.embeddings = []; }
+
+  async addChunksFromJSON(data) {
+    const items = Array.isArray(data) ? data : (data.chunks || [data]);
+    const collection = data.collection || 'Default';
+    items.forEach((item, i) => {
+      const text = item.text || item.content || (typeof item === 'string' ? item : JSON.stringify(item));
+      if (text.trim()) {
+        this.chunks.push({
+          text,
+          metadata: { ...item.metadata, collection, source: item.metadata?.source || item.source || `chunk-${i}` }
+        });
+      }
+    });
+    if (embeddingReady && this.chunks.length > 0) {
+      await this.computeEmbeddings();
+      await saveEmbeddings(this.chunks, this.embeddings);
+    }
+    updateChunkCount();
+  }
+
+  async computeEmbeddings() {
+    try {
+      setEmbedStatus('loading', `Indexing ${this.chunks.length} chunks...`);
+      this.embeddings = [];
+      for (let i = 0; i < this.chunks.length; i++) {
+        const emb = await embeddingModel(this.chunks[i].text, { pooling: 'mean', normalize: true });
+        this.embeddings.push(Array.from(emb.data));
+        if (i % 10 === 0) setEmbedStatus('loading', `Indexing ${i+1}/${this.chunks.length}...`);
+      }
+      setEmbedStatus('ready', `✓ ${this.chunks.length} indexed`);
+    } catch (e) {
+      console.warn('Embedding failed:', e);
+      setEmbedStatus('', '⚠ Keyword only');
+    }
+  }
+
+  cosineSim(a, b) {
+    if (!a || !b || a.length !== b.length) return 0;
+    let dot = 0, na = 0, nb = 0;
+    for (let i = 0; i < a.length; i++) { dot += a[i]*b[i]; na += a[i]*a[i]; nb += b[i]*b[i]; }
+    return dot / (Math.sqrt(na) * Math.sqrt(nb));
+  }
+
+  keywordScore(query, text) {
+    const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+    const lower = text.toLowerCase();
+    let score = 0;
+    terms.forEach(t => { score += (lower.match(new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length; });
+    return score / Math.max(1, terms.length);
+  }
+
+  async search(query, topK = 3, mode = 'hybrid') {
+    if (!this.chunks.length) return [];
+
+    let results = this.chunks.map((chunk, idx) => {
+      let sem = 0, kw = this.keywordScore(query, chunk.text);
+      return { chunk, sem, kw, idx };
+    });
+
+    if ((mode === 'semantic' || mode === 'hybrid') && embeddingReady && this.embeddings.length === this.chunks.length) {
+      try {
+        const qEmb = await embeddingModel(query, { pooling: 'mean', normalize: true });
+        const qVec = Array.from(qEmb.data);
+        results.forEach(r => { r.sem = this.cosineSim(qVec, this.embeddings[r.idx]); });
+      } catch {}
+    }
+
+    results.forEach(r => {
+      if (mode === 'hybrid') r.score = (r.sem * 0.7) + (r.kw * 0.3);
+      else if (mode === 'semantic') r.score = r.sem;
+      else r.score = r.kw;
+    });
+
+    return results.sort((a, b) => b.score - a.score).slice(0, topK).map(r => r.chunk);
+  }
+
+  clear() { this.chunks = []; this.embeddings = []; updateChunkCount(); }
+}
+
+const vectorStore = new VectorStore();
+
+// ═══════════════════════════════════════════════
+// INDEXEDDB (embedding cache)
+// ═══════════════════════════════════════════════
+async function initDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('know3-embeddings', 1);
+    req.onerror = () => reject('IDB failed');
+    req.onsuccess = () => resolve(req.result);
+    req.onupgradeneeded = (e) => {
+      if (!e.target.result.objectStoreNames.contains('embeddings'))
+        e.target.result.createObjectStore('embeddings', { keyPath: 'id' });
+    };
+  });
+}
+async function saveEmbeddings(chunks, embeddings) {
+  try {
+    const db = await initDB();
+    const tx = db.transaction('embeddings', 'readwrite');
+    tx.objectStore('embeddings').put({ id: 'cache_v1', chunks, embeddings, ts: Date.now() });
+  } catch {}
+}
+async function loadEmbeddings() {
+  try {
+    const db = await initDB();
+    return new Promise((resolve) => {
+      const req = db.transaction('embeddings', 'readonly').objectStore('embeddings').get('cache_v1');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    });
+  } catch { return null; }
+}
+
+// ═══════════════════════════════════════════════
+// EMBEDDING INIT
+// ═══════════════════════════════════════════════
+async function initEmbeddings() {
+  try {
+    setEmbedStatus('loading', '⏳ Loading model...');
+    const { pipeline } = await import('@xenova/transformers');
+    embeddingModel = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+    embeddingReady = true;
+    setEmbedStatus('ready', '✓ Semantic ready');
+  } catch (e) {
+    console.warn('Embeddings unavailable:', e.message);
+    setEmbedStatus('', '⚠ Keyword only');
+    embeddingReady = false;
+  }
+  // Restore cache
+  const cached = await loadEmbeddings();
+  if (cached?.chunks) {
+    vectorStore.chunks = cached.chunks;
+    vectorStore.embeddings = cached.embeddings;
+    setEmbedStatus('ready', `✓ ${cached.chunks.length} cached`);
+    updateChunkCount();
+  }
+}
+
+function setEmbedStatus(cls, text) {
+  const el = document.getElementById('embed-status');
+  el.textContent = text;
+  el.className = 'header-status' + (cls ? ' ' + cls : '');
+}
+
+function updateChunkCount() {
+  const el = document.getElementById('toolbar-chunks-label');
+  if (el) el.textContent = `${vectorStore.chunks.length} chunks`;
+  const ds = document.getElementById('data-summary');
+  if (ds) {
+    if (!vectorStore.chunks.length) { ds.textContent = 'No data loaded'; return; }
+    const cols = {};
+    vectorStore.chunks.forEach(c => { const col = c.metadata?.collection || 'Default'; cols[col] = (cols[col]||0)+1; });
+    ds.innerHTML = Object.entries(cols).map(([n,c]) => `<div>${escapeHtml(n)}: ${c} chunks</div>`).join('');
+  }
+}
+
+// ═══════════════════════════════════════════════
+// CONVERSATIONS
+// ═══════════════════════════════════════════════
+function loadConversations() {
+  try { conversations = JSON.parse(localStorage.getItem('k3_conversations')) || {}; } catch { conversations = {}; }
+  const id = localStorage.getItem('k3_current_id');
+  if (id && conversations[id]) currentConversationId = id;
+  else startNewConversation();
+  renderHistoryList();
+}
+
+function saveConversations() {
+  localStorage.setItem('k3_conversations', JSON.stringify(conversations));
+  localStorage.setItem('k3_current_id', currentConversationId);
+}
+
+function startNewConversation() {
+  const id = Date.now().toString();
+  conversations[id] = { id, title: 'New Chat', messages: [], created: Date.now() };
+  currentConversationId = id;
+  saveConversations();
+  renderChat();
+  renderHistoryList();
+  document.getElementById('chat-input')?.focus();
+}
+
+function switchConversation(id) {
+  if (!conversations[id]) return;
+  currentConversationId = id;
+  saveConversations();
+  renderChat();
+  renderHistoryList();
+}
+
+function deleteConversation(id, e) {
+  e?.stopPropagation();
+  if (!confirm('Delete this chat?')) return;
+  delete conversations[id];
+  if (currentConversationId === id) {
+    const keys = Object.keys(conversations);
+    if (keys.length) switchConversation(keys[0]);
+    else startNewConversation();
+  }
+  saveConversations();
+  renderHistoryList();
+}
+
+function renderHistoryList() {
+  const list = document.getElementById('history-list');
+  const sorted = Object.values(conversations).sort((a, b) => b.created - a.created);
+  list.innerHTML = sorted.map(c => `
+    <div class="conv-item ${c.id === currentConversationId ? 'active' : ''}" onclick="switchConversation('${c.id}')">
+      <span class="conv-title">${escapeHtml(c.title)}</span>
+      <span class="conv-date">${new Date(c.created).toLocaleDateString()}</span>
+      <button class="conv-delete" onclick="deleteConversation('${c.id}',event)" title="Delete">✕</button>
+    </div>
+  `).join('');
 }
 
 function renderChat() {
   const conv = conversations[currentConversationId];
   if (!conv) return;
-  const msgs = document.getElementById('chat-messages');
-  msgs.innerHTML = conv.messages.map(m => `
-    <div class="msg ${m.role}">
-      <div class="msg-bubble">
-        ${m.role === 'assistant' ? renderMarkdown(m.content) : escapeHtml(m.content)}
-        ${m.sources ? `<div class="msg-source">📚 ${m.sources.map(s => escapeHtml(s.substring(0, 20))).join(', ')}</div>` : ''}
+  const container = document.getElementById('chat-messages');
+  const welcome = document.getElementById('welcome-state');
+
+  if (!conv.messages.length) {
+    container.innerHTML = '';
+    container.appendChild(welcome);
+    welcome.style.display = 'flex';
+    return;
+  }
+  welcome.style.display = 'none';
+
+  container.innerHTML = conv.messages.map((m, i) => {
+    const time = new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const avatar = m.role === 'user' ? 'U' : 'K';
+    const bubbleContent = m.role === 'assistant' ? renderMarkdown(m.content || '') : escapeHtml(m.content);
+
+    let sourcesHtml = '';
+    if (m.sources?.length) {
+      sourcesHtml = `<div class="msg-sources"><details><summary>Sources (${m.sources.length})</summary>
+        ${m.sources.map(s => `<div class="source-chunk">${escapeHtml(typeof s === 'string' ? s.substring(0, 200) : s.text?.substring(0, 200) || '')}</div>`).join('')}
+      </details></div>`;
+    }
+
+    return `<div class="msg ${m.role}">
+      <div class="msg-avatar">${avatar}</div>
+      <div class="msg-content">
+        <div class="msg-bubble">${bubbleContent}${sourcesHtml}</div>
+        <div class="msg-meta"><span>${time}</span></div>
       </div>
-      <div class="msg-time">${new Date(m.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
-    </div>
-  `).join('');
-  msgs.scrollTop = msgs.scrollHeight;
+    </div>`;
+  }).join('');
+
+  container.scrollTop = container.scrollHeight;
 }
 
 function addMessage(role, content, sources = null) {
   const conv = conversations[currentConversationId];
   if (!conv) return;
   conv.messages.push({ role, content, sources, timestamp: Date.now() });
-  if (role === 'user' && conv.messages.length === 1) {
-    conv.title = content.substring(0, 50) + (content.length > 50 ? '...' : '');
+  if (role === 'user' && conv.messages.filter(m => m.role === 'user').length === 1) {
+    conv.title = content.substring(0, 40) + (content.length > 40 ? '…' : '');
   }
-  localStorage.setItem('know3_conversations', JSON.stringify(conversations));
+  saveConversations();
   renderChat();
-  updateHistoryUI();
+  renderHistoryList();
 }
 
-function updateHistoryUI() {
-  const list = document.getElementById('history-list');
-  list.innerHTML = Object.values(conversations).sort((a, b) => b.created - a.created)
-    .map(c => `
-      <div class="history-item ${c.id === currentConversationId ? 'active' : ''}" onclick="switchConversation('${c.id}')">
-        <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text2); font-size: 0.75rem;">${escapeHtml(c.title.substring(0, 25))}</div>
-        <div style="color: var(--text3); font-size: 0.7rem; margin-top: 0.2rem;">${new Date(c.created).toLocaleString()}</div>
-      </div>
-    `).join('');
+// ═══════════════════════════════════════════════
+// STREAMING UPDATE
+// ═══════════════════════════════════════════════
+function showThinking() {
+  const container = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = 'msg assistant';
+  div.id = 'thinking-msg';
+  div.innerHTML = `<div class="msg-avatar">K</div><div class="msg-content"><div class="msg-bubble">
+    <div class="thinking-indicator"><div class="thinking-dot"></div><div class="thinking-dot"></div><div class="thinking-dot"></div></div>
+  </div></div>`;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
 }
 
-function switchConversation(id) {
-  if (conversations[id]) {
-    currentConversationId = id;
-    localStorage.setItem('know3_current_id', id);
-    renderChat();
-    updateHistoryUI();
+function removeThinking() {
+  document.getElementById('thinking-msg')?.remove();
+}
+
+function updateStreamBubble(text) {
+  const conv = conversations[currentConversationId];
+  if (!conv || currentStreamingIndex < 0) return;
+  conv.messages[currentStreamingIndex].content = text;
+
+  const msgs = document.getElementById('chat-messages');
+  const allBubbles = msgs.querySelectorAll('.msg.assistant .msg-bubble');
+  if (allBubbles.length > 0) {
+    const last = allBubbles[allBubbles.length - 1];
+    last.innerHTML = renderMarkdown(text);
+    msgs.scrollTop = msgs.scrollHeight;
   }
 }
 
-// Chat & Inference
+// ═══════════════════════════════════════════════
+// SEND MESSAGE
+// ═══════════════════════════════════════════════
 async function sendMessage() {
   const input = document.getElementById('chat-input');
   const q = input.value.trim();
-  if (!q) return;
+  if (!q || isGenerating) return;
+
   input.value = '';
   input.style.height = 'auto';
-
   addMessage('user', q);
-    document.getElementById('loading-spinner').style.display = 'flex';
-  const topK = parseInt(localStorage.getItem('know3_top_k')) || 3;
-  const mode = document.getElementById('search-mode')?.value || 'hybrid';
-  const results = await window.vectorStore.search(q, topK, mode);
 
-  if (!results.length) {
-    addMessage('assistant', '⚠️ No data loaded.');
-    return;
+  isGenerating = true;
+  document.getElementById('btn-send').disabled = true;
+
+  const ragEnabled = document.getElementById('toolbar-rag-toggle').checked;
+  const topK = parseInt(document.getElementById('toolbar-topk').value) || 3;
+  const mode = document.getElementById('toolbar-search-mode').value;
+
+  let context = '';
+  let sources = [];
+
+  if (ragEnabled && vectorStore.chunks.length > 0) {
+    const results = await vectorStore.search(q, topK, mode);
+    if (results.length) {
+      context = results.map(r => r.text).join('\n---\n');
+      sources = results.map(r => ({ text: r.text, source: r.metadata?.source || 'unknown' }));
+    }
   }
 
-  const context = results.map(r => r.text).join('\n---\n');
-  const sources = results.map(r => r.metadata?.source || 'Source').slice(0, 3);
+  showThinking();
 
-  // Create empty bubble for streaming
-  const conv = conversations[currentConversationId];
-  conv.messages.push({ role: 'assistant', content: '', sources, timestamp: Date.now() });
-  localStorage.setItem('know3_conversations', JSON.stringify(conversations));
-  renderChat();
-  currentStreamingIndex = conv.messages.length - 1;
-  currentStreamingSources = sources;
-
-  await queryInference(q, context);
-}
-
-async function queryInference(q, ctx) {
-  const provider = localStorage.getItem('know3_provider') || 'ollama';
-  const temp = (parseInt(localStorage.getItem('know3_temperature')) || 70) / 100;
-
-  const prompt = `Based on the context below, answer the question concisely.
-
-Context:
-${ctx}
-
-Question: ${q}
-
-Answer:`;
-
-  if (provider === 'ollama') {
-  const url = localStorage.getItem('know3_ollama_url') || 'http://localhost:11434';
-  const model = localStorage.getItem('know3_ollama_model') || 'mistral';
   try {
-    const res = await fetch(`${url}/api/generate`, {
-      method: 'POST',
-      body: JSON.stringify({ model, prompt, temperature: temp, stream: true })
-    });
-    if (!res.ok) return `❌ Ollama unavailable`;
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let fullText = '';
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value, { stream: true });
-      chunk.trim().split('\n').forEach(line => {
-        try {
-          const json = JSON.parse(line);
-          if (json.response) fullText += json.response;
-          updateStreamingMessage(fullText);
-        } catch (e) {}
-      });
+    const answer = await queryInference(q, context);
+    removeThinking();
+    if (currentStreamingIndex >= 0) {
+      // Already streamed — just save final
+      const conv = conversations[currentConversationId];
+      conv.messages[currentStreamingIndex].sources = sources.length ? sources : null;
+      saveConversations();
+      renderChat();
+    } else {
+      addMessage('assistant', answer, sources.length ? sources : null);
     }
-    return fullText;
-    currentStreamingIndex = -1;
   } catch (e) {
-    return `❌ Connection failed`;
-  }
-}
-
-  if (provider === 'google') {
-    const key = localStorage.getItem('know3_google_key');
-    if (!key) return '🔑 Add API key in Settings > Google';
-    const model = 'gemini-2.5-flash';
-    try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: temp } })
-      });
-      if (!res.ok) return '❌ Google API error';
-      return (await res.json()).candidates?.[0]?.content?.parts?.[0]?.text || 'No response';
-    } catch (e) {
-      return `❌ Error: ${e.message}`;
-    }
+    removeThinking();
+    addMessage('assistant', `❌ Error: ${e.message}`);
   }
 
-if (provider === 'groq') {
-  const key = localStorage.getItem('know3_groq_key');
-  if (!key) return '🔑 Add API key';
-  try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], temperature: temp, stream: true })
-    });
-    if (!res.ok) return '❌ Groq error';
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let fullText = '';
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value, { stream: true });
-      chunk.trim().split('\n').forEach(line => {
-        if (line.startsWith('data: ')) {
-          try {
-            const json = JSON.parse(line.slice(6));
-            const token = json.choices?.[0]?.delta?.content || '';
-            if (token) {
-              fullText += token;
-              updateStreamingMessage(fullText);
-            }
-          } catch (e) {}
-        }
-      });
-    }
-    return fullText;
-    currentStreamingIndex = -1;
-  } catch (e) {
-    return `❌ Error`;
-  }
-}
-
-  if (provider === 'together') {
-    const key = localStorage.getItem('know3_together_key');
-    if (!key) return '🔑 Add API key in Settings > Together';
-    try {
-      const res = await fetch('https://api.together.xyz/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', messages: [{ role: 'user', content: prompt }], temperature: temp })
-      });
-      if (!res.ok) return '❌ Together error';
-      return (await res.json()).choices?.[0]?.message?.content || 'No response';
-    } catch (e) {
-      return `❌ Error: ${e.message}`;
-    }
-  }
-
-  if (provider === 'github') {
-    const key = localStorage.getItem('know3_github_key');
-    if (!key) return '🔑 Add PAT in Settings > GitHub';
-    try {
-      const res = await fetch('https://models.inference.ai.azure.com/chat/completions', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'gpt-4o', messages: [{ role: 'user', content: prompt }], temperature: temp })
-      });
-      if (!res.ok) return '❌ GitHub Models error';
-      return (await res.json()).choices?.[0]?.message?.content || 'No response';
-    } catch (e) {
-      return `❌ Error: ${e.message}`;
-    }
-  }
-
-  if (provider === 'openrouter') {
-    const key = localStorage.getItem('know3_openrouter_key');
-    if (!key) return '🔑 Add key in Settings > OpenRouter';
-    try {
-      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://khalecl.github.io/know3' },
-        body: JSON.stringify({ model: 'openrouter/auto', messages: [{ role: 'user', content: prompt }], temperature: temp })
-      });
-      if (!res.ok) return '❌ OpenRouter error';
-      return (await res.json()).choices?.[0]?.message?.content || 'No response';
-    } catch (e) {
-      return `❌ Error: ${e.message}`;
-    }
-  }
-
-  if (provider === 'mistral') {
-    const key = localStorage.getItem('know3_mistral_key');
-    if (!key) return '🔑 Add key in Settings > Mistral';
-    try {
-      const res = await fetch('https://api.mistral.ai/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'mistral-small-latest', messages: [{ role: 'user', content: prompt }], temperature: temp })
-      });
-      if (!res.ok) return '❌ Mistral error';
-      return (await res.json()).choices?.[0]?.message?.content || 'No response';
-    } catch (e) {
-      return `❌ Error: ${e.message}`;
-    }
-  }
-
-  if (provider === 'deepseek') {
-    const key = localStorage.getItem('know3_deepseek_key');
-    if (!key) return '🔑 Add key in Settings > DeepSeek';
-    try {
-      const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'deepseek-chat', messages: [{ role: 'user', content: prompt }], temperature: temp })
-      });
-      if (!res.ok) return '❌ DeepSeek error';
-      return (await res.json()).choices?.[0]?.message?.content || 'No response';
-    } catch (e) {
-      return `❌ Error: ${e.message}`;
-    }
-  }
-
-  if (provider === 'openai') {
-    const key = localStorage.getItem('know3_openai_key');
-    if (!key) return '🔑 Add key in Settings > OpenAI';
-    try {
-      const res = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: prompt }], temperature: temp })
-      });
-      if (!res.ok) return '❌ OpenAI error';
-      return (await res.json()).choices?.[0]?.message?.content || 'No response';
-    } catch (e) {
-      return `❌ Error: ${e.message}`;
-    }
-  }
-
-  if (provider === 'anthropic') {
-    const key = localStorage.getItem('know3_anthropic_key');
-    if (!key) return '🔑 Add key in Settings > Anthropic';
-    try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'claude-3-5-haiku-latest', max_tokens: 1024, messages: [{ role: 'user', content: prompt }], temperature: temp })
-      });
-      if (!res.ok) return '❌ Anthropic error';
-      return (await res.json()).content?.[0]?.text || 'No response';
-    } catch (e) {
-      return `❌ Error: ${e.message}`;
-    }
-  }
-    document.getElementById('loading-spinner').style.display = 'none';
   currentStreamingIndex = -1;
-  return 'Provider not configured.';
+  isGenerating = false;
+  document.getElementById('btn-send').disabled = false;
 }
 
-  function updateStreamingMessage(text) {
-  if (currentStreamingIndex < 0) return;
-  const conv = conversations[currentConversationId];
-  if (!conv || !conv.messages[currentStreamingIndex]) return;
-  
-  conv.messages[currentStreamingIndex].content = text;
-  localStorage.setItem('know3_conversations', JSON.stringify(conversations));
-  
-  const msgs = document.getElementById('chat-messages');
-  const allMsgs = msgs.querySelectorAll('.msg');
-  if (allMsgs.length > 0) {
-    const lastBubble = allMsgs[allMsgs.length - 1].querySelector('.msg-bubble');
-    if (lastBubble) {
-      lastBubble.innerHTML = renderMarkdown(text) + (currentStreamingSources ? `<div class="msg-source">📚 ${currentStreamingSources.map(s => escapeHtml(s.substring(0, 20))).join(', ')}</div>` : '');
-      msgs.scrollTop = msgs.scrollHeight;
+function quickPrompt(text) {
+  document.getElementById('chat-input').value = text;
+  sendMessage();
+}
+
+// ═══════════════════════════════════════════════
+// INFERENCE
+// ═══════════════════════════════════════════════
+function getProvider() { return getSetting('provider', 'ollama'); }
+function getTemp() { return (parseInt(getSetting('temperature', '70')) / 100); }
+
+function buildMessages(query, context) {
+  const sysPrompt = getSetting('system_prompt', DEFAULT_SYSTEM_PROMPT);
+  let userContent = query;
+  if (context) {
+    userContent = `Based on the following context, answer the question.\n\nContext:\n${context}\n\nQuestion: ${query}`;
+  }
+  return { system: sysPrompt, messages: [{ role: 'user', content: userContent }] };
+}
+
+async function queryInference(query, context) {
+  const provider = getProvider();
+  const temp = getTemp();
+  const { system, messages } = buildMessages(query, context);
+  const streaming = getSetting('streaming', 'true') === 'true';
+
+  // ── Ollama ──
+  if (provider === 'ollama') {
+    const url = getSetting('ollama_url', 'http://localhost:11434');
+    const model = getSetting('ollama_model', 'mistral');
+    const prompt = system + '\n\n' + messages[0].content;
+
+    if (streaming) {
+      const res = await fetch(`${url}/api/generate`, {
+        method: 'POST',
+        body: JSON.stringify({ model, prompt, temperature: temp, stream: true })
+      });
+      if (!res.ok) throw new Error(`Ollama: ${res.status}`);
+      // Create empty assistant message for streaming
+      const conv = conversations[currentConversationId];
+      conv.messages.push({ role: 'assistant', content: '', sources: null, timestamp: Date.now() });
+      saveConversations();
+      removeThinking();
+      renderChat();
+      currentStreamingIndex = conv.messages.length - 1;
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let full = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        for (const line of decoder.decode(value, { stream: true }).trim().split('\n')) {
+          try { const j = JSON.parse(line); if (j.response) { full += j.response; updateStreamBubble(full); } } catch {}
+        }
+      }
+      return full;
+    } else {
+      const res = await fetch(`${url}/api/generate`, {
+        method: 'POST',
+        body: JSON.stringify({ model, prompt, temperature: temp, stream: false })
+      });
+      if (!res.ok) throw new Error(`Ollama: ${res.status}`);
+      return (await res.json()).response || 'No response';
     }
   }
-}
-// Data Loading
-let selectedDataFile = null;
 
-function switchLoadMethod(m) {
-  document.getElementById('manual-load-section').style.display = m === 'manual' ? 'block' : 'none';
-  document.getElementById('github-load-section').style.display = m === 'github' ? 'block' : 'none';
-  if (m === 'github') loadGitHubDatasets();
-}
+  // ── OpenAI-compatible (Groq, Together, GitHub, OpenRouter, Mistral, DeepSeek, OpenAI) ──
+  const openaiCompatible = {
+    groq:       { url: 'https://api.groq.com/openai/v1/chat/completions',              keyField: 'groq_key',       modelField: 'groq_model',       canStream: true },
+    together:   { url: 'https://api.together.xyz/v1/chat/completions',                  keyField: 'together_key',   modelField: 'together_model',   canStream: false },
+    github:     { url: 'https://models.inference.ai.azure.com/chat/completions',        keyField: 'github_key',     modelField: 'github_model',     canStream: false },
+    openrouter: { url: 'https://openrouter.ai/api/v1/chat/completions',                 keyField: 'openrouter_key', modelField: 'openrouter_model', canStream: false },
+    mistral:    { url: 'https://api.mistral.ai/v1/chat/completions',                    keyField: 'mistral_key',    modelField: 'mistral_model',    canStream: false },
+    deepseek:   { url: 'https://api.deepseek.com/v1/chat/completions',                  keyField: 'deepseek_key',   modelField: 'deepseek_model',   canStream: false },
+    openai:     { url: 'https://api.openai.com/v1/chat/completions',                    keyField: 'openai_key',     modelField: 'openai_model',     canStream: false },
+  };
 
-function handleDataFileSelect(e) {
-  selectedDataFile = e.target.files[0];
-  if (selectedDataFile) {
-    document.getElementById('file-preview').textContent = `📄 ${selectedDataFile.name} (${(selectedDataFile.size/1024).toFixed(1)}KB)`;
+  if (openaiCompatible[provider]) {
+    const cfg = openaiCompatible[provider];
+    const key = getSetting(cfg.keyField, '');
+    if (!key) throw new Error(`Add API key in Settings → Provider`);
+    const model = getSetting(cfg.modelField, '');
+    const headers = { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' };
+    if (provider === 'openrouter') headers['HTTP-Referer'] = 'https://khalecl.github.io/know3';
+    const doStream = streaming && cfg.canStream;
+
+    const body = {
+      model,
+      messages: [{ role: 'system', content: system }, ...messages],
+      temperature: temp,
+      stream: doStream
+    };
+
+    const res = await fetch(cfg.url, { method: 'POST', headers, body: JSON.stringify(body) });
+    if (!res.ok) throw new Error(`${PROVIDERS[provider].name}: ${res.status}`);
+
+    if (doStream) {
+      const conv = conversations[currentConversationId];
+      conv.messages.push({ role: 'assistant', content: '', sources: null, timestamp: Date.now() });
+      saveConversations();
+      removeThinking();
+      renderChat();
+      currentStreamingIndex = conv.messages.length - 1;
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let full = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        for (const line of decoder.decode(value, { stream: true }).trim().split('\n')) {
+          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+            try {
+              const token = JSON.parse(line.slice(6)).choices?.[0]?.delta?.content || '';
+              if (token) { full += token; updateStreamBubble(full); }
+            } catch {}
+          }
+        }
+      }
+      return full;
+    } else {
+      const data = await res.json();
+      return data.choices?.[0]?.message?.content || 'No response';
+    }
   }
+
+  // ── Google Gemini ──
+  if (provider === 'google') {
+    const key = getSetting('google_key', '');
+    if (!key) throw new Error('Add API key in Settings → Provider');
+    const model = getSetting('google_model', 'gemini-2.5-flash');
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ parts: [{ text: messages[0].content }] }],
+        generationConfig: { temperature: temp }
+      })
+    });
+    if (!res.ok) throw new Error(`Gemini: ${res.status}`);
+    return (await res.json()).candidates?.[0]?.content?.parts?.[0]?.text || 'No response';
+  }
+
+  // ── Anthropic ──
+  if (provider === 'anthropic') {
+    const key = getSetting('anthropic_key', '');
+    if (!key) throw new Error('Add API key in Settings → Provider');
+    const model = getSetting('anthropic_model', 'claude-3-5-haiku-latest');
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, max_tokens: 2048, system, messages, temperature: temp })
+    });
+    if (!res.ok) throw new Error(`Anthropic: ${res.status}`);
+    return (await res.json()).content?.[0]?.text || 'No response';
+  }
+
+  throw new Error('Provider not configured');
+}
+
+// ═══════════════════════════════════════════════
+// SETTINGS
+// ═══════════════════════════════════════════════
+function openSettings() {
+  // Populate fields from storage
+  document.getElementById('s-provider').value = getSetting('provider', 'ollama');
+  document.getElementById('s-ollama-url').value = getSetting('ollama_url', 'http://localhost:11434');
+  document.getElementById('s-ollama-model').value = getSetting('ollama_model', 'mistral');
+  document.getElementById('s-temperature').value = getSetting('temperature', '70');
+  document.getElementById('temp-val').textContent = (parseInt(getSetting('temperature','70'))/100).toFixed(2);
+  document.getElementById('s-system-prompt').value = getSetting('system_prompt', DEFAULT_SYSTEM_PROMPT);
+  document.getElementById('s-max-context').value = getSetting('max_context', '5');
+  document.getElementById('s-streaming').value = getSetting('streaming', 'true');
+
+  // Provider keys & models
+  for (const p of Object.keys(PROVIDERS)) {
+    const keyEl = document.getElementById(`s-${p}-key`);
+    if (keyEl) keyEl.value = getSetting(`${p}_key`, '');
+    const modelEl = document.getElementById(`s-${p}-model`);
+    if (modelEl && !modelEl.value) modelEl.value = getSetting(`${p}_model`, modelEl.placeholder);
+  }
+
+  onProviderChange();
+  document.getElementById('settings-overlay').classList.add('active');
+}
+
+function closeSettings() {
+  document.getElementById('settings-overlay').classList.remove('active');
+}
+
+function switchSettingsTab(tabId, btn) {
+  document.querySelectorAll('.modal-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.modal-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(tabId).classList.add('active');
+  btn.classList.add('active');
+}
+
+function onProviderChange() {
+  const p = document.getElementById('s-provider').value;
+  document.querySelectorAll('.provider-config').forEach(el => el.classList.remove('active'));
+  document.getElementById(`cfg-${p}`)?.classList.add('active');
+}
+
+function saveSettings() {
+  const p = document.getElementById('s-provider').value;
+  setSetting('provider', p);
+  setSetting('temperature', document.getElementById('s-temperature').value);
+  setSetting('system_prompt', document.getElementById('s-system-prompt').value);
+  setSetting('max_context', document.getElementById('s-max-context').value);
+  setSetting('streaming', document.getElementById('s-streaming').value);
+  setSetting('ollama_url', document.getElementById('s-ollama-url').value);
+  setSetting('ollama_model', document.getElementById('s-ollama-model').value);
+
+  for (const prov of Object.keys(PROVIDERS)) {
+    const keyEl = document.getElementById(`s-${prov}-key`);
+    if (keyEl) setSetting(`${prov}_key`, keyEl.value);
+    const modelEl = document.getElementById(`s-${prov}-model`);
+    if (modelEl) setSetting(`${prov}_model`, modelEl.value);
+  }
+
+  updateProviderLabel();
+  closeSettings();
+}
+
+function updateProviderLabel() {
+  const p = getProvider();
+  const model = getSetting(`${p}_model`, getSetting('ollama_model', 'mistral'));
+  document.getElementById('provider-label').textContent = `${PROVIDERS[p]?.name || p} / ${model}`;
+}
+
+function resetSystemPrompt() {
+  document.getElementById('s-system-prompt').value = DEFAULT_SYSTEM_PROMPT;
+}
+
+async function testOllama() {
+  const url = document.getElementById('s-ollama-url').value || 'http://localhost:11434';
+  const el = document.getElementById('ollama-test-result');
+  el.textContent = 'Testing...';
+  el.style.color = 'var(--warn)';
+  try {
+    const res = await fetch(`${url}/api/tags`);
+    if (!res.ok) throw new Error(res.status);
+    const data = await res.json();
+    const models = data.models?.map(m => m.name).join(', ') || 'No models found';
+    el.textContent = `✓ Connected. Models: ${models}`;
+    el.style.color = 'var(--accent)';
+  } catch (e) {
+    el.textContent = `✕ Failed: ${e.message}`;
+    el.style.color = 'var(--danger)';
+  }
+}
+
+// ═══════════════════════════════════════════════
+// DATA LOADING
+// ═══════════════════════════════════════════════
+let selectedFile = null;
+
+function toggleLoadMethod() {
+  const m = document.getElementById('s-load-method').value;
+  document.getElementById('load-manual').style.display = m === 'manual' ? 'block' : 'none';
+  document.getElementById('load-github').style.display = m === 'github' ? 'block' : 'none';
+  if (m === 'github') fetchGitHubDatasets();
+}
+
+function previewDataFile(e) {
+  selectedFile = e.target.files[0];
+  const el = document.getElementById('file-preview-text');
+  if (selectedFile) el.textContent = `${selectedFile.name} (${(selectedFile.size/1024).toFixed(1)} KB)`;
 }
 
 async function loadDataFile() {
-  if (!selectedDataFile) { alert('Select a file'); return; }
-  const text = await selectedDataFile.text();
+  if (!selectedFile) { alert('Select a file first'); return; }
   try {
+    const text = await selectedFile.text();
     let data;
-    if (selectedDataFile.name.endsWith('.jsonl')) {
+    if (selectedFile.name.endsWith('.jsonl')) {
       data = text.trim().split('\n').map(l => JSON.parse(l));
     } else {
       data = JSON.parse(text);
     }
-    await window.vectorStore.addChunksFromJSON(data);
-          if (embeddingReady && this.chunks.length > 0) {
-        await this.computeEmbeddings();
-        await saveEmbeddings(this.chunks, this.embeddings);  // ← ADD THIS
-      }
-    alert(`✅ Loaded ${window.vectorStore.chunks.length} chunks. Computing embeddings...`);
-    updateSourcesUI();
+    await vectorStore.addChunksFromJSON(data);
+    alert(`✓ Loaded. Total: ${vectorStore.chunks.length} chunks`);
+    updateChunkCount();
   } catch (e) {
     alert('Error: ' + e.message);
   }
 }
 
-async function loadGitHubDatasets() {
-  const select = document.getElementById('github-dataset-select');
+async function fetchGitHubDatasets() {
+  const sel = document.getElementById('s-github-dataset');
   try {
     const res = await fetch('https://api.github.com/repos/khalecl/know3/contents/prelude');
-    if (!res.ok) throw new Error('API unavailable');
-    const files = await res.json();
-    const datasets = files.filter(f => f.name.endsWith('.json') || f.name.endsWith('.jsonl'));
-    select.innerHTML = datasets.map(f => `<option value="${f.download_url}">${f.name}</option>`).join('') || '<option value="https://khalecl.github.io/know3/prelude/oil.jsonl">oil.jsonl</option>';
-  } catch (e) {
-    select.innerHTML = '<option value="https://khalecl.github.io/know3/prelude/oil.jsonl">oil.jsonl</option>';
+    if (!res.ok) throw new Error();
+    const files = (await res.json()).filter(f => f.name.endsWith('.json') || f.name.endsWith('.jsonl'));
+    sel.innerHTML = files.map(f => `<option value="${f.download_url}">${f.name}</option>`).join('');
+  } catch {
+    sel.innerHTML = '<option value="https://khalecl.github.io/know3/prelude/oil.jsonl">oil.jsonl</option>';
   }
 }
 
 async function loadGitHubDataset() {
-  const url = document.getElementById('github-dataset-select').value;
-  if (!url) { alert('Select'); return; }
+  const url = document.getElementById('s-github-dataset').value;
+  if (!url) return;
   try {
-    const res = await fetch(url);
-    const text = await res.text();
-    let data = url.endsWith('.jsonl') ? text.trim().split('\n').map(l => JSON.parse(l)) : JSON.parse(text);
-    await window.vectorStore.addChunksFromJSON(data);
-    if (embeddingReady && this.chunks.length > 0) {
-        await this.computeEmbeddings();
-        await saveEmbeddings(this.chunks, this.embeddings);  // ← ADD THIS
-      }
-    alert(`✅ Loaded ${window.vectorStore.chunks.length} chunks. Computing embeddings...`);
-    updateSourcesUI();
+    const text = await (await fetch(url)).text();
+    const data = url.endsWith('.jsonl') ? text.trim().split('\n').map(l => JSON.parse(l)) : JSON.parse(text);
+    await vectorStore.addChunksFromJSON(data);
+    alert(`✓ Loaded. Total: ${vectorStore.chunks.length} chunks`);
+    updateChunkCount();
   } catch (e) {
     alert('Error: ' + e.message);
   }
 }
 
-function updateSourcesUI() {
-  const cols = {};
-  window.vectorStore.chunks.forEach(c => {
-    const col = c.metadata?.collection || 'Default';
-    cols[col] = (cols[col] || 0) + 1;
-  });
-  
-  document.getElementById('sources-list').innerHTML = Object.entries(cols).map(([n, c]) => `
-    <div class="source-card">
-      <div class="source-header" onclick="this.parentElement.classList.toggle('open')">
-        <span class="source-title">📁 ${escapeHtml(n)}</span>
-        <span class="source-count">${c} chunks</span>
-        <span class="chevron">▶</span>
-      </div>
-      <div class="source-body">
-        <div class="source-info">
-          <small>Indexed: ${embeddingReady ? '✅ Semantic' : '⚠️ Keyword'}</small>
-        </div>
-      </div>
-    </div>
-  `).join('') || '<div style="color: var(--text3);">Upload JSON</div>';
-}
-
-// Settings
-function updateProviderUI() {
-  const p = document.getElementById('provider-select').value;
-  document.querySelectorAll('.provider-config').forEach(e => e.style.display = 'none');
-  const c = document.getElementById(`${p}-config`);
-  if (c) c.style.display = 'block';
-}
-
-function saveSettings() {
-  localStorage.setItem('know3_provider', document.getElementById('provider-select').value);
-  localStorage.setItem('know3_temperature', document.getElementById('setting-temperature').value);
-  localStorage.setItem('know3_top_k', document.getElementById('setting-top-k').value);
-  localStorage.setItem('know3_search_mode', document.getElementById('search-mode').value);
-
-  const p = document.getElementById('provider-select').value;
-  const providers = ['ollama', 'google', 'groq', 'together', 'github', 'openrouter', 'mistral', 'deepseek', 'openai', 'anthropic'];
-  providers.forEach(prov => {
-    const keyEl = document.getElementById(`setting-${prov}-key`);
-    if (keyEl) localStorage.setItem(`know3_${prov}_key`, keyEl.value);
-    const urlEl = document.getElementById(`setting-${prov}-url`);
-    if (urlEl) localStorage.setItem(`know3_${prov}_url`, urlEl.value);
-    const modelEl = document.getElementById(`setting-${prov}-model`);
-    if (modelEl) localStorage.setItem(`know3_${prov}_model`, modelEl.value);
-  });
-
-  alert('✅ Settings saved');
-}
-
+// ═══════════════════════════════════════════════
+// DATA MANAGEMENT
+// ═══════════════════════════════════════════════
 function exportCurrentChat() {
-  const c = conversations[currentConversationId];
-  if (!c) return;
-  const blob = new Blob([JSON.stringify(c, null, 2)], {type: 'application/json'});
+  const conv = conversations[currentConversationId];
+  if (!conv) return;
+  const blob = new Blob([JSON.stringify(conv, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `chat_${Date.now()}.json`;
+  a.download = `know3-chat-${Date.now()}.json`;
   a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 function clearAllData() {
-  if (confirm('⚠️ Delete ALL?')) {
-    conversations = {};
-    window.vectorStore.clear();
-    localStorage.clear();
-    startNewConversation();
-    updateSourcesUI();
-    alert('Cleared');
-  }
+  if (!confirm('Delete ALL chats and loaded data?')) return;
+  conversations = {};
+  vectorStore.clear();
+  localStorage.clear();
+  startNewConversation();
+  updateChunkCount();
 }
 
-function updateTempDisplay() {
-  const val = parseInt(document.getElementById('setting-temperature').value);
-  document.getElementById('temp-number').textContent = (val / 100).toFixed(2);
+// ═══════════════════════════════════════════════
+// SIDEBAR
+// ═══════════════════════════════════════════════
+function toggleSidebar() {
+  const sb = document.getElementById('sidebar');
+  sb.classList.toggle('collapsed');
+  document.getElementById('btn-sidebar').classList.toggle('active', !sb.classList.contains('collapsed'));
 }
 
-function escapeHtml(t) {
-  const d = document.createElement('div');
-  d.textContent = t;
-  return d.innerHTML;
-}
-
-function openModal(id) {
-  const m = document.getElementById(id);
-  if (m) {
-    m.classList.add('active');
-    document.body.classList.add('modal-open');
-  }
-}
-
-function closeModal(id) {
-  const m = document.getElementById(id);
-  if (m) {
-    m.classList.remove('active');
-    document.body.classList.remove('modal-open');
-  }
-}
-
-function switchSidebarTab(tab) {
-  document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.sidebar-content').forEach(c => c.classList.remove('active'));
-  event.target.classList.add('active');
-  document.getElementById(`sidebar-${tab}`).classList.add('active');
-}
-
-// Matrix
-let currentStreamingIndex = -1;
-let currentStreamingSources = null;
-  
-  class MatrixRain {
-  constructor(canvas) {
-    this.canvas = canvas;
-    this.ctx = canvas.getContext('2d');
-    this.chars = 'アィゥェォカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワン0123456789';
-    this.fontSize = 14;
-    this.resize();
-    window.addEventListener('resize', () => this.resize());
-    this.animate();
-  }
-  resize() {
-    this.canvas.width = window.innerWidth;
-    this.canvas.height = window.innerHeight;
-    this.cols = Math.floor(this.canvas.width / this.fontSize);
-    this.drops = new Array(this.cols).fill(1);
-  }
-  draw() {
-    this.ctx.fillStyle = 'rgba(0,0,0,0.05)';
-    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    this.ctx.font = `${this.fontSize}px monospace`;
-    this.ctx.fillStyle = `rgba(0,229,160,${0.4 + Math.random() * 0.6})`;
-    for (let i = 0; i < this.cols; i++) {
-      this.ctx.fillText(this.chars[Math.floor(Math.random() * this.chars.length)], i * this.fontSize, this.drops[i] * this.fontSize);
-      if (this.drops[i] * this.fontSize > this.canvas.height && Math.random() > 0.975) this.drops[i] = 0;
-      this.drops[i]++;
-    }
-  }
-  animate() {
-    this.draw();
-    requestAnimationFrame(() => this.animate());
-  }
-}
-
-// Init
-window.addEventListener('DOMContentLoaded', () => {
-  new MatrixRain(document.getElementById('matrix-canvas'));
-
-  const chatInput = document.getElementById('chat-input');
-  chatInput.addEventListener('input', function() {
-    this.style.height = 'auto';
-    this.style.height = Math.min(this.scrollHeight, 100) + 'px';
-  });
-  chatInput.addEventListener('keydown', (e) => {
+// ═══════════════════════════════════════════════
+// INPUT HANDLING
+// ═══════════════════════════════════════════════
+function initInput() {
+  const input = document.getElementById('chat-input');
+  input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
     }
   });
+  // Auto-resize
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+  });
+}
 
-  const provider = localStorage.getItem('know3_provider') || 'ollama';
-  const temp = parseInt(localStorage.getItem('know3_temperature')) || 70;
-  const mode = localStorage.getItem('know3_search_mode') || 'hybrid';
-
-  document.getElementById('provider-select').value = provider;
-  document.getElementById('setting-temperature').value = temp;
-  document.getElementById('temp-number').textContent = (temp / 100).toFixed(2);
-  document.getElementById('search-mode').value = mode;
-
-  updateProviderUI();
-  initConversations();
-  updateSourcesUI();
+// ═══════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  initMatrix();
+  initInput();
+  loadConversations();
+  updateProviderLabel();
+  updateChunkCount();
   initEmbeddings();
 
-});
+  // Restore toolbar state
+  document.getElementById('toolbar-search-mode').value = getSetting('search_mode', 'hybrid');
+  document.getElementById('toolbar-rag-toggle').checked = getSetting('rag_enabled', 'true') === 'true';
+  document.getElementById('toolbar-topk').value = getSetting('top_k', '3');
 
-// Globals
-window.openModal = openModal;
-window.closeModal = closeModal;
-window.switchSidebarTab = switchSidebarTab;
-window.sendMessage = sendMessage;
-window.switchLoadMethod = switchLoadMethod;
-window.handleDataFileSelect = handleDataFileSelect;
-window.loadDataFile = loadDataFile;
-window.loadGitHubDatasets = loadGitHubDatasets;
-window.loadGitHubDataset = loadGitHubDataset;
-window.startNewConversation = startNewConversation;
-window.switchConversation = switchConversation;
-window.updateProviderUI = updateProviderUI;
-window.saveSettings = saveSettings;
-window.exportCurrentChat = exportCurrentChat;
-window.clearAllData = clearAllData;
-window.updateTempDisplay = updateTempDisplay;
+  // Save toolbar changes
+  document.getElementById('toolbar-search-mode').addEventListener('change', (e) => setSetting('search_mode', e.target.value));
+  document.getElementById('toolbar-rag-toggle').addEventListener('change', (e) => setSetting('rag_enabled', e.target.checked));
+  document.getElementById('toolbar-topk').addEventListener('change', (e) => setSetting('top_k', e.target.value));
+});
 </script>
 </body>
 </html>
