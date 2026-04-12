@@ -523,14 +523,22 @@ body {
   color: var(--text);
 }
 /* ── MESSAGE ACTIONS ── */
-.msg-actions {
-  display: flex;
-  gap: 0.25rem;
-  opacity: 0;
-  transition: opacity var(--transition);
-  padding: 0 0.3rem;
-}
-.msg:hover .msg-actions { opacity: 1; }
+	.msg-actions {
+	  display: flex;
+	  gap: 0.25rem;
+	  opacity: 0;
+	  transition: opacity var(--transition);
+	  padding: 0 0.3rem;
+	}
+	.msg:hover .msg-actions { opacity: 1; }
+	.msg.actions-visible .msg-actions { opacity: 1; }
+	
+	@media (hover: none), (pointer: coarse) {
+	  /* Touch devices: always show actions */
+	  .msg-actions {
+	    opacity: 0.7;
+	  }
+	}
 .msg-action-btn {
   background: var(--surface2);
   border: 1px solid var(--border);
@@ -1184,15 +1192,16 @@ let isGenerating = false;
 
 const DEFAULT_SYSTEM_PROMPT = `You are a helpful assistant. When context is provided, answer based on that context. If unsure, say so. Be concise and accurate.
 
-When presenting data that would benefit from visualization, format it as a chart block:
+CHART RENDERING: When the user asks for a chart, comparison chart, visualization, or uses /chart, you MUST include a chart block. Format:
 \`\`\`chart
-{"labels":["A","B","C"],"values":[10,20,30],"title":"Example"}
+{"labels":["Label1","Label2","Label3"],"values":[10,20,30],"title":"Title"}
 \`\`\`
-For multiple series:
+For comparing multiple attributes:
 \`\`\`chart
-{"labels":["Q1","Q2","Q3"],"datasets":[{"label":"Revenue","values":[100,150,200]},{"label":"Cost","values":[80,90,110]}],"title":"Quarterly"}
+{"labels":["Item1","Item2","Item3"],"datasets":[{"label":"Attr A","values":[10,20,30]},{"label":"Attr B","values":[5,15,25]}],"title":"Comparison"}
 \`\`\`
-Only use chart blocks when the user asks for visualization or when numeric comparisons would clearly benefit from it.`;
+IMPORTANT: When asked for a chart, always include a \`\`\`chart block with numeric JSON data. You may also include text explanation before or after the chart block. If exact numbers are not available, use reasonable estimated scores (1-10 scale or percentages) to represent qualitative comparisons.`;
+	
 const VOICE_COMPANION_PROMPT = `You are a warm, emotionally present voice companion. Your responses will be spoken aloud, so follow these rules:
 
 1. KEEP IT SHORT — 2-4 sentences max. No bullet points, no headers, no markdown.
@@ -1227,7 +1236,41 @@ function escapeHtml(str) {
 }
 
 function renderMath(text) {
-  if (typeof katex === 'undefined') return text;
+	  if (typeof katex === 'undefined') return text;
+	
+	  // Pre-clean: remove markdown bold/italic wrapping around math
+	  // e.g. **$\frac{x}{y}$** → $\frac{x}{y}$
+	  text = text.replace(/\*{1,2}(\$[\s\S]+?\$)\*{1,2}/g, '$1');
+	
+	  // Display math: $$...$$ or \[...\]
+	  text = text.replace(/\$\$([\s\S]+?)\$\$/g, (_, math) => {
+	    try {
+	      return '<div class="katex-display">' + katex.renderToString(math.trim(), { displayMode: true, throwOnError: false, trust: true }) + '</div>';
+	    } catch { return '$$' + math + '$$'; }
+	  });
+	  text = text.replace(/\\\[([\s\S]+?)\\\]/g, (_, math) => {
+	    try {
+	      return '<div class="katex-display">' + katex.renderToString(math.trim(), { displayMode: true, throwOnError: false, trust: true }) + '</div>';
+	    } catch { return '\\[' + math + '\\]'; }
+	  });
+	
+	  // Inline math: $...$ (not greedy, not $$)
+	  // More permissive regex — allows multi-char content with backslashes
+	  text = text.replace(/(?<!\$)\$(?!\$)((?:[^$\\]|\\.)+?)\$(?!\$)/g, (_, math) => {
+	    try {
+	      return katex.renderToString(math.trim(), { displayMode: false, throwOnError: false, trust: true });
+	    } catch { return '$' + math + '$'; }
+	  });
+	
+	  // \(...\) inline
+	  text = text.replace(/\\\(([\s\S]+?)\\\)/g, (_, math) => {
+	    try {
+	      return katex.renderToString(math.trim(), { displayMode: false, throwOnError: false, trust: true });
+	    } catch { return '\\(' + math + '\\)'; }
+	  });
+	
+	  return text;
+	}
 
   // Display math: $$...$$ or \[...\]
   text = text.replace(/\$\$([\s\S]+?)\$\$/g, (_, math) => {
@@ -1935,11 +1978,17 @@ async function sendMessage() {
 			if (finalAnswer && finalAnswer.length > 20) {
 			  renderFollowUpChips(q, finalAnswer);
 
-			  // Auto-detect chartable data and offer visualization
-			  const chartData = detectChartableData(finalAnswer);
-			  if (chartData && chartData.labels.length >= 3) {
-				offerVisualization(chartData);
-			  }
+		// Auto-detect chartable data and offer visualization
+		      const chartData = detectChartableData(finalAnswer);
+		      const userWantedChart = /\bchart\b|\/chart|visuali[sz]e|compare.*chart|graph/i.test(q);
+		      if (chartData && (chartData.labels.length >= 3 || userWantedChart)) {
+		        if (userWantedChart && !finalAnswer.includes('```chart')) {
+		          // User asked for chart but LLM didn't produce a chart block — auto-inject
+		          injectChartDirect('bar', chartData);
+		        } else {
+		          offerVisualization(chartData);
+		        }
+		      }
 			}
       } catch (e) {
         removeThinking();
@@ -2191,6 +2240,19 @@ function useFollowUp(el) {
 	  container.scrollTop = container.scrollHeight;
 	}
 
+	function injectChartDirect(type, data) {
+		  document.getElementById('viz-offer')?.remove();
+		  const conv = conversations[currentConversationId];
+		  if (!conv) return;
+		
+		  const lastAssistant = [...conv.messages].reverse().find(m => m.role === 'assistant');
+		  if (lastAssistant) {
+		    const chartBlock = `\n\n\`\`\`chart\n${JSON.stringify(data, null, 2)}\n\`\`\``;
+		    lastAssistant.content += chartBlock;
+		    saveConversations();
+		    renderChat();
+		  }
+		}
 	function injectChart(type, dataEncoded) {
 	  document.getElementById('viz-offer')?.remove();
 
@@ -3249,29 +3311,88 @@ function initInput() {
 
 		// Auto-detect numeric data in responses and offer visualization
 		function detectChartableData(text) {
-		  // Look for table-like patterns: rows with labels and numbers
+		  // Strategy 1: Parse markdown tables with numeric columns
+		  const tableMatch = text.match(/\|(.+)\|\s*\n\|[-\s|:]+\|\s*\n((?:\|.+\|\s*\n?)+)/);
+		  if (tableMatch) {
+		    const headerCells = tableMatch[1].split('|').map(s => s.replace(/\*+/g, '').trim()).filter(Boolean);
+		    const bodyRows = tableMatch[2].trim().split('\n').map(row =>
+		      row.split('|').map(s => s.replace(/\*+/g, '').trim()).filter(Boolean)
+		    );
+		
+		    if (headerCells.length >= 2 && bodyRows.length >= 2) {
+		      // Find numeric columns
+		      const numericCols = [];
+		      for (let col = 1; col < headerCells.length; col++) {
+		        const hasNumbers = bodyRows.some(row => {
+		          const cell = row[col] || '';
+		          return /\d/.test(cell);
+		        });
+		        if (hasNumbers) numericCols.push(col);
+		      }
+		
+		      if (numericCols.length > 0) {
+		        const labels = bodyRows.map(row => (row[0] || '').substring(0, 40));
+		
+		        if (numericCols.length === 1) {
+		          // Single value column
+		          const values = bodyRows.map(row => {
+		            const cell = (row[numericCols[0]] || '').replace(/[^0-9.\-]/g, '');
+		            return parseFloat(cell) || 0;
+		          });
+		          return { labels, values, title: headerCells[numericCols[0]] || 'Data' };
+		        } else {
+		          // Multiple numeric columns → multi-dataset
+		          const datasets = numericCols.map(col => ({
+		            label: headerCells[col] || `Col ${col}`,
+		            values: bodyRows.map(row => {
+		              const cell = (row[col] || '').replace(/[^0-9.\-]/g, '');
+		              return parseFloat(cell) || 0;
+		            })
+		          }));
+		          // Only include datasets that have at least some non-zero values
+		          const validDatasets = datasets.filter(ds => ds.values.some(v => v > 0));
+		          if (validDatasets.length > 0) {
+		            return { labels, datasets: validDatasets, title: 'Comparison' };
+		          }
+		        }
+		      }
+		    }
+		  }
+		
+		  // Strategy 2: Line-based "Label: Value" patterns
 		  const lines = text.split('\n').filter(l => l.trim());
 		  const dataLines = [];
-
+		
 		  for (const line of lines) {
-			// Match patterns like "Label: 123" or "Label | 123" or "- Label: 123" or "| Label | 123 |"
-			const cleaned = line.replace(/^\s*[-*•|]\s*/, '').replace(/\|/g, ',').trim();
-			const match = cleaned.match(/^(.+?)[:\-,\t]\s*([\d,.]+)\s*(%|units?|kg|lbs?|mi|km|hrs?|days?|months?|years?)?\s*$/);
-			if (match) {
-			  const label = match[1].replace(/\*+/g, '').trim();
-			  const value = parseFloat(match[2].replace(/,/g, ''));
-			  if (!isNaN(value) && label.length > 0 && label.length < 50) {
-				dataLines.push({ label, value });
-			  }
-			}
+		    const cleaned = line.replace(/^\s*[-*•|]\s*/, '').replace(/\|/g, ',').trim();
+		    const match = cleaned.match(/^(.+?)[:\-,\t]\s*([\d,.]+)\s*(%|units?|kg|lbs?|mi|km|hrs?|days?|months?|years?)?\s*$/);
+		    if (match) {
+		      const label = match[1].replace(/\*+/g, '').trim();
+		      const value = parseFloat(match[2].replace(/,/g, ''));
+		      if (!isNaN(value) && label.length > 0 && label.length < 50) {
+		        dataLines.push({ label, value });
+		      }
+		    }
 		  }
-
+		
 		  if (dataLines.length >= 3) {
-			return {
-			  labels: dataLines.map(d => d.label),
-			  values: dataLines.map(d => d.value)
-			};
+		    return { labels: dataLines.map(d => d.label), values: dataLines.map(d => d.value) };
 		  }
+		
+		  // Strategy 3: Numbered list with values "1. Item Name - 42%"
+		  const listLines = [];
+		  for (const line of lines) {
+		    const match = line.match(/^\s*\d+[\.\)]\s*(.+?)\s*[-–:]\s*([\d,.]+)\s*(%|units?)?/);
+		    if (match) {
+		      const label = match[1].replace(/\*+/g, '').trim();
+		      const value = parseFloat(match[2].replace(/,/g, ''));
+		      if (!isNaN(value) && label.length > 0) listLines.push({ label, value });
+		    }
+		  }
+		  if (listLines.length >= 3) {
+		    return { labels: listLines.map(d => d.label), values: listLines.map(d => d.value) };
+		  }
+		
 		  return null;
 		}
 // ═══════════════════════════════════════════════
