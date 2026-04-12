@@ -423,7 +423,152 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text3); }
-/* ── IMAGE ATTACHMENT ── */
+/* ── VOICE COMPANION ── */
+.voice-fab {
+  position: fixed;
+  bottom: 5.5rem;
+  right: 1.5rem;
+  z-index: 50;
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  background: var(--surface);
+  backdrop-filter: var(--glass);
+  border: 1px solid var(--border);
+  color: var(--text2);
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+.voice-fab:hover { border-color: var(--accent); color: var(--accent); transform: scale(1.08); }
+.voice-fab.active {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+  box-shadow: 0 0 24px var(--accent-glow);
+  animation: voicePulse 2s ease-in-out infinite;
+}
+@keyframes voicePulse {
+  0%, 100% { box-shadow: 0 0 16px var(--accent-glow); }
+  50% { box-shadow: 0 0 32px var(--accent-glow), 0 0 48px rgba(0,229,160,0.1); }
+}
+.voice-fab.listening {
+  animation: voiceListen 0.8s ease-in-out infinite alternate;
+}
+@keyframes voiceListen {
+  from { transform: scale(1); }
+  to { transform: scale(1.12); }
+}
+
+.voice-panel {
+  position: fixed;
+  bottom: 6.5rem;
+  right: 1.5rem;
+  z-index: 49;
+  width: 280px;
+  background: var(--surface);
+  backdrop-filter: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.8rem;
+  display: none;
+  flex-direction: column;
+  gap: 0.6rem;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  animation: msgIn 0.25s ease-out;
+}
+.voice-panel.open { display: flex; }
+.voice-panel-header {
+  display: flex; justify-content: space-between; align-items: center;
+}
+.voice-panel-title {
+  font-size: 0.8rem; font-weight: 700; color: var(--accent);
+}
+.voice-status {
+  font-size: 0.7rem;
+  color: var(--text3);
+  text-align: center;
+  padding: 0.3rem;
+  min-height: 2rem;
+  display: flex; align-items: center; justify-content: center;
+}
+.voice-transcript {
+  font-size: 0.75rem;
+  color: var(--text2);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem;
+  min-height: 40px;
+  max-height: 80px;
+  overflow-y: auto;
+  font-style: italic;
+}
+.voice-controls {
+  display: flex; gap: 0.4rem; align-items: center;
+}
+.voice-btn {
+  flex: 1;
+  padding: 0.5rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text2);
+  font-size: 0.75rem;
+  font-family: var(--sans);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+  text-align: center;
+}
+.voice-btn:hover { border-color: var(--accent); color: var(--accent); }
+.voice-btn.recording {
+  background: rgba(248,113,113,0.15);
+  border-color: var(--danger);
+  color: var(--danger);
+  animation: voiceListen 0.8s ease-in-out infinite alternate;
+}
+.voice-btn.speaking {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.voice-settings {
+  border-top: 1px solid var(--border);
+  padding-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.voice-settings .field-label { font-size: 0.68rem; margin-bottom: 0.15rem; }
+.voice-settings select, .voice-settings input {
+  font-size: 0.72rem;
+  padding: 0.35rem 0.5rem;
+}
+.voice-wave {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 24px;
+}
+.voice-wave-bar {
+  width: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+  animation: waveBar 0.6s ease-in-out infinite alternate;
+}
+.voice-wave-bar:nth-child(1) { height: 8px; animation-delay: 0s; }
+.voice-wave-bar:nth-child(2) { height: 16px; animation-delay: 0.1s; }
+.voice-wave-bar:nth-child(3) { height: 12px; animation-delay: 0.2s; }
+.voice-wave-bar:nth-child(4) { height: 20px; animation-delay: 0.3s; }
+.voice-wave-bar:nth-child(5) { height: 10px; animation-delay: 0.4s; }
+@keyframes waveBar {
+  from { transform: scaleY(0.4); }
+  to { transform: scaleY(1); }
+}
+  /* ── IMAGE ATTACHMENT ── */
 .input-attachments {
   display: flex;
   gap: 0.5rem;
@@ -874,7 +1019,17 @@ let currentStreamingIndex = -1;
 let isGenerating = false;
 
 const DEFAULT_SYSTEM_PROMPT = `You are a helpful assistant. When context is provided, answer based on that context. If unsure, say so. Be concise and accurate.`;
+const VOICE_COMPANION_PROMPT = `You are a warm, emotionally present voice companion. Your responses will be spoken aloud, so follow these rules:
 
+1. KEEP IT SHORT — 2-4 sentences max. No bullet points, no headers, no markdown.
+2. SPEAK NATURALLY — Use contractions, conversational rhythm, brief pauses with commas and ellipses.
+3. BE WARM — Show genuine care. Use phrases like "that's a great question", "so here's the thing", "I love that you're asking about this".
+4. SHOW EMOTION — Express curiosity, enthusiasm, gentle concern, or encouragement as appropriate. You're not a robot reading facts.
+5. BLEND KNOWLEDGE WITH PERSONALITY — When context is provided, weave the factual answer into your warm tone. Don't just recite data.
+6. USE SPOKEN STRUCTURE — Start with a brief reaction, give the core answer, end with an invitation to continue. Like a real conversation.
+
+Example: Instead of "The boiling point of water is 100°C at standard atmospheric pressure."
+Say: "Oh, that's a classic one! So water boils at 100 degrees Celsius... but here's the fun part — that actually changes with altitude. Pretty cool, right?"`;
 const PROVIDERS = {
   ollama:     { name: 'Ollama',      stream: true,  fields: ['url','model','key'] },
   google:     { name: 'Gemini',      stream: true,  fields: ['key','model'] },
@@ -1835,7 +1990,9 @@ function getProvider() { return getSetting('provider', 'ollama'); }
 function getTemp() { return (parseInt(getSetting('temperature', '70')) / 100); }
 
   function buildMessages(query, context, images = []) {
-    const sysPrompt = getSetting('system_prompt', DEFAULT_SYSTEM_PROMPT);
+    const isVoice = window._voiceModeActive || false;
+    const baseSysPrompt = getSetting('system_prompt', DEFAULT_SYSTEM_PROMPT);
+    const sysPrompt = isVoice ? VOICE_COMPANION_PROMPT + '\n\n' + baseSysPrompt : baseSysPrompt;
     let userText = query || 'Describe this image.';
     if (context) {
       userText = `Based on the following context, answer the question.\n\nContext:\n${context}\n\nQuestion: ${query}`;
@@ -2035,6 +2192,7 @@ function saveSettings() {
   setSetting('max_context', document.getElementById('s-max-context').value);
   setSetting('streaming', document.getElementById('s-streaming').value);
   setSetting('ollama_url', document.getElementById('s-ollama-url').value);
+  setSetting('el_key', document.getElementById('voice-el-key')?.value || getSetting('el_key', ''));
   setSetting('ollama_model', document.getElementById('s-ollama-model').value);
 
   for (const prov of Object.keys(PROVIDERS)) {
@@ -2370,7 +2528,382 @@ function initInput() {
     input.style.height = Math.min(input.scrollHeight, 120) + 'px';
   });
 }
+// ═══════════════════════════════════════════════
+// VOICE COMPANION ENGINE
+// ═══════════════════════════════════════════════
+  window._voiceModeActive = false;
+  let _recognition = null;
+  let _isRecording = false;
+  let _isSpeaking = false;
+  let _currentAudio = null;
+  
+  function toggleVoicePanel() {
+    const panel = document.getElementById('voice-panel');
+    const fab = document.getElementById('voice-fab');
+    const isOpen = panel.classList.contains('open');
+  
+    if (isOpen) {
+      panel.classList.remove('open');
+      fab.classList.remove('active');
+      window._voiceModeActive = false;
+      stopVoiceRecording();
+      stopVoiceSpeaking();
+    } else {
+      panel.classList.add('open');
+      fab.classList.add('active');
+      window._voiceModeActive = true;
+      populateBrowserVoices();
+      // Restore ElevenLabs key
+      document.getElementById('voice-el-key').value = getSetting('el_key', '');
+    }
+  }
+  
+  function onVoiceOutputChange() {
+    const mode = document.getElementById('voice-output-mode').value;
+    document.getElementById('voice-el-config').style.display = mode === 'elevenlabs' ? 'block' : 'none';
+    document.getElementById('voice-browser-config').style.display = mode === 'browser' ? 'block' : 'none';
+  }
+  
+  function populateBrowserVoices() {
+    const sel = document.getElementById('voice-browser-select');
+    const voices = speechSynthesis.getVoices();
+    if (!voices.length) {
+      // Voices load async in some browsers
+      speechSynthesis.onvoiceschanged = () => populateBrowserVoices();
+      return;
+    }
+    const saved = getSetting('browser_voice', '');
+    sel.innerHTML = voices.map((v, i) =>
+      `<option value="${i}" ${v.name === saved ? 'selected' : ''}>${v.name} (${v.lang})</option>`
+    ).join('');
+  }
+  
+  function setVoiceStatus(text, wave = false) {
+    const el = document.getElementById('voice-status');
+    if (wave) {
+      el.innerHTML = `<div class="voice-wave">
+        <div class="voice-wave-bar"></div><div class="voice-wave-bar"></div>
+        <div class="voice-wave-bar"></div><div class="voice-wave-bar"></div>
+        <div class="voice-wave-bar"></div>
+      </div>`;
+    } else {
+      el.textContent = text;
+    }
+  }
+  
+  // ── SPEECH RECOGNITION (input) ──
+  function toggleVoiceRecording() {
+    if (_isRecording) { stopVoiceRecording(); return; }
+    startVoiceRecording();
+  }
+  
+  function startVoiceRecording() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setVoiceStatus('Speech recognition not supported in this browser');
+      return;
+    }
+  
+    // Stop any current speech
+    stopVoiceSpeaking();
+  
+    _recognition = new SpeechRecognition();
+    _recognition.lang = 'en-US';
+    _recognition.interimResults = true;
+    _recognition.continuous = true;
+    _recognition.maxAlternatives = 1;
+  
+    const transcript = document.getElementById('voice-transcript');
+    const btn = document.getElementById('btn-voice-mic');
+    let finalText = '';
+    let silenceTimer = null;
+  
+    _recognition.onstart = () => {
+      _isRecording = true;
+      btn.classList.add('recording');
+      btn.textContent = '⏹ Listening...';
+      transcript.style.display = 'block';
+      transcript.textContent = '...';
+      setVoiceStatus('Listening...', true);
+      document.getElementById('voice-fab').classList.add('listening');
+    };
+  
+    _recognition.onresult = (e) => {
+      let interim = '';
+      finalText = '';
+      for (let i = 0; i < e.results.length; i++) {
+        if (e.results[i].isFinal) finalText += e.results[i][0].transcript;
+        else interim += e.results[i][0].transcript;
+      }
+      transcript.textContent = finalText + interim;
+  
+      // Auto-send after 2s of silence on final results
+      clearTimeout(silenceTimer);
+      if (finalText.trim()) {
+        silenceTimer = setTimeout(() => {
+          stopVoiceRecording();
+          sendVoiceMessage(finalText.trim());
+        }, 2000);
+      }
+    };
+  
+    _recognition.onerror = (e) => {
+      if (e.error === 'no-speech') {
+        setVoiceStatus('No speech detected. Try again.');
+      } else if (e.error === 'not-allowed') {
+        setVoiceStatus('Microphone access denied');
+      } else {
+        setVoiceStatus(`Error: ${e.error}`);
+      }
+      stopVoiceRecording();
+    };
+  
+    _recognition.onend = () => {
+      _isRecording = false;
+      btn.classList.remove('recording');
+      btn.textContent = '🎤 Hold to Speak';
+      document.getElementById('voice-fab').classList.remove('listening');
+      if (!finalText.trim()) setVoiceStatus('Tap mic to start speaking');
+    };
+  
+    _recognition.start();
+  }
+  
+  function stopVoiceRecording() {
+    if (_recognition) {
+      _recognition.abort();
+      _recognition = null;
+    }
+    _isRecording = false;
+    const btn = document.getElementById('btn-voice-mic');
+    btn.classList.remove('recording');
+    btn.textContent = '🎤 Hold to Speak';
+    document.getElementById('voice-fab').classList.remove('listening');
+  }
+  
+  // ── VOICE MESSAGE FLOW ──
+  async function sendVoiceMessage(text) {
+    if (!text || isGenerating) return;
+  
+    setVoiceStatus('Thinking...');
+  
+    // Also show in chat
+    addMessage('user', text);
+  
+    isGenerating = true;
+    clearFollowUpChips();
+  
+    const ragEnabled = document.getElementById('toolbar-rag-toggle').checked;
+    const topK = parseInt(document.getElementById('toolbar-topk').value) || 3;
+    const mode = document.getElementById('toolbar-search-mode').value;
+  
+    let context = '';
+    let sources = [];
+  
+    if (ragEnabled && vectorStore.chunks.length > 0) {
+      const results = await vectorStore.search(text, topK, mode);
+      if (results.length) {
+        context = results.map(r => r.text).join('\n---\n');
+        sources = results.map(r => ({ text: r.text, source: r.metadata?.source || 'unknown' }));
+      }
+    }
+  
+    showThinking();
+  
+    let finalAnswer = '';
+    try {
+      const answer = await queryInference(text, context, []);
+      finalAnswer = answer || '';
+      removeThinking();
+      if (currentStreamingIndex >= 0) {
+        const conv = conversations[currentConversationId];
+        conv.messages[currentStreamingIndex].sources = sources.length ? sources : null;
+        finalAnswer = conv.messages[currentStreamingIndex].content || finalAnswer;
+        saveConversations();
+        renderChat();
+      } else {
+        addMessage('assistant', answer, sources.length ? sources : null);
+      }
+  
+      if (finalAnswer && finalAnswer.length > 5) {
+        renderFollowUpChips(text, finalAnswer);
+        await speakResponse(finalAnswer);
+      }
+    } catch (e) {
+      removeThinking();
+      addMessage('assistant', `❌ Error: ${e.message}`);
+      setVoiceStatus('Error getting response');
+    }
+  
+    currentStreamingIndex = -1;
+    isGenerating = false;
+    document.getElementById('btn-send').disabled = false;
+  
+    // Auto-listen again if enabled
+    if (document.getElementById('voice-auto-listen')?.checked) {
+      setTimeout(() => startVoiceRecording(), 500);
+    }
+  }
 
+  // ── TEXT-TO-SPEECH (output) ──
+  async function speakResponse(text) {
+    const outputMode = document.getElementById('voice-output-mode').value;
+    const speed = parseFloat(document.getElementById('voice-speed').value) || 1;
+  
+    // Clean text for speech — remove markdown artifacts
+    const cleanText = text
+      .replace(/```[\s\S]*?```/g, '... code block omitted ...')
+      .replace(/[#*_`~\[\](){}|<>]/g, '')
+      .replace(/\n{2,}/g, '. ')
+      .replace(/\n/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  
+    if (outputMode === 'elevenlabs') {
+      await speakElevenLabs(cleanText, speed);
+    } else {
+      speakBrowser(cleanText, speed);
+    }
+  }
+  
+  function speakBrowser(text, speed) {
+    if (!('speechSynthesis' in window)) {
+      setVoiceStatus('Speech synthesis not supported');
+      return;
+    }
+  
+    speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = speed;
+    utterance.pitch = 1.1;
+  
+    const voices = speechSynthesis.getVoices();
+    const selIdx = parseInt(document.getElementById('voice-browser-select').value);
+    if (voices[selIdx]) {
+      utterance.voice = voices[selIdx];
+      setSetting('browser_voice', voices[selIdx].name);
+    }
+  
+    const btn = document.getElementById('btn-voice-stop');
+    const micBtn = document.getElementById('btn-voice-mic');
+  
+    utterance.onstart = () => {
+      _isSpeaking = true;
+      btn.style.display = '';
+      micBtn.style.display = 'none';
+      setVoiceStatus('Speaking...', true);
+    };
+  
+    utterance.onend = () => {
+      _isSpeaking = false;
+      btn.style.display = 'none';
+      micBtn.style.display = '';
+      setVoiceStatus('Tap mic to speak');
+    };
+  
+    utterance.onerror = () => {
+      _isSpeaking = false;
+      btn.style.display = 'none';
+      micBtn.style.display = '';
+    };
+  
+    speechSynthesis.speak(utterance);
+  }
+  
+  async function speakElevenLabs(text, speed) {
+    const key = getSetting('el_key', '');
+    if (!key) {
+      setVoiceStatus('Add ElevenLabs API key');
+      speakBrowser(text, speed);  // fallback
+      return;
+    }
+  
+    const voiceId = document.getElementById('voice-el-voice').value;
+    const btn = document.getElementById('btn-voice-stop');
+    const micBtn = document.getElementById('btn-voice-mic');
+  
+    setVoiceStatus('Generating voice...', false);
+    btn.style.display = '';
+    micBtn.style.display = 'none';
+  
+    try {
+      const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`, {
+        method: 'POST',
+        headers: {
+          'xi-api-key': key,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          text,
+          model_id: 'eleven_multilingual_v2',
+          voice_settings: {
+            stability: 0.4,
+            similarity_boost: 0.8,
+            style: 0.6,
+            use_speaker_boost: true
+          }
+        })
+      });
+  
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`ElevenLabs ${res.status}: ${err.substring(0, 100)}`);
+      }
+  
+      const blob = await res.blob();
+      const audioUrl = URL.createObjectURL(blob);
+      _currentAudio = new Audio(audioUrl);
+      _currentAudio.playbackRate = speed;
+  
+      _currentAudio.onplay = () => {
+        _isSpeaking = true;
+        setVoiceStatus('Speaking...', true);
+      };
+  
+      _currentAudio.onended = () => {
+        _isSpeaking = false;
+        btn.style.display = 'none';
+        micBtn.style.display = '';
+        setVoiceStatus('Tap mic to speak');
+        URL.revokeObjectURL(audioUrl);
+        _currentAudio = null;
+      };
+  
+      _currentAudio.onerror = () => {
+        _isSpeaking = false;
+        btn.style.display = 'none';
+        micBtn.style.display = '';
+        setVoiceStatus('Audio playback error');
+        _currentAudio = null;
+      };
+  
+      await _currentAudio.play();
+  
+    } catch (e) {
+      console.warn('ElevenLabs error:', e);
+      setVoiceStatus('ElevenLabs failed, using browser voice');
+      btn.style.display = 'none';
+      micBtn.style.display = '';
+      speakBrowser(text, speed);  // fallback
+    }
+  }
+  
+  function stopVoiceSpeaking() {
+    // Stop browser speech
+    if ('speechSynthesis' in window) speechSynthesis.cancel();
+  
+    // Stop ElevenLabs audio
+    if (_currentAudio) {
+      _currentAudio.pause();
+      _currentAudio.currentTime = 0;
+      _currentAudio = null;
+    }
+  
+    _isSpeaking = false;
+    document.getElementById('btn-voice-stop').style.display = 'none';
+    document.getElementById('btn-voice-mic').style.display = '';
+    setVoiceStatus('Tap mic to speak');
+  }
 // ═══════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════
