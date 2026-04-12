@@ -492,6 +492,7 @@ body {
           <span class="toolbar-label" id="toolbar-chunks-label">0 chunks</span>
         </div>
         <div style="flex:1"></div>
+        <button class="btn-secondary" id="btn-bg-embed" onclick="startBackgroundEmbedding()" style="padding:0.25rem 0.6rem;font-size:0.7rem;display:none" title="Embed chunks in background for semantic search">▶ Embed</button>
         <button class="btn-secondary" onclick="exportCurrentChat()" style="padding:0.25rem 0.6rem;font-size:0.7rem;">Export</button>
       </div>
 
@@ -796,18 +797,27 @@ class VectorStore {
       }
     });
 if (embeddingReady && this.chunks.length > 0) {
-      const prevCount = this.embeddings.length;
-      if (prevCount === 0) {
-        // Full compute
-        await this.computeEmbeddings();
+      const EMBED_THRESHOLD = 5000;
+      if (this.chunks.length <= EMBED_THRESHOLD) {
+        const prevCount = this.embeddings.length;
+        if (prevCount === 0) {
+          await this.computeEmbeddings();
+        } else {
+          await this.computeEmbeddingsFrom(prevCount);
+        }
+        await saveEmbeddings(this.chunks, this.embeddings);
       } else {
-        // Incremental — only embed new chunks
-        await this.computeEmbeddingsFrom(prevCount);
+        // Too large for blocking embed — switch to keyword, offer background option
+        setEmbedStatus('', `⚡ ${this.chunks.length.toLocaleString()} chunks — keyword mode`);
+        this.embeddings = [];
+        // Auto-switch toolbar to keyword
+        const modeEl = document.getElementById('toolbar-search-mode');
+        if (modeEl) { modeEl.value = 'keyword'; setSetting('search_mode', 'keyword'); }
+        this._pendingEmbedStart = this.embeddings.length;
       }
-      await saveEmbeddings(this.chunks, this.embeddings);
     }
     updateChunkCount();
-  }
+    }
 
 async computeEmbeddings() {
     try {
@@ -866,38 +876,131 @@ async computeEmbeddingsFrom(startIdx) {
     return dot / (Math.sqrt(na) * Math.sqrt(nb));
   }
 
-  keywordScore(query, text) {
-    const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-    const lower = text.toLowerCase();
-    let score = 0;
-    terms.forEach(t => { score += (lower.match(new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length; });
-    return score / Math.max(1, terms.length);
-  }
+// BM25 scoring — proper relevance ranking for large corpora
+  _bm25Cache = null;
 
-  async search(query, topK = 3, mode = 'hybrid') {
-    if (!this.chunks.length) return [];
+  _buildBM25Index() {
+    if (this._bm25Cache && this._bm25Cache.size === this.chunks.length) return;
+    const docLengths = [];
+    const tokenizedDocs = [];
+    const df = {};  // document frequency per term
+    let totalLength = 0;
 
-    let results = this.chunks.map((chunk, idx) => {
-      let sem = 0, kw = this.keywordScore(query, chunk.text);
-      return { chunk, sem, kw, idx };
-    });
-
-    if ((mode === 'semantic' || mode === 'hybrid') && embeddingReady && this.embeddings.length === this.chunks.length) {
-      try {
-        const qEmb = await embeddingModel(query, { pooling: 'mean', normalize: true });
-        const qVec = Array.from(qEmb.data);
-        results.forEach(r => { r.sem = this.cosineSim(qVec, this.embeddings[r.idx]); });
-      } catch {}
+    for (let i = 0; i < this.chunks.length; i++) {
+      const tokens = this.chunks[i].text.toLowerCase().split(/\W+/).filter(Boolean);
+      tokenizedDocs.push(tokens);
+      docLengths.push(tokens.length);
+      totalLength += tokens.length;
+      const seen = new Set();
+      tokens.forEach(t => { if (!seen.has(t)) { df[t] = (df[t] || 0) + 1; seen.add(t); } });
     }
 
-    results.forEach(r => {
-      if (mode === 'hybrid') r.score = (r.sem * 0.7) + (r.kw * 0.3);
-      else if (mode === 'semantic') r.score = r.sem;
-      else r.score = r.kw;
-    });
-
-    return results.sort((a, b) => b.score - a.score).slice(0, topK).map(r => r.chunk);
+    this._bm25Cache = {
+      size: this.chunks.length,
+      docs: tokenizedDocs,
+      lengths: docLengths,
+      avgLen: totalLength / Math.max(1, this.chunks.length),
+      df,
+      n: this.chunks.length
+    };
   }
+
+      keywordScore(query, text, docIdx) {
+        // If no index yet or called without index, fallback to simple match
+        if (!this._bm25Cache || docIdx === undefined) {
+          const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+          const lower = text.toLowerCase();
+          let score = 0;
+          terms.forEach(t => { score += (lower.match(new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length; });
+          return score / Math.max(1, terms.length);
+        }
+    
+        const { docs, lengths, avgLen, df, n } = this._bm25Cache;
+        const k1 = 1.5, b = 0.75;
+        const queryTerms = query.toLowerCase().split(/\W+/).filter(Boolean);
+        const docTokens = docs[docIdx];
+        const docLen = lengths[docIdx];
+        let score = 0;
+    
+        // Count term frequencies in this doc
+        const tf = {};
+        docTokens.forEach(t => { tf[t] = (tf[t] || 0) + 1; });
+    
+        for (const term of queryTerms) {
+          const termTf = tf[term] || 0;
+          if (termTf === 0) continue;
+          const termDf = df[term] || 0;
+          const idf = Math.log((n - termDf + 0.5) / (termDf + 0.5) + 1);
+          const tfNorm = (termTf * (k1 + 1)) / (termTf + k1 * (1 - b + b * (docLen / avgLen)));
+          score += idf * tfNorm;
+        }
+        return score;
+      }
+
+      async search(query, topK = 3, mode = 'hybrid') {
+          if (!this.chunks.length) return [];
+      
+          const hasEmbeddings = embeddingReady && this.embeddings.length === this.chunks.length;
+      
+          // Force keyword mode if no embeddings available
+          if ((mode === 'semantic' || mode === 'hybrid') && !hasEmbeddings) {
+            mode = 'keyword';
+          }
+      
+          // Build BM25 index once (fast — only tokenization)
+          if (mode === 'keyword' || mode === 'hybrid') {
+            this._buildBM25Index();
+          }
+      
+          // For large datasets with keyword mode: use BM25 pre-filter
+          // Score all docs with BM25 first, then only compute embeddings on top candidates
+          const LARGE_THRESHOLD = 5000;
+          const isLarge = this.chunks.length > LARGE_THRESHOLD;
+      
+          let results;
+      
+          if (isLarge && mode === 'hybrid' && hasEmbeddings) {
+            // Two-phase: BM25 narrows to top 50, then re-rank with semantic
+            this._buildBM25Index();
+            let candidates = this.chunks.map((chunk, idx) => ({
+              chunk, idx, kw: this.keywordScore(query, chunk.text, idx), sem: 0
+            }));
+            candidates.sort((a, b) => b.kw - a.kw);
+            candidates = candidates.slice(0, 50);  // narrow
+      
+            try {
+              const qEmb = await embeddingModel(query, { pooling: 'mean', normalize: true });
+              const qVec = Array.from(qEmb.data);
+              candidates.forEach(r => { r.sem = this.cosineSim(qVec, this.embeddings[r.idx]); });
+            } catch {}
+      
+            candidates.forEach(r => { r.score = (r.sem * 0.6) + (r.kw * 0.4); });
+            results = candidates;
+      
+          } else {
+            results = this.chunks.map((chunk, idx) => ({
+              chunk, idx,
+              kw: (mode !== 'semantic') ? this.keywordScore(query, chunk.text, idx) : 0,
+              sem: 0
+            }));
+      
+            if ((mode === 'semantic' || mode === 'hybrid') && hasEmbeddings) {
+              try {
+                const qEmb = await embeddingModel(query, { pooling: 'mean', normalize: true });
+                const qVec = Array.from(qEmb.data);
+                results.forEach(r => { r.sem = this.cosineSim(qVec, this.embeddings[r.idx]); });
+              } catch {}
+            }
+      
+            results.forEach(r => {
+              if (mode === 'hybrid') r.score = (r.sem * 0.7) + (r.kw * 0.3);
+              else if (mode === 'semantic') r.score = r.sem;
+              else r.score = r.kw;
+            });
+          }
+      
+          return results.sort((a, b) => b.score - a.score).slice(0, topK).map(r => r.chunk);
+        }
 
   clear() { this.chunks = []; this.embeddings = []; updateChunkCount(); }
 }
@@ -976,8 +1079,9 @@ function updateChunkCount() {
     const cols = {};
     vectorStore.chunks.forEach(c => { const col = c.metadata?.collection || 'Default'; cols[col] = (cols[col]||0)+1; });
     ds.innerHTML = Object.entries(cols).map(([n,c]) => `<div>${escapeHtml(n)}: ${c} chunks</div>`).join('');
+    }
+    showEmbedButton();
   }
-}
 
 // ═══════════════════════════════════════════════
 // CONVERSATIONS
@@ -1585,7 +1689,82 @@ async function loadGitHubDataset() {
     setLoadBtn('load-github', false);
   }
 }
-
+// ═══════════════════════════════════════════════
+// BACKGROUND EMBEDDING (for large datasets)
+// ═══════════════════════════════════════════════
+      let _bgEmbedding = false;
+      
+      function showEmbedButton() {
+        const btn = document.getElementById('btn-bg-embed');
+        if (btn && vectorStore.chunks.length > 5000 && vectorStore.embeddings.length < vectorStore.chunks.length && embeddingReady) {
+          btn.style.display = '';
+        }
+      }
+      
+      async function startBackgroundEmbedding() {
+        if (_bgEmbedding || !embeddingReady) return;
+        _bgEmbedding = true;
+      
+        const btn = document.getElementById('btn-bg-embed');
+        btn.textContent = '⏸ Stop';
+        btn.onclick = stopBackgroundEmbedding;
+      
+        const total = vectorStore.chunks.length;
+        const startFrom = vectorStore.embeddings.length;
+        if (vectorStore.embeddings.length === 0) {
+          vectorStore.embeddings = new Array(total).fill(null);
+        }
+      
+        const BATCH = 16;
+        const PAUSE_MS = 50;  // breathing room for UI
+      
+        for (let start = startFrom; start < total; start += BATCH) {
+          if (!_bgEmbedding) break;  // user stopped
+      
+          const end = Math.min(start + BATCH, total);
+          try {
+            const batchTexts = vectorStore.chunks.slice(start, end).map(c => c.text);
+            const batchEmb = await embeddingModel(batchTexts, { pooling: 'mean', normalize: true });
+            const dim = batchEmb.dims[batchEmb.dims.length - 1];
+            for (let j = 0; j < batchTexts.length; j++) {
+              vectorStore.embeddings[start + j] = Array.from(batchEmb.data.slice(j * dim, (j + 1) * dim));
+            }
+          } catch (e) {
+            console.warn('BG embed batch failed:', e);
+          }
+      
+          const done = Math.min(end, total);
+          const pct = Math.round((done / total) * 100);
+          setEmbedStatus('loading', `Embedding ${done.toLocaleString()}/${total.toLocaleString()} (${pct}%)`);
+          btn.textContent = `⏸ ${pct}%`;
+      
+          // Save checkpoint every 500 chunks
+          if (done % 500 === 0 || done === total) {
+            await saveEmbeddings(vectorStore.chunks, vectorStore.embeddings);
+          }
+      
+          await new Promise(r => setTimeout(r, PAUSE_MS));
+        }
+      
+        // Clean up nulls if stopped early
+        const completed = vectorStore.embeddings.filter(e => e !== null).length;
+        if (completed === total) {
+          setEmbedStatus('ready', `✓ ${total.toLocaleString()} indexed`);
+          const modeEl = document.getElementById('toolbar-search-mode');
+          if (modeEl && modeEl.value === 'keyword') { modeEl.value = 'hybrid'; setSetting('search_mode', 'hybrid'); }
+        } else {
+          setEmbedStatus('', `⚡ ${completed.toLocaleString()}/${total.toLocaleString()} embedded`);
+        }
+      
+        btn.textContent = completed === total ? '✓ Done' : '▶ Resume';
+        btn.onclick = startBackgroundEmbedding;
+        _bgEmbedding = false;
+        await saveEmbeddings(vectorStore.chunks, vectorStore.embeddings);
+      }
+      
+      function stopBackgroundEmbedding() {
+        _bgEmbedding = false;
+      }
 // ═══════════════════════════════════════════════
 // DATA MANAGEMENT
 // ═══════════════════════════════════════════════
