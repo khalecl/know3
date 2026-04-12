@@ -423,7 +423,35 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text3); }
-/* ── BRAND ATTRIBUTION (integrity-linked) ── */
+/* ── FOLLOW-UP CHIPS ── */
+.followup-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+  animation: msgIn 0.4s ease-out;
+}
+.followup-chip {
+  padding: 0.35rem 0.7rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 0.73rem;
+  color: var(--text2);
+  cursor: pointer;
+  transition: all var(--transition);
+  font-family: var(--sans);
+  max-width: 280px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.followup-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+  /* ── BRAND ATTRIBUTION (integrity-linked) ── */
 .k3-brand {
   font-size: 0.6rem;
   color: var(--text3);
@@ -771,15 +799,15 @@ const DEFAULT_SYSTEM_PROMPT = `You are a helpful assistant. When context is prov
 
 const PROVIDERS = {
   ollama:     { name: 'Ollama',      stream: true,  fields: ['url','model','key'] },
-  google:     { name: 'Gemini',      stream: false, fields: ['key','model'] },
+  google:     { name: 'Gemini',      stream: true,  fields: ['key','model'] },
   groq:       { name: 'Groq',        stream: true,  fields: ['key','model'] },
-  together:   { name: 'Together',    stream: false, fields: ['key','model'] },
-  github:     { name: 'GitHub',      stream: false, fields: ['key','model'] },
-  openrouter: { name: 'OpenRouter',  stream: false, fields: ['key','model'] },
-  mistral:    { name: 'Mistral',     stream: false, fields: ['key','model'] },
-  deepseek:   { name: 'DeepSeek',    stream: false, fields: ['key','model'] },
-  openai:     { name: 'OpenAI',      stream: false, fields: ['key','model'] },
-  anthropic:  { name: 'Anthropic',   stream: false, fields: ['key','model'] },
+  together:   { name: 'Together',    stream: true,  fields: ['key','model'] },
+  github:     { name: 'GitHub',      stream: true,  fields: ['key','model'] },
+  openrouter: { name: 'OpenRouter',  stream: true,  fields: ['key','model'] },
+  mistral:    { name: 'Mistral',     stream: true,  fields: ['key','model'] },
+  deepseek:   { name: 'DeepSeek',    stream: true,  fields: ['key','model'] },
+  openai:     { name: 'OpenAI',      stream: true,  fields: ['key','model'] },
+  anthropic:  { name: 'Anthropic',   stream: true,  fields: ['key','model'] },
 };
 
 // ═══════════════════════════════════════════════
@@ -1314,7 +1342,8 @@ async function sendMessage() {
   addMessage('user', q);
 
   isGenerating = true;
-  document.getElementById('btn-send').disabled = true;
+    document.getElementById('btn-send').disabled = true;
+    clearFollowUpChips();
 
   const ragEnabled = document.getElementById('toolbar-rag-toggle').checked;
   const topK = parseInt(document.getElementById('toolbar-topk').value) || 3;
@@ -1333,22 +1362,29 @@ async function sendMessage() {
 
   showThinking();
 
-  try {
-    const answer = await queryInference(q, context);
-    removeThinking();
-    if (currentStreamingIndex >= 0) {
-      // Already streamed — just save final
-      const conv = conversations[currentConversationId];
-      conv.messages[currentStreamingIndex].sources = sources.length ? sources : null;
-      saveConversations();
-      renderChat();
-    } else {
-      addMessage('assistant', answer, sources.length ? sources : null);
-    }
-  } catch (e) {
-    removeThinking();
-    addMessage('assistant', `❌ Error: ${e.message}`);
-  }
+    let finalAnswer = '';
+      try {
+        const answer = await queryInference(q, context);
+        finalAnswer = answer || '';
+        removeThinking();
+        if (currentStreamingIndex >= 0) {
+          // Already streamed — just save final
+          const conv = conversations[currentConversationId];
+          conv.messages[currentStreamingIndex].sources = sources.length ? sources : null;
+          finalAnswer = conv.messages[currentStreamingIndex].content || finalAnswer;
+          saveConversations();
+          renderChat();
+        } else {
+          addMessage('assistant', answer, sources.length ? sources : null);
+        }
+        // Show contextual follow-up suggestions
+        if (finalAnswer && finalAnswer.length > 20) {
+          renderFollowUpChips(q, finalAnswer);
+        }
+      } catch (e) {
+        removeThinking();
+        addMessage('assistant', `❌ Error: ${e.message}`);
+      }
 
   currentStreamingIndex = -1;
   isGenerating = false;
@@ -1360,6 +1396,234 @@ function quickPrompt(text) {
   sendMessage();
 }
 
+function generateFollowUps(query, answer) {
+  // Extract key terms from the answer for smart suggestions
+  const stopWords = new Set(['the','a','an','is','are','was','were','be','been','being','have','has','had',
+    'do','does','did','will','would','could','should','may','might','shall','can','need','must',
+    'it','its','this','that','these','those','i','you','he','she','we','they','me','him','her',
+    'us','them','my','your','his','our','their','what','which','who','whom','where','when','how',
+    'not','no','nor','but','or','and','if','then','so','than','too','very','just','also','of',
+    'in','to','for','with','on','at','from','by','as','into','about','between','through','after',
+    'before','above','below','up','down','out','off','over','under','more','most','other','some',
+    'such','only','own','same','all','both','each','few','many','any','much','here','there']);
+
+  // Get meaningful noun phrases / terms from the answer
+  const words = answer.replace(/[#*_`~\[\](){}|<>]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 3 && !stopWords.has(w.toLowerCase()))
+    .map(w => w.replace(/[^a-zA-Z0-9-]/g, ''));
+
+  // Count frequency
+  const freq = {};
+  words.forEach(w => {
+    const lower = w.toLowerCase();
+    freq[lower] = (freq[lower] || 0) + 1;
+  });
+
+  // Get top terms by frequency (exclude query terms to avoid repetition)
+  const queryLower = query.toLowerCase();
+  const topTerms = Object.entries(freq)
+    .filter(([term]) => !queryLower.includes(term))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([term]) => term);
+
+  // Generate diverse follow-up templates
+  const templates = [];
+
+  if (topTerms.length >= 1) {
+    templates.push(`Tell me more about ${topTerms[0]}`);
+  }
+  if (topTerms.length >= 2) {
+    templates.push(`How does ${topTerms[0]} relate to ${topTerms[1]}?`);
+  }
+  templates.push(`Can you give a practical example?`);
+  templates.push(`Summarize the key takeaways`);
+  if (topTerms.length >= 3) {
+    templates.push(`Compare ${topTerms[1]} and ${topTerms[2]}`);
+  }
+  templates.push(`What are the limitations or risks?`);
+  templates.push(`Explain this in simpler terms`);
+
+  // Pick 3 diverse ones
+  const picks = [];
+  const used = new Set();
+  // Always try to include a term-specific one first
+  for (const t of templates) {
+    if (picks.length >= 3) break;
+    if (t.includes(topTerms[0]) || t.includes(topTerms[1] || '')) {
+      picks.push(t);
+      used.add(t);
+    }
+  }
+  // Fill remaining with generic
+  for (const t of templates) {
+    if (picks.length >= 3) break;
+    if (!used.has(t)) picks.push(t);
+  }
+
+  return picks.slice(0, 3);
+}
+
+function renderFollowUpChips(query, answer) {
+  const chips = generateFollowUps(query, answer);
+  if (!chips.length) return;
+
+  const container = document.getElementById('chat-messages');
+  const chipsDiv = document.createElement('div');
+  chipsDiv.className = 'followup-chips';
+  chipsDiv.id = 'active-followups';
+  chipsDiv.innerHTML = chips.map(c =>
+    `<span class="followup-chip" onclick="useFollowUp(this)" title="${escapeHtml(c)}">${escapeHtml(c)}</span>`
+  ).join('');
+  container.appendChild(chipsDiv);
+  container.scrollTop = container.scrollHeight;
+}
+
+function useFollowUp(el) {
+  const text = el.getAttribute('title') || el.textContent;
+  // Remove chips
+  document.getElementById('active-followups')?.remove();
+  document.getElementById('chat-input').value = text;
+  sendMessage();
+}
+
+function clearFollowUpChips() {
+  document.getElementById('active-followups')?.remove();
+}
+// ═══════════════════════════════════════════════
+// STREAMING HELPERS
+// ═══════════════════════════════════════════════
+
+// Prepare an empty assistant bubble for streaming into
+function beginStreamBubble() {
+  const conv = conversations[currentConversationId];
+  conv.messages.push({ role: 'assistant', content: '', sources: null, timestamp: Date.now() });
+  saveConversations();
+  removeThinking();
+  renderChat();
+  currentStreamingIndex = conv.messages.length - 1;
+}
+
+// Generic SSE reader for OpenAI-compatible endpoints
+async function readSSEStream(response) {
+  beginStreamBubble();
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let full = '';
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split('\n');
+    buffer = lines.pop(); // keep incomplete line in buffer
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || !trimmed.startsWith('data: ')) continue;
+      const payload = trimmed.slice(6);
+      if (payload === '[DONE]') continue;
+      try {
+        const json = JSON.parse(payload);
+        const token = json.choices?.[0]?.delta?.content || '';
+        if (token) { full += token; updateStreamBubble(full); }
+      } catch {}
+    }
+  }
+  return full;
+}
+
+// Gemini SSE reader (different format)
+async function readGeminiStream(response) {
+  beginStreamBubble();
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let full = '';
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || !trimmed.startsWith('data: ')) continue;
+      const payload = trimmed.slice(6);
+      if (payload === '[DONE]') continue;
+      try {
+        const json = JSON.parse(payload);
+        const text = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        if (text) { full += text; updateStreamBubble(full); }
+      } catch {}
+    }
+  }
+  return full;
+}
+
+// Anthropic SSE reader (event: type + data: json format)
+async function readAnthropicStream(response) {
+  beginStreamBubble();
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let full = '';
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data: ')) continue;
+      try {
+        const json = JSON.parse(trimmed.slice(6));
+        if (json.type === 'content_block_delta' && json.delta?.text) {
+          full += json.delta.text;
+          updateStreamBubble(full);
+        }
+      } catch {}
+    }
+  }
+  return full;
+}
+
+// Ollama streaming reader (newline-delimited JSON, not SSE)
+async function readOllamaStream(response) {
+  beginStreamBubble();
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let full = '';
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const json = JSON.parse(line);
+        if (json.response) { full += json.response; updateStreamBubble(full); }
+      } catch {}
+    }
+  }
+  return full;
+}
 // ═══════════════════════════════════════════════
 // INFERENCE
 // ═══════════════════════════════════════════════
@@ -1379,7 +1643,7 @@ async function queryInference(query, context) {
   const provider = getProvider();
   const temp = getTemp();
   const { system, messages } = buildMessages(query, context);
-  const streaming = getSetting('streaming', 'true') === 'true';
+  const doStream = getSetting('streaming', 'true') === 'true';
 
   // ── Ollama ──
   if (provider === 'ollama') {
@@ -1387,98 +1651,16 @@ async function queryInference(query, context) {
     const model = getSetting('ollama_model', 'mistral');
     const prompt = system + '\n\n' + messages[0].content;
 
-    if (streaming) {
-      const res = await fetch(`${url}/api/generate`, {
-        method: 'POST',
-        body: JSON.stringify({ model, prompt, temperature: temp, stream: true })
-      });
-      if (!res.ok) throw new Error(`Ollama: ${res.status}`);
-      // Create empty assistant message for streaming
-      const conv = conversations[currentConversationId];
-      conv.messages.push({ role: 'assistant', content: '', sources: null, timestamp: Date.now() });
-      saveConversations();
-      removeThinking();
-      renderChat();
-      currentStreamingIndex = conv.messages.length - 1;
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let full = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        for (const line of decoder.decode(value, { stream: true }).trim().split('\n')) {
-          try { const j = JSON.parse(line); if (j.response) { full += j.response; updateStreamBubble(full); } } catch {}
-        }
-      }
-      return full;
-    } else {
-      const res = await fetch(`${url}/api/generate`, {
-        method: 'POST',
-        body: JSON.stringify({ model, prompt, temperature: temp, stream: false })
-      });
-      if (!res.ok) throw new Error(`Ollama: ${res.status}`);
-      return (await res.json()).response || 'No response';
-    }
-  }
-
-  // ── OpenAI-compatible (Groq, Together, GitHub, OpenRouter, Mistral, DeepSeek, OpenAI) ──
-  const openaiCompatible = {
-    groq:       { url: 'https://api.groq.com/openai/v1/chat/completions',              keyField: 'groq_key',       modelField: 'groq_model',       canStream: true },
-    together:   { url: 'https://api.together.xyz/v1/chat/completions',                  keyField: 'together_key',   modelField: 'together_model',   canStream: false },
-    github:     { url: 'https://models.inference.ai.azure.com/chat/completions',        keyField: 'github_key',     modelField: 'github_model',     canStream: false },
-    openrouter: { url: 'https://openrouter.ai/api/v1/chat/completions',                 keyField: 'openrouter_key', modelField: 'openrouter_model', canStream: false },
-    mistral:    { url: 'https://api.mistral.ai/v1/chat/completions',                    keyField: 'mistral_key',    modelField: 'mistral_model',    canStream: false },
-    deepseek:   { url: 'https://api.deepseek.com/v1/chat/completions',                  keyField: 'deepseek_key',   modelField: 'deepseek_model',   canStream: false },
-    openai:     { url: 'https://api.openai.com/v1/chat/completions',                    keyField: 'openai_key',     modelField: 'openai_model',     canStream: false },
-  };
-
-  if (openaiCompatible[provider]) {
-    const cfg = openaiCompatible[provider];
-    const key = getSetting(cfg.keyField, '');
-    if (!key) throw new Error(`Add API key in Settings → Provider`);
-    const model = getSetting(cfg.modelField, '');
-    const headers = { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' };
-    if (provider === 'openrouter') headers['HTTP-Referer'] = 'https://khalecl.github.io/know3';
-    const doStream = streaming && cfg.canStream;
-
-    const body = {
-      model,
-      messages: [{ role: 'system', content: system }, ...messages],
-      temperature: temp,
-      stream: doStream
-    };
-
-    const res = await fetch(cfg.url, { method: 'POST', headers, body: JSON.stringify(body) });
-    if (!res.ok) throw new Error(`${PROVIDERS[provider].name}: ${res.status}`);
+    const res = await fetch(`${url}/api/generate`, {
+      method: 'POST',
+      body: JSON.stringify({ model, prompt, temperature: temp, stream: doStream })
+    });
+    if (!res.ok) throw new Error(`Ollama: ${res.status}`);
 
     if (doStream) {
-      const conv = conversations[currentConversationId];
-      conv.messages.push({ role: 'assistant', content: '', sources: null, timestamp: Date.now() });
-      saveConversations();
-      removeThinking();
-      renderChat();
-      currentStreamingIndex = conv.messages.length - 1;
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let full = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        for (const line of decoder.decode(value, { stream: true }).trim().split('\n')) {
-          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
-            try {
-              const token = JSON.parse(line.slice(6)).choices?.[0]?.delta?.content || '';
-              if (token) { full += token; updateStreamBubble(full); }
-            } catch {}
-          }
-        }
-      }
-      return full;
+      return await readOllamaStream(res);
     } else {
-      const data = await res.json();
-      return data.choices?.[0]?.message?.content || 'No response';
+      return (await res.json()).response || 'No response';
     }
   }
 
@@ -1487,17 +1669,32 @@ async function queryInference(query, context) {
     const key = getSetting('google_key', '');
     if (!key) throw new Error('Add API key in Settings → Provider');
     const model = getSetting('google_model', 'gemini-2.5-flash');
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: system }] },
-        contents: [{ parts: [{ text: messages[0].content }] }],
-        generationConfig: { temperature: temp }
-      })
-    });
-    if (!res.ok) throw new Error(`Gemini: ${res.status}`);
-    return (await res.json()).candidates?.[0]?.content?.parts?.[0]?.text || 'No response';
+
+    if (doStream) {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${key}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: system }] },
+          contents: [{ parts: [{ text: messages[0].content }] }],
+          generationConfig: { temperature: temp }
+        })
+      });
+      if (!res.ok) throw new Error(`Gemini: ${res.status}`);
+      return await readGeminiStream(res);
+    } else {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: system }] },
+          contents: [{ parts: [{ text: messages[0].content }] }],
+          generationConfig: { temperature: temp }
+        })
+      });
+      if (!res.ok) throw new Error(`Gemini: ${res.status}`);
+      return (await res.json()).candidates?.[0]?.content?.parts?.[0]?.text || 'No response';
+    }
   }
 
   // ── Anthropic ──
@@ -1505,16 +1702,67 @@ async function queryInference(query, context) {
     const key = getSetting('anthropic_key', '');
     if (!key) throw new Error('Add API key in Settings → Provider');
     const model = getSetting('anthropic_model', 'claude-3-5-haiku-latest');
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, max_tokens: 2048, system, messages, temperature: temp })
-    });
-    if (!res.ok) throw new Error(`Anthropic: ${res.status}`);
-    return (await res.json()).content?.[0]?.text || 'No response';
+
+    const headers = {
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'Content-Type': 'application/json'
+    };
+    const body = { model, max_tokens: 2048, system, messages, temperature: temp };
+
+    if (doStream) {
+      body.stream = true;
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST', headers, body: JSON.stringify(body)
+      });
+      if (!res.ok) throw new Error(`Anthropic: ${res.status}`);
+      return await readAnthropicStream(res);
+    } else {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST', headers, body: JSON.stringify(body)
+      });
+      if (!res.ok) throw new Error(`Anthropic: ${res.status}`);
+      return (await res.json()).content?.[0]?.text || 'No response';
+    }
   }
 
-  throw new Error('Provider not configured');
+  // ── All OpenAI-compatible providers ──
+  const openaiProviders = {
+    groq:       { url: 'https://api.groq.com/openai/v1/chat/completions',         keyField: 'groq_key',       modelField: 'groq_model' },
+    together:   { url: 'https://api.together.xyz/v1/chat/completions',             keyField: 'together_key',   modelField: 'together_model' },
+    github:     { url: 'https://models.inference.ai.azure.com/chat/completions',   keyField: 'github_key',     modelField: 'github_model' },
+    openrouter: { url: 'https://openrouter.ai/api/v1/chat/completions',            keyField: 'openrouter_key', modelField: 'openrouter_model' },
+    mistral:    { url: 'https://api.mistral.ai/v1/chat/completions',               keyField: 'mistral_key',    modelField: 'mistral_model' },
+    deepseek:   { url: 'https://api.deepseek.com/v1/chat/completions',             keyField: 'deepseek_key',   modelField: 'deepseek_model' },
+    openai:     { url: 'https://api.openai.com/v1/chat/completions',               keyField: 'openai_key',     modelField: 'openai_model' },
+  };
+
+  const cfg = openaiProviders[provider];
+  if (!cfg) throw new Error('Provider not configured');
+
+  const key = getSetting(cfg.keyField, '');
+  if (!key) throw new Error('Add API key in Settings → Provider');
+  const model = getSetting(cfg.modelField, '');
+
+  const headers = { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' };
+  if (provider === 'openrouter') headers['HTTP-Referer'] = 'https://khalecl.github.io/know3';
+
+  const body = {
+    model,
+    messages: [{ role: 'system', content: system }, ...messages],
+    temperature: temp,
+    stream: doStream
+  };
+
+  const res = await fetch(cfg.url, { method: 'POST', headers, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(`${PROVIDERS[provider].name}: ${res.status}`);
+
+  if (doStream) {
+    return await readSSEStream(res);
+  } else {
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content || 'No response';
+  }
 }
 
 // ═══════════════════════════════════════════════
