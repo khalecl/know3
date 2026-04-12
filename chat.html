@@ -6,6 +6,8 @@
 <title>know3 Chat — Semantic RAG</title>
 <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
 <script type="importmap">
 { "imports": { "@xenova/transformers": "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2" } }
 </script>
@@ -423,7 +425,74 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text3); }
-/* ── VOICE COMPANION ── */
+  /* ── MATH / KATEX ── */
+.msg-bubble .katex-display {
+  margin: 0.6rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.4rem 0;
+}
+.msg-bubble .katex-display > .katex {
+  text-align: left;
+}
+.msg-bubble .katex {
+  font-size: 1em;
+  color: var(--text);
+}
+.msg-bubble .katex .mord,
+.msg-bubble .katex .mbin,
+.msg-bubble .katex .mrel,
+.msg-bubble .katex .mop {
+  color: var(--text);
+}
+/* ── MESSAGE ACTIONS ── */
+.msg-actions {
+  display: flex;
+  gap: 0.25rem;
+  opacity: 0;
+  transition: opacity var(--transition);
+  padding: 0 0.3rem;
+}
+.msg:hover .msg-actions { opacity: 1; }
+.msg-action-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text3);
+  font-size: 0.62rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: var(--sans);
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+.msg-action-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+.msg-edit-area {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--accent);
+  color: var(--text);
+  padding: 0.5rem 0.7rem;
+  border-radius: 6px;
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  resize: vertical;
+  min-height: 50px;
+  max-height: 200px;
+  line-height: 1.5;
+}
+.msg-edit-area:focus { outline: none; box-shadow: 0 0 0 2px var(--accent-dim); }
+.msg-edit-actions {
+  display: flex;
+  gap: 0.3rem;
+  margin-top: 0.3rem;
+}
+  
+  /* ── VOICE COMPANION ── */
 .voice-fab {
   position: fixed;
   bottom: 5.5rem;
@@ -789,7 +858,7 @@ body {
           <div class="input-attachments" id="input-attachments"></div>
           <div class="input-row">
             <input type="file" id="image-input" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none" onchange="handleImageAttach(event)" multiple>
-            <button class="btn-icon" onclick="document.getElementById('image-input').click()" title="Attach image" style="flex-shrink:0">🖼</button>
+            <button class="btn-icon" id="btn-attach-image" onclick="handleImageClick()" title="Attach image" style="flex-shrink:0">🖼</button>            
             <textarea id="chat-input" placeholder="Ask a question..." rows="1"></textarea>
             <button class="btn-primary" id="btn-send" onclick="sendMessage()">Send</button>
         </div>
@@ -1052,17 +1121,70 @@ function escapeHtml(str) {
   return d.innerHTML;
 }
 
-function renderMarkdown(text) {
-  try {
-    if (typeof marked === 'undefined') return escapeHtml(text);
-    const html = marked.parse(text);
-    if (typeof DOMPurify === 'undefined') return html;
-    return DOMPurify.sanitize(html, {
-      ALLOWED_TAGS: ['h1','h2','h3','h4','h5','h6','p','br','strong','em','u','code','pre','blockquote','ul','ol','li','table','thead','tbody','tr','th','td','a','hr','del','sup','sub'],
-      ALLOWED_ATTR: ['href','target']
-    });
-  } catch { return escapeHtml(text); }
+function renderMath(text) {
+  if (typeof katex === 'undefined') return text;
+
+  // Display math: $$...$$ or \[...\]
+  text = text.replace(/\$\$([\s\S]+?)\$\$/g, (_, math) => {
+    try {
+      return '<div class="katex-display">' + katex.renderToString(math.trim(), { displayMode: true, throwOnError: false, trust: true }) + '</div>';
+    } catch { return '$$' + math + '$$'; }
+  });
+  text = text.replace(/\\\[([\s\S]+?)\\\]/g, (_, math) => {
+    try {
+      return '<div class="katex-display">' + katex.renderToString(math.trim(), { displayMode: true, throwOnError: false, trust: true }) + '</div>';
+    } catch { return '\\[' + math + '\\]'; }
+  });
+
+  // Inline math: $...$ (not $$) or \(...\)
+  text = text.replace(/(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)/g, (_, math) => {
+    try {
+      return katex.renderToString(math.trim(), { displayMode: false, throwOnError: false, trust: true });
+    } catch { return '$' + math + '$'; }
+  });
+  text = text.replace(/\\\((.+?)\\\)/g, (_, math) => {
+    try {
+      return katex.renderToString(math.trim(), { displayMode: false, throwOnError: false, trust: true });
+    } catch { return '\\(' + math + '\\)'; }
+  });
+
+  return text;
 }
+
+  function renderMarkdown(text) {
+    try {
+      if (typeof marked === 'undefined') return escapeHtml(text);
+  
+      // Process math FIRST — protect KaTeX output from markdown parser
+      const mathProcessed = renderMath(text);
+  
+      // Protect KaTeX spans from markdown mangling
+      const katexBlocks = [];
+      const protected_ = mathProcessed.replace(/<span class="katex[\s\S]*?<\/span><\/span>/g, (match) => {
+        katexBlocks.push(match);
+        return `%%KATEX_${katexBlocks.length - 1}%%`;
+      });
+      const katexDisplays = [];
+      const protected2 = protected_.replace(/<div class="katex-display">[\s\S]*?<\/div>/g, (match) => {
+        katexDisplays.push(match);
+        return `%%KATEXD_${katexDisplays.length - 1}%%`;
+      });
+  
+      // Run markdown
+      let html = marked.parse(protected2);
+  
+      // Restore KaTeX
+      html = html.replace(/%%KATEXD_(\d+)%%/g, (_, i) => katexDisplays[parseInt(i)] || '');
+      html = html.replace(/%%KATEX_(\d+)%%/g, (_, i) => katexBlocks[parseInt(i)] || '');
+  
+      if (typeof DOMPurify === 'undefined') return html;
+      return DOMPurify.sanitize(html, {
+        ALLOWED_TAGS: ['h1','h2','h3','h4','h5','h6','p','br','strong','em','u','code','pre','blockquote','ul','ol','li','table','thead','tbody','tr','th','td','a','hr','del','sup','sub',
+          'span','div','svg','path','line','rect','circle','g','use','defs','clipPath','style','annotation','math','semantics','mrow','mi','mo','mn','mfrac','msup','msub','mover','munder','msqrt','mtext','mspace','mtable','mtr','mtd'],
+        ALLOWED_ATTR: ['href','target','class','style','xmlns','viewBox','d','width','height','fill','stroke','aria-hidden','role','focusable','preserveAspectRatio','encoding']
+      });
+    } catch { return escapeHtml(text); }
+  }
 
 function getSetting(key, fallback) {
   return localStorage.getItem('k3_' + key) || fallback;
@@ -1543,13 +1665,27 @@ const textContent = m.role === 'assistant' ? renderMarkdown(m.content || '') : e
 // Brand attribution woven into message rendering
     const _br = (i === conv.messages.length - 1 && m.role === 'assistant') 
       ? '<div class="k3-brand">know3 by khalecl</div>' : '';
-    return `<div class="msg ${m.role}">
-      <div class="msg-avatar">${avatar}</div>
-      <div class="msg-content">
-        <div class="msg-bubble">${bubbleContent}${sourcesHtml}${_br}</div>
-        <div class="msg-meta"><span>${time}</span></div>
-      </div>
-    </div>`;
+      const userActions = m.role === 'user' ? `
+            <div class="msg-actions">
+              <button class="msg-action-btn" onclick="resendMessage(${i})" title="Resend this prompt">↻ Resend</button>
+              <button class="msg-action-btn" onclick="editMessage(${i})" title="Edit and resend">✎ Edit</button>
+            </div>` : '';
+      
+          const assistantActions = m.role === 'assistant' ? `
+            <div class="msg-actions">
+              <button class="msg-action-btn" onclick="copyMessage(${i})" title="Copy to clipboard">⧉ Copy</button>
+              <button class="msg-action-btn" onclick="regenerateMessage(${i})" title="Regenerate response">↻ Redo</button>
+            </div>` : '';
+      
+          const actions = userActions + assistantActions;
+      
+          return `<div class="msg ${m.role}" id="msg-${i}">
+            <div class="msg-avatar">${avatar}</div>
+            <div class="msg-content">
+              <div class="msg-bubble" id="bubble-${i}">${bubbleContent}${sourcesHtml}${_br}</div>
+              <div class="msg-meta">${actions}<span>${time}</span></div>
+            </div>
+          </div>`;
   }).join('');
 
   container.scrollTop = container.scrollHeight;
@@ -1764,7 +1900,121 @@ function useFollowUp(el) {
   document.getElementById('chat-input').value = text;
   sendMessage();
 }
+// ═══════════════════════════════════════════════
+// MESSAGE ACTIONS (edit, resend, regenerate, copy)
+// ═══════════════════════════════════════════════
 
+function resendMessage(idx) {
+  const conv = conversations[currentConversationId];
+  if (!conv || !conv.messages[idx]) return;
+  const msg = conv.messages[idx];
+  if (msg.role !== 'user') return;
+
+  // Remove everything from this message onward
+  conv.messages = conv.messages.slice(0, idx);
+  saveConversations();
+  renderChat();
+  renderHistoryList();
+
+  // Re-send the same text
+  document.getElementById('chat-input').value = msg.content || '';
+  // Reattach images if any
+  if (msg.imageHtml) {
+    // Images are stored as base64 in the HTML — for resend we just send text
+    // User can re-attach images manually
+  }
+  sendMessage();
+}
+
+function editMessage(idx) {
+  const conv = conversations[currentConversationId];
+  if (!conv || !conv.messages[idx]) return;
+  const msg = conv.messages[idx];
+  if (msg.role !== 'user') return;
+
+  const bubble = document.getElementById(`bubble-${idx}`);
+  if (!bubble) return;
+
+  const currentText = msg.content || '';
+
+  bubble.innerHTML = `
+    <textarea class="msg-edit-area" id="edit-area-${idx}">${escapeHtml(currentText)}</textarea>
+    <div class="msg-edit-actions">
+      <button class="btn-primary" onclick="submitEdit(${idx})" style="padding:0.3rem 0.7rem;font-size:0.75rem">Send</button>
+      <button class="btn-secondary" onclick="cancelEdit(${idx})" style="padding:0.3rem 0.7rem;font-size:0.75rem">Cancel</button>
+    </div>
+  `;
+
+  const area = document.getElementById(`edit-area-${idx}`);
+  area.focus();
+  area.selectionStart = area.value.length;
+
+  // Enter to submit, Escape to cancel
+  area.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitEdit(idx); }
+    if (e.key === 'Escape') cancelEdit(idx);
+  });
+}
+
+function submitEdit(idx) {
+  const area = document.getElementById(`edit-area-${idx}`);
+  if (!area) return;
+  const newText = area.value.trim();
+  if (!newText) return;
+
+  const conv = conversations[currentConversationId];
+  // Remove this message and everything after it
+  conv.messages = conv.messages.slice(0, idx);
+  saveConversations();
+  renderChat();
+  renderHistoryList();
+
+  // Send the edited text
+  document.getElementById('chat-input').value = newText;
+  sendMessage();
+}
+
+function cancelEdit(idx) {
+  renderChat();  // Re-render to restore original bubble
+}
+
+function regenerateMessage(idx) {
+  const conv = conversations[currentConversationId];
+  if (!conv || !conv.messages[idx]) return;
+  if (conv.messages[idx].role !== 'assistant') return;
+
+  // Find the user message that triggered this response
+  let userIdx = idx - 1;
+  while (userIdx >= 0 && conv.messages[userIdx].role !== 'user') userIdx--;
+  if (userIdx < 0) return;
+
+  const userMsg = conv.messages[userIdx];
+
+  // Remove from the assistant message onward
+  conv.messages = conv.messages.slice(0, idx);
+  saveConversations();
+  renderChat();
+  renderHistoryList();
+
+  // Re-send the original user prompt
+  document.getElementById('chat-input').value = userMsg.content || '';
+  sendMessage();
+}
+
+function copyMessage(idx) {
+  const conv = conversations[currentConversationId];
+  if (!conv || !conv.messages[idx]) return;
+  const text = conv.messages[idx].content || '';
+  navigator.clipboard.writeText(text).then(() => {
+    // Brief visual feedback
+    const btn = document.querySelector(`#msg-${idx} .msg-action-btn`);
+    if (btn) {
+      const orig = btn.textContent;
+      btn.textContent = '✓ Copied';
+      setTimeout(() => { btn.textContent = orig; }, 1500);
+    }
+  });
+}
 function clearFollowUpChips() {
   document.getElementById('active-followups')?.remove();
 }
@@ -1772,8 +2022,97 @@ function clearFollowUpChips() {
   // ═══════════════════════════════════════════════
 // IMAGE ATTACHMENTS
 // ═══════════════════════════════════════════════
-let pendingImages = [];  // { base64, mimeType, name, previewUrl }
+  let pendingImages = [];  // { base64, mimeType, name, previewUrl }
+  
+  // Providers/models that support vision input
+  const VISION_MODELS = {
+    ollama: ['llava', 'llava-llama3', 'llava:13b', 'llava:34b', 'bakllava', 'moondream', 'minicpm-v', 'llama3.2-vision'],
+    google: true,           // All Gemini models support vision
+    openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-4-vision-preview', 'o1', 'o1-mini', 'o1-pro', 'o3', 'o3-mini', 'o4-mini'],
+    anthropic: true,        // All Claude 3+ models support vision
+    groq: ['llama-3.2-11b-vision-preview', 'llama-3.2-90b-vision-preview', 'llava-v1.5-7b-4096-preview', 'meta-llama/llama-4-scout-17b-16e-instruct'],
+    together: ['meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo', 'meta-llama/Llama-3.2-90B-Vision-Instruct-Turbo'],
+    github: ['gpt-4o', 'gpt-4o-mini'],
+    openrouter: true,       // Depends on model — allow and let API reject
+    mistral: ['pixtral-large-latest', 'pixtral-12b-2409'],
+    deepseek: ['deepseek-chat'],  // DeepSeek-V3 supports vision
+  };
+  
+  function isVisionSupported() {
+    const provider = getProvider();
+    const model = getSetting(`${provider}_model`, getSetting('ollama_model', '')).toLowerCase();
+    const supported = VISION_MODELS[provider];
+  
+    if (supported === true) return true;
+    if (!supported || !Array.isArray(supported)) return false;
+  
+    return supported.some(m => model.includes(m.toLowerCase()));
+  }
+  
+  function hasValidApiKey() {
+    const provider = getProvider();
+    if (provider === 'ollama') return true;  // No key needed
+    const keyField = `${provider}_key`;
+    const key = getSetting(keyField, '');
+    return key.length > 5;
+  }
+  
+  function canAttachImages() {
+    if (!isVisionSupported()) return { ok: false, reason: `Current model doesn't support images. Vision models needed.` };
+    if (!hasValidApiKey()) return { ok: false, reason: `Add a valid API key in Settings first.` };
+    return { ok: true };
+  }
 
+      function handleImageClick() {
+        const check = canAttachImages();
+        if (!check.ok) {
+          showImageGateWarning(check.reason);
+          return;
+        }
+        document.getElementById('image-input').click();
+      }
+      
+      function showImageGateWarning(reason) {
+        const provider = getProvider();
+        const model = getSetting(`${provider}_model`, getSetting('ollama_model', ''));
+      
+        // Show inline tooltip-style warning
+        let warning = document.getElementById('image-gate-warning');
+        if (!warning) {
+          warning = document.createElement('div');
+          warning.id = 'image-gate-warning';
+          warning.style.cssText = `
+            position: fixed; bottom: 7rem; left: 50%; transform: translateX(-50%);
+            background: var(--surface2); border: 1px solid var(--danger);
+            color: var(--text); padding: 0.6rem 1rem; border-radius: 8px;
+            font-size: 0.78rem; z-index: 200; max-width: 400px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+            animation: msgIn 0.25s ease-out;
+          `;
+          document.body.appendChild(warning);
+        }
+      
+        let visionHint = '';
+        const provider_ = getProvider();
+        const models = VISION_MODELS[provider_];
+        if (Array.isArray(models)) {
+          visionHint = `<div style="margin-top:0.3rem;font-size:0.7rem;color:var(--text3)">Supported: ${models.slice(0, 4).join(', ')}${models.length > 4 ? '...' : ''}</div>`;
+        }
+      
+        warning.innerHTML = `
+          <div style="color:var(--danger);font-weight:600;margin-bottom:0.2rem">⚠ Image upload unavailable</div>
+          <div style="color:var(--text2)">${escapeHtml(reason)}</div>
+          <div style="font-size:0.7rem;color:var(--text3);margin-top:0.2rem">Provider: ${PROVIDERS[provider_]?.name || provider_} · Model: ${escapeHtml(model)}</div>
+          ${visionHint}
+          <div style="display:flex;gap:0.4rem;margin-top:0.5rem">
+            <button class="btn-secondary" onclick="openSettings();document.getElementById('image-gate-warning')?.remove()" style="font-size:0.72rem;padding:0.3rem 0.6rem">Open Settings</button>
+            <button class="btn-secondary" onclick="this.closest('#image-gate-warning').remove()" style="font-size:0.72rem;padding:0.3rem 0.6rem">Dismiss</button>
+          </div>
+        `;
+      
+        // Auto-dismiss after 8s
+        setTimeout(() => warning?.remove(), 8000);
+      }
 function handleImageAttach(event) {
   const files = Array.from(event.target.files);
   files.forEach(file => {
@@ -2206,11 +2545,24 @@ function saveSettings() {
   closeSettings();
 }
 
-function updateProviderLabel() {
-  const p = getProvider();
-  const model = getSetting(`${p}_model`, getSetting('ollama_model', 'mistral'));
-  document.getElementById('provider-label').textContent = `${PROVIDERS[p]?.name || p} / ${model}`;
-}
+    function updateProviderLabel() {
+      const p = getProvider();
+      const model = getSetting(`${p}_model`, getSetting('ollama_model', 'mistral'));
+      document.getElementById('provider-label').textContent = `${PROVIDERS[p]?.name || p} / ${model}`;
+    
+      // Update image button state
+      const imgBtn = document.getElementById('btn-attach-image');
+      if (imgBtn) {
+        const check = canAttachImages();
+        if (check.ok) {
+          imgBtn.style.opacity = '1';
+          imgBtn.title = 'Attach image';
+        } else {
+          imgBtn.style.opacity = '0.35';
+          imgBtn.title = check.reason;
+        }
+      }
+    }
 
 function resetSystemPrompt() {
   document.getElementById('s-system-prompt').value = DEFAULT_SYSTEM_PROMPT;
@@ -2498,8 +2850,14 @@ function initInput() {
     input.addEventListener('paste', (e) => {
       const items = Array.from(e.clipboardData?.items || []);
       items.forEach(item => {
-        if (item.type.startsWith('image/')) {
-          e.preventDefault();
+            if (item.type.startsWith('image/')) {
+              const check = canAttachImages();
+              if (!check.ok) {
+                e.preventDefault();
+                showImageGateWarning(check.reason);
+                return;
+              }
+              e.preventDefault();
           const file = item.getAsFile();
           if (!file) return;
           const reader = new FileReader();
