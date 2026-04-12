@@ -795,33 +795,70 @@ class VectorStore {
         });
       }
     });
-    if (embeddingReady && this.chunks.length > 0) {
-      await this.computeEmbeddings();
+if (embeddingReady && this.chunks.length > 0) {
+      const prevCount = this.embeddings.length;
+      if (prevCount === 0) {
+        // Full compute
+        await this.computeEmbeddings();
+      } else {
+        // Incremental — only embed new chunks
+        await this.computeEmbeddingsFrom(prevCount);
+      }
       await saveEmbeddings(this.chunks, this.embeddings);
     }
     updateChunkCount();
   }
 
-  async computeEmbeddings() {
+async computeEmbeddings() {
     try {
-      setEmbedStatus('loading', `Indexing ${this.chunks.length} chunks...`);
-      this.embeddings = [];
-      for (let i = 0; i < this.chunks.length; i++) {
-        const emb = await embeddingModel(this.chunks[i].text, { pooling: 'mean', normalize: true });
-        this.embeddings.push(Array.from(emb.data));
-        if (i % 5 === 0) {
-          setEmbedStatus('loading', `Indexing ${i+1}/${this.chunks.length}...`);
-          // Yield to UI thread every 5 chunks to prevent freeze
-          await new Promise(r => setTimeout(r, 0));
+      const total = this.chunks.length;
+      setEmbedStatus('loading', `Indexing 0/${total}...`);
+      this.embeddings = new Array(total);
+      const BATCH = 16;
+      for (let start = 0; start < total; start += BATCH) {
+        const end = Math.min(start + BATCH, total);
+        const batchTexts = this.chunks.slice(start, end).map(c => c.text);
+        // Batch call — transformers.js handles array input
+        const batchEmb = await embeddingModel(batchTexts, { pooling: 'mean', normalize: true });
+        for (let j = 0; j < batchTexts.length; j++) {
+          // batchEmb.data is a flat Float32Array: extract each vector by stride
+          const dim = batchEmb.dims[batchEmb.dims.length - 1];
+          const offset = j * dim;
+          this.embeddings[start + j] = Array.from(batchEmb.data.slice(offset, offset + dim));
         }
+        setEmbedStatus('loading', `Indexing ${end}/${total}...`);
+        await new Promise(r => setTimeout(r, 0));
       }
-      setEmbedStatus('ready', `✓ ${this.chunks.length} indexed`);
+      setEmbedStatus('ready', `✓ ${total} indexed`);
     } catch (e) {
       console.warn('Embedding failed:', e);
       setEmbedStatus('', '⚠ Keyword only');
     }
   }
-
+async computeEmbeddingsFrom(startIdx) {
+    try {
+      const total = this.chunks.length;
+      const newCount = total - startIdx;
+      setEmbedStatus('loading', `Indexing ${newCount} new chunks...`);
+      const BATCH = 16;
+      for (let start = startIdx; start < total; start += BATCH) {
+        const end = Math.min(start + BATCH, total);
+        const batchTexts = this.chunks.slice(start, end).map(c => c.text);
+        const batchEmb = await embeddingModel(batchTexts, { pooling: 'mean', normalize: true });
+        for (let j = 0; j < batchTexts.length; j++) {
+          const dim = batchEmb.dims[batchEmb.dims.length - 1];
+          const offset = j * dim;
+          this.embeddings[start + j] = Array.from(batchEmb.data.slice(offset, offset + dim));
+        }
+        setEmbedStatus('loading', `Indexing ${end - startIdx}/${newCount} new...`);
+        await new Promise(r => setTimeout(r, 0));
+      }
+      setEmbedStatus('ready', `✓ ${total} indexed`);
+    } catch (e) {
+      console.warn('Incremental embedding failed:', e);
+      setEmbedStatus('', '⚠ Keyword only');
+    }
+  }
   cosineSim(a, b) {
     if (!a || !b || a.length !== b.length) return 0;
     let dot = 0, na = 0, nb = 0;
