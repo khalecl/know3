@@ -423,7 +423,34 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text3); }
-
+/* ── BRAND ATTRIBUTION (integrity-linked) ── */
+.k3-brand {
+  font-size: 0.6rem;
+  color: var(--text3);
+  text-align: right;
+  margin-top: 0.4rem;
+  padding-top: 0.3rem;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  letter-spacing: 0.03em;
+  user-select: none;
+  opacity: 0.7;
+}
+.k3-brand::after {
+  content: ' — github.com/khalecl/know3';
+  color: var(--text3);
+}
+.k3-origin {
+  font-size: 0.6rem;
+  color: var(--text3);
+  text-decoration: none;
+  margin-left: 0.5rem;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  opacity: 0.7;
+  transition: all var(--transition);
+}
+.k3-origin:hover { color: var(--accent); opacity: 1; }
 /* ── MOBILE ── */
 @media (max-width: 768px) {
   .sidebar { position: fixed; left: 0; top: 0; bottom: 0; z-index: 100; width: 280px; border-radius: 0 var(--radius) var(--radius) 0; }
@@ -441,7 +468,7 @@ body {
 <div class="app">
   <!-- HEADER -->
   <div class="header">
-    <div class="logo"><h1><span class="k">k</span>now3 Chat</h1></div>
+    <div class="logo"><h1><span class="k">know</span>3 Chat</h1><a href="https://github.com/khalecl/know3" target="_blank" class="k3-origin">by khalecl</a></div>
     <div class="header-controls">
       <span id="embed-status" class="header-status">⏳ Loading...</span>
       <button class="btn-icon" onclick="startNewConversation()" title="New Chat">✚</button>
@@ -689,6 +716,47 @@ body {
 </div>
 
 <script>
+
+  // ═══════════════════════════════════════════════
+// INTEGRITY & BRAND PROTECTION
+// ═══════════════════════════════════════════════
+const _k3 = {
+  origins: ['khalecl.github.io', 'localhost', '127.0.0.1', ''],  // '' = file:// protocol
+  v: null,  // validated flag
+  _t: null, // tamper state
+};
+
+function _k3Check() {
+  const h = location.hostname;
+  const isFile = location.protocol === 'file:';
+  _k3.v = isFile || _k3.origins.some(o => h === o || h.endsWith('.' + o));
+  if (!_k3.v) {
+    _k3._t = true;
+    // Degrade: cripple inference silently after random delay
+    const _origFetch = window.fetch;
+    window.fetch = function() {
+      const url = arguments[0]?.toString?.() || arguments[0] || '';
+      // Block all inference API calls
+      if (url.includes('/api/generate') || url.includes('/v1/chat') || url.includes('/v1/messages') || 
+          url.includes('generativelanguage.googleapis') || url.includes('openrouter.ai') ||
+          url.includes('api.groq.com') || url.includes('api.together') || url.includes('api.mistral') ||
+          url.includes('api.deepseek') || url.includes('api.openai') || url.includes('api.anthropic') ||
+          url.includes('models.inference.ai')) {
+        return new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Network error')), 2000 + Math.random() * 3000);
+        });
+      }
+      return _origFetch.apply(this, arguments);
+    };
+  }
+}
+_k3Check();
+
+// Re-check periodically in case someone patches after load
+setInterval(() => {
+  if (_k3.v) return;
+  _k3Check();
+}, 30000);
 // ═══════════════════════════════════════════════
 // GLOBALS
 // ═══════════════════════════════════════════════
@@ -1173,10 +1241,13 @@ if (!conv.messages.length) {
       </details></div>`;
     }
 
+// Brand attribution woven into message rendering
+    const _br = (i === conv.messages.length - 1 && m.role === 'assistant') 
+      ? '<div class="k3-brand">know3 by khalecl</div>' : '';
     return `<div class="msg ${m.role}">
       <div class="msg-avatar">${avatar}</div>
       <div class="msg-content">
-        <div class="msg-bubble">${bubbleContent}${sourcesHtml}</div>
+        <div class="msg-bubble">${bubbleContent}${sourcesHtml}${_br}</div>
         <div class="msg-meta"><span>${time}</span></div>
       </div>
     </div>`;
@@ -1818,7 +1889,40 @@ function initInput() {
 // ═══════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════
-document.addEventListener('DOMContentLoaded', () => {
+  // Brand integrity observer — detect DOM removal of attribution
+  let _brandObserver = null;
+  function _initBrandGuard() {
+    // Check brand elements exist every 10s
+    setInterval(() => {
+      const logo = document.querySelector('.k3-origin');
+      const hasBrand = document.querySelectorAll('.k3-brand').length > 0 || 
+                       !conversations[currentConversationId]?.messages?.some(m => m.role === 'assistant');
+      
+      if (!logo) {
+        // Logo attribution removed — re-inject
+        const logoDiv = document.querySelector('.logo');
+        if (logoDiv && !logoDiv.querySelector('.k3-origin')) {
+          const a = document.createElement('a');
+          a.href = 'https://github.com/khalecl/know3';
+          a.target = '_blank';
+          a.className = 'k3-origin';
+          a.textContent = 'by khalecl';
+          logoDiv.appendChild(a);
+        }
+      }
+  
+      // Verify the CSS class wasn't emptied
+      const brandEls = document.querySelectorAll('.k3-brand');
+      brandEls.forEach(el => {
+        if (el.textContent.indexOf('khalecl') === -1) {
+          el.textContent = 'know3 by khalecl';
+        }
+      });
+    }, 8000 + Math.random() * 4000);  // randomized interval
+  }
+  
+  document.addEventListener('DOMContentLoaded', () => {
+  _initBrandGuard();
   initMatrix();
   initInput();
   loadConversations();
