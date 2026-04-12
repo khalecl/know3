@@ -423,7 +423,49 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text3); }
-/* ── EMBED PROGRESS BAR ── */
+/* ── IMAGE ATTACHMENT ── */
+.input-attachments {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0 0.2rem;
+  margin-bottom: 0.4rem;
+  flex-wrap: wrap;
+}
+.input-attachments:empty { display: none; }
+.attached-image {
+  position: relative;
+  width: 64px; height: 64px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.attached-image img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+}
+.attached-image .remove-attach {
+  position: absolute; top: 2px; right: 2px;
+  width: 18px; height: 18px;
+  background: rgba(0,0,0,0.7);
+  border: none; border-radius: 50%;
+  color: #fff; font-size: 0.6rem;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+.attached-image:hover .remove-attach { opacity: 1; }
+.msg-image {
+  max-width: 300px;
+  max-height: 240px;
+  border-radius: 6px;
+  margin-top: 0.4rem;
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+.msg-image:hover { border-color: var(--accent); }
+  /* ── EMBED PROGRESS BAR ── */
 .embed-progress {
   position: relative;
   height: 3px;
@@ -598,10 +640,13 @@ body {
       </div>
 
       <!-- Input -->
-      <div class="input-area">
-        <div class="input-row">
-          <textarea id="chat-input" placeholder="Ask a question..." rows="1"></textarea>
-          <button class="btn-primary" id="btn-send" onclick="sendMessage()">Send</button>
+        <div class="input-area">
+          <div class="input-attachments" id="input-attachments"></div>
+          <div class="input-row">
+            <input type="file" id="image-input" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none" onchange="handleImageAttach(event)" multiple>
+            <button class="btn-icon" onclick="document.getElementById('image-input').click()" title="Attach image" style="flex-shrink:0">🖼</button>
+            <textarea id="chat-input" placeholder="Ask a question..." rows="1"></textarea>
+            <button class="btn-primary" id="btn-send" onclick="sendMessage()">Send</button>
         </div>
         <div class="input-hint">
           <span>Enter to send · Shift+Enter for newline</span>
@@ -1328,8 +1373,11 @@ if (!conv.messages.length) {
   container.innerHTML = conv.messages.map((m, i) => {
     const time = new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const avatar = m.role === 'user' ? 'U' : 'K';
-    const bubbleContent = m.role === 'assistant' ? renderMarkdown(m.content || '') : escapeHtml(m.content);
+const textContent = m.role === 'assistant' ? renderMarkdown(m.content || '') : escapeHtml(m.content || '');
+    const imgContent = m.imageHtml || '';
+    const bubbleContent = textContent + imgContent;
 
+    
     let sourcesHtml = '';
     if (m.sources?.length) {
       sourcesHtml = `<div class="msg-sources"><details><summary>Sources (${m.sources.length})</summary>
@@ -1352,17 +1400,17 @@ if (!conv.messages.length) {
   container.scrollTop = container.scrollHeight;
 }
 
-function addMessage(role, content, sources = null) {
-  const conv = conversations[currentConversationId];
-  if (!conv) return;
-  conv.messages.push({ role, content, sources, timestamp: Date.now() });
-  if (role === 'user' && conv.messages.filter(m => m.role === 'user').length === 1) {
-    conv.title = content.substring(0, 40) + (content.length > 40 ? '…' : '');
-  }
-  saveConversations();
-  renderChat();
-  renderHistoryList();
-}
+    function addMessage(role, content, sources = null, imageHtml = null) {
+      const conv = conversations[currentConversationId];
+      if (!conv) return;
+      conv.messages.push({ role, content, sources, imageHtml: imageHtml || null, timestamp: Date.now() });
+      if (role === 'user' && conv.messages.filter(m => m.role === 'user').length === 1) {
+        conv.title = (content || 'Image query').substring(0, 40) + ((content||'').length > 40 ? '…' : '');
+      }
+      saveConversations();
+      renderChat();
+      renderHistoryList();
+    }
 
 // ═══════════════════════════════════════════════
 // STREAMING UPDATE
@@ -1403,11 +1451,17 @@ function updateStreamBubble(text) {
 async function sendMessage() {
   const input = document.getElementById('chat-input');
   const q = input.value.trim();
-  if (!q || isGenerating) return;
+  if ((!q && !pendingImages.length) || isGenerating) return;
 
   input.value = '';
   input.style.height = 'auto';
-  addMessage('user', q);
+
+  // Capture images before clearing
+  const images = [...pendingImages];
+  const imageHtml = images.map(img => `<img class="msg-image" src="data:${img.mimeType};base64,${img.base64}" onclick="window.open(this.src)">`).join('');
+  clearAttachments();
+
+  addMessage('user', q, null, imageHtml);
 
   isGenerating = true;
     document.getElementById('btn-send').disabled = true;
@@ -1432,7 +1486,7 @@ async function sendMessage() {
 
     let finalAnswer = '';
       try {
-        const answer = await queryInference(q, context);
+        const answer = await queryInference(q, context, images);
         finalAnswer = answer || '';
         removeThinking();
         if (currentStreamingIndex >= 0) {
@@ -1558,6 +1612,88 @@ function useFollowUp(el) {
 
 function clearFollowUpChips() {
   document.getElementById('active-followups')?.remove();
+}
+
+  // ═══════════════════════════════════════════════
+// IMAGE ATTACHMENTS
+// ═══════════════════════════════════════════════
+let pendingImages = [];  // { base64, mimeType, name, previewUrl }
+
+function handleImageAttach(event) {
+  const files = Array.from(event.target.files);
+  files.forEach(file => {
+    if (!file.type.startsWith('image/')) return;
+    if (file.size > 20 * 1024 * 1024) { alert(`${file.name} is too large (max 20MB)`); return; }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result.split(',')[1];
+      const entry = {
+        base64,
+        mimeType: file.type,
+        name: file.name,
+        previewUrl: URL.createObjectURL(file)
+      };
+      pendingImages.push(entry);
+      renderAttachmentPreviews();
+    };
+    reader.readAsDataURL(file);
+  });
+  // Reset input so same file can be re-selected
+  event.target.value = '';
+}
+
+function renderAttachmentPreviews() {
+  const container = document.getElementById('input-attachments');
+  container.innerHTML = pendingImages.map((img, i) => `
+    <div class="attached-image">
+      <img src="${img.previewUrl}" alt="${escapeHtml(img.name)}">
+      <button class="remove-attach" onclick="removeAttachment(${i})">✕</button>
+    </div>
+  `).join('');
+}
+
+function removeAttachment(index) {
+  URL.revokeObjectURL(pendingImages[index].previewUrl);
+  pendingImages.splice(index, 1);
+  renderAttachmentPreviews();
+}
+
+function clearAttachments() {
+  pendingImages.forEach(img => URL.revokeObjectURL(img.previewUrl));
+  pendingImages = [];
+  renderAttachmentPreviews();
+}
+
+function buildImageContent(text, images) {
+  // Build multimodal content array for different providers
+  const parts = [];
+  images.forEach(img => {
+    parts.push({ type: 'image_url', image_url: { url: `data:${img.mimeType};base64,${img.base64}` } });
+  });
+  parts.push({ type: 'text', text });
+  return parts;
+}
+
+function buildGeminiImageParts(text, images) {
+  const parts = [];
+  images.forEach(img => {
+    parts.push({ inlineData: { mimeType: img.mimeType, data: img.base64 } });
+  });
+  parts.push({ text });
+  return parts;
+}
+
+function buildAnthropicImageContent(text, images) {
+  const content = [];
+  images.forEach(img => {
+    content.push({
+      type: 'image',
+      source: { type: 'base64', media_type: img.mimeType, data: img.base64 }
+    });
+  });
+  content.push({ type: 'text', text });
+  return content;
 }
 // ═══════════════════════════════════════════════
 // STREAMING HELPERS
@@ -1698,31 +1834,36 @@ async function readOllamaStream(response) {
 function getProvider() { return getSetting('provider', 'ollama'); }
 function getTemp() { return (parseInt(getSetting('temperature', '70')) / 100); }
 
-function buildMessages(query, context) {
-  const sysPrompt = getSetting('system_prompt', DEFAULT_SYSTEM_PROMPT);
-  let userContent = query;
-  if (context) {
-    userContent = `Based on the following context, answer the question.\n\nContext:\n${context}\n\nQuestion: ${query}`;
+  function buildMessages(query, context, images = []) {
+    const sysPrompt = getSetting('system_prompt', DEFAULT_SYSTEM_PROMPT);
+    let userText = query || 'Describe this image.';
+    if (context) {
+      userText = `Based on the following context, answer the question.\n\nContext:\n${context}\n\nQuestion: ${query}`;
+    }
+    return { system: sysPrompt, userText, images };
   }
-  return { system: sysPrompt, messages: [{ role: 'user', content: userContent }] };
-}
 
-async function queryInference(query, context) {
+async function queryInference(query, context, attachedImages = []) {
   const provider = getProvider();
   const temp = getTemp();
-  const { system, messages } = buildMessages(query, context);
+  const { system, userText, images } = buildMessages(query, context, attachedImages);
+  const hasImages = images.length > 0;
   const doStream = getSetting('streaming', 'true') === 'true';
 
   // ── Ollama ──
+// ── Ollama ──
   if (provider === 'ollama') {
     const url = getSetting('ollama_url', 'http://localhost:11434');
     const model = getSetting('ollama_model', 'mistral');
-    const prompt = system + '\n\n' + messages[0].content;
+    const prompt = system + '\n\n' + userText;
+    const body = { model, prompt, temperature: temp, stream: doStream };
+    if (hasImages) { body.images = images.map(img => img.base64); }
 
     const res = await fetch(`${url}/api/generate`, {
       method: 'POST',
-      body: JSON.stringify({ model, prompt, temperature: temp, stream: doStream })
+      body: JSON.stringify(body)
     });
+    
     if (!res.ok) throw new Error(`Ollama: ${res.status}`);
 
     if (doStream) {
@@ -1744,7 +1885,7 @@ async function queryInference(query, context) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: system }] },
-          contents: [{ parts: [{ text: messages[0].content }] }],
+          contents: [{ parts: hasImages ? buildGeminiImageParts(userText, images) : [{ text: userText }] }],
           generationConfig: { temperature: temp }
         })
       });
@@ -1756,7 +1897,7 @@ async function queryInference(query, context) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: system }] },
-          contents: [{ parts: [{ text: messages[0].content }] }],
+          contents: [{ parts: hasImages ? buildGeminiImageParts(userText, images) : [{ text: userText }] }],
           generationConfig: { temperature: temp }
         })
       });
@@ -1776,6 +1917,8 @@ async function queryInference(query, context) {
       'anthropic-version': '2023-06-01',
       'Content-Type': 'application/json'
     };
+    const userContent = hasImages ? buildAnthropicImageContent(userText, images) : userText;
+    const messages = [{ role: 'user', content: userContent }];
     const body = { model, max_tokens: 2048, system, messages, temperature: temp };
 
     if (doStream) {
@@ -1815,12 +1958,13 @@ async function queryInference(query, context) {
   const headers = { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' };
   if (provider === 'openrouter') headers['HTTP-Referer'] = 'https://khalecl.github.io/know3';
 
-  const body = {
-    model,
-    messages: [{ role: 'system', content: system }, ...messages],
-    temperature: temp,
-    stream: doStream
-  };
+  const userMsgContent = hasImages ? buildImageContent(userText, images) : userText;
+    const body = {
+      model,
+      messages: [{ role: 'system', content: system }, { role: 'user', content: userMsgContent }],
+      temperature: temp,
+      stream: doStream
+    };
 
   const res = await fetch(cfg.url, { method: 'POST', headers, body: JSON.stringify(body) });
   if (!res.ok) throw new Error(`${PROVIDERS[provider].name}: ${res.status}`);
@@ -2190,7 +2334,30 @@ function toggleSidebar() {
 // INPUT HANDLING
 // ═══════════════════════════════════════════════
 function initInput() {
-  const input = document.getElementById('chat-input');
+    const input = document.getElementById('chat-input');
+  
+    // Paste image from clipboard
+    input.addEventListener('paste', (e) => {
+      const items = Array.from(e.clipboardData?.items || []);
+      items.forEach(item => {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = () => {
+            pendingImages.push({
+              base64: reader.result.split(',')[1],
+              mimeType: file.type,
+              name: 'pasted-image',
+              previewUrl: URL.createObjectURL(file)
+            });
+            renderAttachmentPreviews();
+          };
+          reader.readAsDataURL(file);
+        }
+      });
+    });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
