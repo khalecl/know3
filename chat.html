@@ -1241,36 +1241,6 @@ function renderMath(text) {
 	  // Pre-clean: remove markdown bold/italic wrapping around math
 	  // e.g. **$\frac{x}{y}$** → $\frac{x}{y}$
 	  text = text.replace(/\*{1,2}(\$[\s\S]+?\$)\*{1,2}/g, '$1');
-	
-	  // Display math: $$...$$ or \[...\]
-	  text = text.replace(/\$\$([\s\S]+?)\$\$/g, (_, math) => {
-	    try {
-	      return '<div class="katex-display">' + katex.renderToString(math.trim(), { displayMode: true, throwOnError: false, trust: true }) + '</div>';
-	    } catch { return '$$' + math + '$$'; }
-	  });
-	  text = text.replace(/\\\[([\s\S]+?)\\\]/g, (_, math) => {
-	    try {
-	      return '<div class="katex-display">' + katex.renderToString(math.trim(), { displayMode: true, throwOnError: false, trust: true }) + '</div>';
-	    } catch { return '\\[' + math + '\\]'; }
-	  });
-	
-	  // Inline math: $...$ (not greedy, not $$)
-	  // More permissive regex — allows multi-char content with backslashes
-	  text = text.replace(/(?<!\$)\$(?!\$)((?:[^$\\]|\\.)+?)\$(?!\$)/g, (_, math) => {
-	    try {
-	      return katex.renderToString(math.trim(), { displayMode: false, throwOnError: false, trust: true });
-	    } catch { return '$' + math + '$'; }
-	  });
-	
-	  // \(...\) inline
-	  text = text.replace(/\\\(([\s\S]+?)\\\)/g, (_, math) => {
-	    try {
-	      return katex.renderToString(math.trim(), { displayMode: false, throwOnError: false, trust: true });
-	    } catch { return '\\(' + math + '\\)'; }
-	  });
-	
-	  return text;
-	}
 
   // Display math: $$...$$ or \[...\]
   text = text.replace(/\$\$([\s\S]+?)\$\$/g, (_, math) => {
@@ -1295,9 +1265,9 @@ function renderMath(text) {
       return katex.renderToString(math.trim(), { displayMode: false, throwOnError: false, trust: true });
     } catch { return '\\(' + math + '\\)'; }
   });
-
-  return text;
-}
+	
+	  return text;
+	}
 
   function renderMarkdown(text) {
     try {
