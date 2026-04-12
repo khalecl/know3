@@ -7,7 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script type="importmap">
 { "imports": { "@xenova/transformers": "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2" } }
 </script>
@@ -425,6 +425,83 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text3); }
+		/* ── INLINE CHARTS ── */
+			.msg-chart-container {
+			  margin: 0.6rem 0;
+			  padding: 0.6rem;
+			  background: var(--surface);
+			  border: 1px solid var(--border);
+			  border-radius: 8px;
+			  position: relative;
+			}
+			.msg-chart-container canvas {
+			  max-height: 280px;
+			  width: 100% !important;
+			}
+			.msg-chart-actions {
+			  display: flex;
+			  gap: 0.3rem;
+			  margin-top: 0.4rem;
+			  justify-content: flex-end;
+			}
+			.chart-action-btn {
+			  background: var(--surface2);
+			  border: 1px solid var(--border);
+			  color: var(--text3);
+			  font-size: 0.62rem;
+			  padding: 0.2rem 0.5rem;
+			  border-radius: 4px;
+			  cursor: pointer;
+			  font-family: var(--sans);
+			  transition: all var(--transition);
+			}
+			.chart-action-btn:hover {
+			  border-color: var(--accent);
+			  color: var(--accent);
+			}
+			.chart-type-switcher {
+			  display: flex;
+			  gap: 2px;
+			  margin-bottom: 0.4rem;
+			}
+			.chart-type-btn {
+			  background: var(--surface2);
+			  border: 1px solid var(--border);
+			  color: var(--text3);
+			  font-size: 0.65rem;
+			  padding: 0.2rem 0.5rem;
+			  border-radius: 4px;
+			  cursor: pointer;
+			  transition: all var(--transition);
+			}
+			.chart-type-btn.active {
+			  background: var(--accent-dim);
+			  border-color: var(--accent);
+			  color: var(--accent);
+			}
+			.chart-type-btn:hover {
+			  border-color: var(--accent);
+			  color: var(--accent);
+			}
+			.visualize-offer {
+			  display: inline-flex;
+			  align-items: center;
+			  gap: 0.3rem;
+			  margin-top: 0.4rem;
+			  padding: 0.3rem 0.6rem;
+			  background: var(--surface);
+			  border: 1px solid var(--border);
+			  border-radius: 20px;
+			  font-size: 0.72rem;
+			  color: var(--text2);
+			  cursor: pointer;
+			  transition: all var(--transition);
+			}
+			.visualize-offer:hover {
+			  border-color: var(--accent);
+			  color: var(--accent);
+			  background: var(--accent-dim);
+			}
   /* ── MATH / KATEX ── */
 .msg-bubble .katex-display {
   margin: 0.6rem 0;
@@ -493,48 +570,64 @@ body {
 }
   
   /* ── VOICE COMPANION ── */
-.voice-fab {
-  position: fixed;
-  bottom: 5.5rem;
-  right: 1.5rem;
-  z-index: 50;
-  width: 48px; height: 48px;
-  border-radius: 50%;
-  background: var(--surface);
-  backdrop-filter: var(--glass);
-  border: 1px solid var(--border);
-  color: var(--text2);
-  font-size: 1.2rem;
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  transition: all 0.3s ease;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-}
-.voice-fab:hover { border-color: var(--accent); color: var(--accent); transform: scale(1.08); }
-.voice-fab.active {
-  background: var(--accent);
-  color: var(--bg);
-  border-color: var(--accent);
-  box-shadow: 0 0 24px var(--accent-glow);
-  animation: voicePulse 2s ease-in-out infinite;
-}
-@keyframes voicePulse {
-  0%, 100% { box-shadow: 0 0 16px var(--accent-glow); }
-  50% { box-shadow: 0 0 32px var(--accent-glow), 0 0 48px rgba(0,229,160,0.1); }
-}
-.voice-fab.listening {
-  animation: voiceListen 0.8s ease-in-out infinite alternate;
-}
-@keyframes voiceListen {
-  from { transform: scale(1); }
-  to { transform: scale(1.12); }
-}
+    .voice-fab {
+      position: fixed;
+      bottom: 1.2rem;
+      right: 1.2rem;
+      z-index: 999;
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      background: var(--surface);
+      backdrop-filter: var(--glass);
+      border: 2px solid var(--border);
+      color: var(--text2);
+      font-size: 1.1rem;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    .voice-fab:hover { border-color: var(--accent); color: var(--accent); transform: scale(1.08); }
+    .voice-fab.active {
+      background: var(--accent);
+      color: var(--bg);
+      border-color: var(--accent);
+      box-shadow: 0 0 24px var(--accent-glow);
+      animation: voicePulse 2s ease-in-out infinite;
+    }
+    @keyframes voicePulse {
+      0%, 100% { box-shadow: 0 0 16px var(--accent-glow); }
+      50% { box-shadow: 0 0 32px var(--accent-glow), 0 0 48px rgba(0,229,160,0.1); }
+    }
+    .voice-fab.listening {
+      animation: voiceListen 0.8s ease-in-out infinite alternate;
+    }
+    @keyframes voiceListen {
+      from { transform: scale(1); }
+      to { transform: scale(1.12); }
+    }
+    
+    @media (max-width: 768px) {
+		.voice-fab {
+			bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+			right: 0.8rem;
+			width: 42px; height: 42px;
+		  }
+		  .voice-panel {
+			bottom: calc(7.5rem + env(safe-area-inset-bottom, 0px));
+			right: 0.8rem;
+			width: calc(100vw - 1.6rem);
+			max-width: 320px;
+		  }
+    }
 
 .voice-panel {
   position: fixed;
-  bottom: 6.5rem;
-  right: 1.5rem;
-  z-index: 49;
+  bottom: 4rem;
+  right: 1.2rem;
+  z-index: 998;
   width: 280px;
   background: var(--surface);
   backdrop-filter: var(--glass);
@@ -868,8 +961,10 @@ body {
         </div>
       </div>
     </div>
-  </div>
 </div>
+</div>
+
+
 
 <!-- SETTINGS MODAL -->
 <div class="modal-overlay" id="settings-overlay" onclick="if(event.target===this)closeSettings()">
@@ -1087,7 +1182,17 @@ let currentConversationId = null;
 let currentStreamingIndex = -1;
 let isGenerating = false;
 
-const DEFAULT_SYSTEM_PROMPT = `You are a helpful assistant. When context is provided, answer based on that context. If unsure, say so. Be concise and accurate.`;
+const DEFAULT_SYSTEM_PROMPT = `You are a helpful assistant. When context is provided, answer based on that context. If unsure, say so. Be concise and accurate.
+
+When presenting data that would benefit from visualization, format it as a chart block:
+\`\`\`chart
+{"labels":["A","B","C"],"values":[10,20,30],"title":"Example"}
+\`\`\`
+For multiple series:
+\`\`\`chart
+{"labels":["Q1","Q2","Q3"],"datasets":[{"label":"Revenue","values":[100,150,200]},{"label":"Cost","values":[80,90,110]}],"title":"Quarterly"}
+\`\`\`
+Only use chart blocks when the user asks for visualization or when numeric comparisons would clearly benefit from it.`;
 const VOICE_COMPANION_PROMPT = `You are a warm, emotionally present voice companion. Your responses will be spoken aloud, so follow these rules:
 
 1. KEEP IT SHORT — 2-4 sentences max. No bullet points, no headers, no markdown.
@@ -1154,6 +1259,20 @@ function renderMath(text) {
   function renderMarkdown(text) {
     try {
       if (typeof marked === 'undefined') return escapeHtml(text);
+		// Process chart blocks FIRST
+		let chartCounter = 0;
+		const chartBlocks = [];
+		text = text.replace(/```chart\s*\n([\s\S]*?)```/g, (_, chartCode) => {
+		  const data = parseChartBlock(chartCode.trim());
+		  if (data) {
+			const placeholder = `%%CHART_${chartCounter}%%`;
+			chartBlocks.push({ id: chartCounter, data });
+			chartCounter++;
+			return placeholder;
+		  }
+		  return '```\n' + chartCode + '```';  // Not valid chart data, render as code
+		});
+  
   
       // Process math FIRST — protect KaTeX output from markdown parser
       const mathProcessed = renderMath(text);
@@ -1176,6 +1295,12 @@ function renderMath(text) {
       // Restore KaTeX
       html = html.replace(/%%KATEXD_(\d+)%%/g, (_, i) => katexDisplays[parseInt(i)] || '');
       html = html.replace(/%%KATEX_(\d+)%%/g, (_, i) => katexBlocks[parseInt(i)] || '');
+	  // Restore chart blocks
+			html = html.replace(/%%CHART_(\d+)%%/g, (_, i) => {
+			  const block = chartBlocks[parseInt(i)];
+			  if (block) return generateChartHTML(block.data, block.id);
+			  return '';
+			});
   
       if (typeof DOMPurify === 'undefined') return html;
       return DOMPurify.sanitize(html, {
@@ -1688,9 +1813,25 @@ const textContent = m.role === 'assistant' ? renderMarkdown(m.content || '') : e
           </div>`;
   }).join('');
 
-  container.scrollTop = container.scrollHeight;
-}
+		container.scrollTop = container.scrollHeight;
 
+		  // Initialize any chart canvases that were just rendered
+		  requestAnimationFrame(() => {
+			container.querySelectorAll('.msg-chart-container canvas').forEach(canvas => {
+			  if (!_chartInstances[canvas.id]) {
+				const switcher = canvas.closest('.msg-chart-container')?.querySelector('.chart-type-btn.active');
+				const type = switcher?.dataset.type || 'bar';
+				const dataAttr = switcher?.getAttribute('onclick')?.match(/'([^']+)'\)$/)?.[1];
+				if (dataAttr) {
+				  try {
+					const data = JSON.parse(decodeURIComponent(dataAttr));
+					renderChartInMessage(canvas.id, data, type);
+				  } catch {}
+				}
+			  }
+			});
+		  });
+		}
     function addMessage(role, content, sources = null, imageHtml = null) {
       const conv = conversations[currentConversationId];
       if (!conv) return;
@@ -1790,10 +1931,16 @@ async function sendMessage() {
         } else {
           addMessage('assistant', answer, sources.length ? sources : null);
         }
-        // Show contextual follow-up suggestions
-        if (finalAnswer && finalAnswer.length > 20) {
-          renderFollowUpChips(q, finalAnswer);
-        }
+		// Show contextual follow-up suggestions
+			if (finalAnswer && finalAnswer.length > 20) {
+			  renderFollowUpChips(q, finalAnswer);
+
+			  // Auto-detect chartable data and offer visualization
+			  const chartData = detectChartableData(finalAnswer);
+			  if (chartData && chartData.labels.length >= 3) {
+				offerVisualization(chartData);
+			  }
+			}
       } catch (e) {
         removeThinking();
         addMessage('assistant', `❌ Error: ${e.message}`);
@@ -1904,122 +2051,164 @@ function useFollowUp(el) {
 // MESSAGE ACTIONS (edit, resend, regenerate, copy)
 // ═══════════════════════════════════════════════
 
-function resendMessage(idx) {
-  const conv = conversations[currentConversationId];
-  if (!conv || !conv.messages[idx]) return;
-  const msg = conv.messages[idx];
-  if (msg.role !== 'user') return;
+	function resendMessage(idx) {
+	  const conv = conversations[currentConversationId];
+	  if (!conv || !conv.messages[idx]) return;
+	  const msg = conv.messages[idx];
+	  if (msg.role !== 'user') return;
 
-  // Remove everything from this message onward
-  conv.messages = conv.messages.slice(0, idx);
-  saveConversations();
-  renderChat();
-  renderHistoryList();
+	  // Remove everything from this message onward
+	  conv.messages = conv.messages.slice(0, idx);
+	  saveConversations();
+	  renderChat();
+	  renderHistoryList();
 
-  // Re-send the same text
-  document.getElementById('chat-input').value = msg.content || '';
-  // Reattach images if any
-  if (msg.imageHtml) {
-    // Images are stored as base64 in the HTML — for resend we just send text
-    // User can re-attach images manually
-  }
-  sendMessage();
-}
+	  // Re-send the same text
+	  document.getElementById('chat-input').value = msg.content || '';
+	  // Reattach images if any
+	  if (msg.imageHtml) {
+		// Images are stored as base64 in the HTML — for resend we just send text
+		// User can re-attach images manually
+	  }
+	  sendMessage();
+	}
 
-function editMessage(idx) {
-  const conv = conversations[currentConversationId];
-  if (!conv || !conv.messages[idx]) return;
-  const msg = conv.messages[idx];
-  if (msg.role !== 'user') return;
+	function editMessage(idx) {
+	  const conv = conversations[currentConversationId];
+	  if (!conv || !conv.messages[idx]) return;
+	  const msg = conv.messages[idx];
+	  if (msg.role !== 'user') return;
 
-  const bubble = document.getElementById(`bubble-${idx}`);
-  if (!bubble) return;
+	  const bubble = document.getElementById(`bubble-${idx}`);
+	  if (!bubble) return;
 
-  const currentText = msg.content || '';
+	  const currentText = msg.content || '';
 
-  bubble.innerHTML = `
-    <textarea class="msg-edit-area" id="edit-area-${idx}">${escapeHtml(currentText)}</textarea>
-    <div class="msg-edit-actions">
-      <button class="btn-primary" onclick="submitEdit(${idx})" style="padding:0.3rem 0.7rem;font-size:0.75rem">Send</button>
-      <button class="btn-secondary" onclick="cancelEdit(${idx})" style="padding:0.3rem 0.7rem;font-size:0.75rem">Cancel</button>
-    </div>
-  `;
+	  bubble.innerHTML = `
+		<textarea class="msg-edit-area" id="edit-area-${idx}">${escapeHtml(currentText)}</textarea>
+		<div class="msg-edit-actions">
+		  <button class="btn-primary" onclick="submitEdit(${idx})" style="padding:0.3rem 0.7rem;font-size:0.75rem">Send</button>
+		  <button class="btn-secondary" onclick="cancelEdit(${idx})" style="padding:0.3rem 0.7rem;font-size:0.75rem">Cancel</button>
+		</div>
+	  `;
 
-  const area = document.getElementById(`edit-area-${idx}`);
-  area.focus();
-  area.selectionStart = area.value.length;
+	  const area = document.getElementById(`edit-area-${idx}`);
+	  area.focus();
+	  area.selectionStart = area.value.length;
 
-  // Enter to submit, Escape to cancel
-  area.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitEdit(idx); }
-    if (e.key === 'Escape') cancelEdit(idx);
-  });
-}
+	  // Enter to submit, Escape to cancel
+	  area.addEventListener('keydown', (e) => {
+		if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitEdit(idx); }
+		if (e.key === 'Escape') cancelEdit(idx);
+	  });
+	}
 
-function submitEdit(idx) {
-  const area = document.getElementById(`edit-area-${idx}`);
-  if (!area) return;
-  const newText = area.value.trim();
-  if (!newText) return;
+	function submitEdit(idx) {
+	  const area = document.getElementById(`edit-area-${idx}`);
+	  if (!area) return;
+	  const newText = area.value.trim();
+	  if (!newText) return;
 
-  const conv = conversations[currentConversationId];
-  // Remove this message and everything after it
-  conv.messages = conv.messages.slice(0, idx);
-  saveConversations();
-  renderChat();
-  renderHistoryList();
+	  const conv = conversations[currentConversationId];
+	  // Remove this message and everything after it
+	  conv.messages = conv.messages.slice(0, idx);
+	  saveConversations();
+	  renderChat();
+	  renderHistoryList();
 
-  // Send the edited text
-  document.getElementById('chat-input').value = newText;
-  sendMessage();
-}
+	  // Send the edited text
+	  document.getElementById('chat-input').value = newText;
+	  sendMessage();
+	}
 
-function cancelEdit(idx) {
-  renderChat();  // Re-render to restore original bubble
-}
+	function cancelEdit(idx) {
+	  renderChat();  // Re-render to restore original bubble
+	}
 
-function regenerateMessage(idx) {
-  const conv = conversations[currentConversationId];
-  if (!conv || !conv.messages[idx]) return;
-  if (conv.messages[idx].role !== 'assistant') return;
+	function regenerateMessage(idx) {
+	  const conv = conversations[currentConversationId];
+	  if (!conv || !conv.messages[idx]) return;
+	  if (conv.messages[idx].role !== 'assistant') return;
 
-  // Find the user message that triggered this response
-  let userIdx = idx - 1;
-  while (userIdx >= 0 && conv.messages[userIdx].role !== 'user') userIdx--;
-  if (userIdx < 0) return;
+	  // Find the user message that triggered this response
+	  let userIdx = idx - 1;
+	  while (userIdx >= 0 && conv.messages[userIdx].role !== 'user') userIdx--;
+	  if (userIdx < 0) return;
 
-  const userMsg = conv.messages[userIdx];
+	  const userMsg = conv.messages[userIdx];
 
-  // Remove from the assistant message onward
-  conv.messages = conv.messages.slice(0, idx);
-  saveConversations();
-  renderChat();
-  renderHistoryList();
+	  // Remove from the assistant message onward
+	  conv.messages = conv.messages.slice(0, idx);
+	  saveConversations();
+	  renderChat();
+	  renderHistoryList();
 
-  // Re-send the original user prompt
-  document.getElementById('chat-input').value = userMsg.content || '';
-  sendMessage();
-}
+	  // Re-send the original user prompt
+	  document.getElementById('chat-input').value = userMsg.content || '';
+	  sendMessage();
+	}
 
-function copyMessage(idx) {
-  const conv = conversations[currentConversationId];
-  if (!conv || !conv.messages[idx]) return;
-  const text = conv.messages[idx].content || '';
-  navigator.clipboard.writeText(text).then(() => {
-    // Brief visual feedback
-    const btn = document.querySelector(`#msg-${idx} .msg-action-btn`);
-    if (btn) {
-      const orig = btn.textContent;
-      btn.textContent = '✓ Copied';
-      setTimeout(() => { btn.textContent = orig; }, 1500);
-    }
-  });
-}
-function clearFollowUpChips() {
-  document.getElementById('active-followups')?.remove();
-}
+	function copyMessage(idx) {
+	  const conv = conversations[currentConversationId];
+	  if (!conv || !conv.messages[idx]) return;
+	  const text = conv.messages[idx].content || '';
+	  navigator.clipboard.writeText(text).then(() => {
+		// Brief visual feedback
+		const btn = document.querySelector(`#msg-${idx} .msg-action-btn`);
+		if (btn) {
+		  const orig = btn.textContent;
+		  btn.textContent = '✓ Copied';
+		  setTimeout(() => { btn.textContent = orig; }, 1500);
+		}
+	  });
+	}
+	function clearFollowUpChips() {
+	  document.getElementById('active-followups')?.remove();
+	}
 
-  // ═══════════════════════════════════════════════
+	function offerVisualization(data) {
+	  const container = document.getElementById('chat-messages');
+	  // Don't show if chart already in last message
+	  const lastMsg = container.querySelector('.msg:last-child .msg-chart-container');
+	  if (lastMsg) return;
+
+	  const existing = document.getElementById('viz-offer');
+	  if (existing) existing.remove();
+
+	  const div = document.createElement('div');
+	  div.id = 'viz-offer';
+	  div.className = 'followup-chips';
+	  div.style.justifyContent = 'flex-start';
+
+	  const dataEncoded = encodeURIComponent(JSON.stringify(data));
+	  div.innerHTML = `
+		<span class="visualize-offer" onclick="injectChart('bar', '${dataEncoded}')">📊 Bar chart</span>
+		<span class="visualize-offer" onclick="injectChart('line', '${dataEncoded}')">📈 Line chart</span>
+		<span class="visualize-offer" onclick="injectChart('pie', '${dataEncoded}')">🥧 Pie chart</span>
+		<span class="visualize-offer" onclick="document.getElementById('viz-offer')?.remove()">✕</span>
+	  `;
+	  container.appendChild(div);
+	  container.scrollTop = container.scrollHeight;
+	}
+
+	function injectChart(type, dataEncoded) {
+	  document.getElementById('viz-offer')?.remove();
+
+	  const data = JSON.parse(decodeURIComponent(dataEncoded));
+	  const conv = conversations[currentConversationId];
+	  if (!conv) return;
+
+	  // Append chart to last assistant message
+	  const lastAssistant = [...conv.messages].reverse().find(m => m.role === 'assistant');
+	  if (lastAssistant) {
+		const chartBlock = `\n\n\`\`\`chart\n${JSON.stringify(data, null, 2)}\n\`\`\``;
+		lastAssistant.content += chartBlock;
+		saveConversations();
+		renderChat();
+	  }
+	}
+	
+// ═══════════════════════════════════════════════
 // IMAGE ATTACHMENTS
 // ═══════════════════════════════════════════════
   let pendingImages = [];  // { base64, mimeType, name, previewUrl }
@@ -2886,6 +3075,205 @@ function initInput() {
     input.style.height = Math.min(input.scrollHeight, 120) + 'px';
   });
 }
+
+		// ═══════════════════════════════════════════════
+		// INLINE CHART ENGINE
+		// ═══════════════════════════════════════════════
+
+		const CHART_COLORS = [
+		  'rgba(0,229,160,0.8)', 'rgba(96,165,250,0.8)', 'rgba(251,191,36,0.8)',
+		  'rgba(248,113,113,0.8)', 'rgba(168,85,247,0.8)', 'rgba(52,211,153,0.8)',
+		  'rgba(244,114,182,0.8)', 'rgba(45,212,191,0.8)', 'rgba(253,186,116,0.8)',
+		  'rgba(129,140,248,0.8)'
+		];
+		const CHART_BORDERS = CHART_COLORS.map(c => c.replace('0.8)', '1)'));
+
+		let _chartInstances = {};  // canvasId -> Chart instance
+
+		function parseChartBlock(code) {
+		  // Try JSON parse
+		  try {
+			const data = JSON.parse(code);
+			// Validate minimal structure
+			if (data.labels && data.values) return data;
+			if (data.labels && data.datasets) return data;
+			if (data.data) return data.data;
+			return data;
+		  } catch {}
+
+		  // Try simple CSV-like format: "Label, Value\nA, 10\nB, 20"
+		  const lines = code.trim().split('\n').filter(l => l.trim());
+		  if (lines.length >= 2) {
+			const labels = [];
+			const values = [];
+			const hasHeader = /[a-zA-Z]/.test(lines[0]) && !/^\d+/.test(lines[0].split(/[,\t]/)[1]?.trim());
+			const startIdx = hasHeader ? 1 : 0;
+
+			for (let i = startIdx; i < lines.length; i++) {
+			  const parts = lines[i].split(/[,\t]+/).map(s => s.trim());
+			  if (parts.length >= 2) {
+				labels.push(parts[0]);
+				values.push(parseFloat(parts[1]) || 0);
+			  }
+			}
+			if (labels.length > 0) {
+			  return { labels, values, title: hasHeader ? lines[0].split(/[,\t]/)[0].trim() : '' };
+			}
+		  }
+
+		  return null;
+		}
+
+		function buildChartConfig(data, chartType = 'bar') {
+		  const labels = data.labels || [];
+		  let datasets;
+
+		  if (data.datasets) {
+			// Multi-dataset format
+			datasets = data.datasets.map((ds, i) => ({
+			  label: ds.label || `Series ${i + 1}`,
+			  data: ds.values || ds.data || [],
+			  backgroundColor: chartType === 'line' ? 'transparent' : CHART_COLORS[i % CHART_COLORS.length],
+			  borderColor: CHART_BORDERS[i % CHART_BORDERS.length],
+			  borderWidth: chartType === 'line' ? 2 : 1,
+			  tension: 0.3,
+			  fill: chartType === 'line' ? false : undefined,
+			  pointRadius: chartType === 'line' ? 3 : undefined,
+			}));
+		  } else {
+			// Single dataset
+			const values = data.values || data.data || [];
+			datasets = [{
+			  label: data.title || 'Data',
+			  data: values,
+			  backgroundColor: chartType === 'pie' || chartType === 'doughnut'
+				? CHART_COLORS.slice(0, values.length)
+				: CHART_COLORS[0],
+			  borderColor: chartType === 'pie' || chartType === 'doughnut'
+				? CHART_BORDERS.slice(0, values.length)
+				: CHART_BORDERS[0],
+			  borderWidth: 1,
+			  tension: 0.3,
+			  fill: chartType === 'line' ? false : undefined,
+			  pointRadius: chartType === 'line' ? 3 : undefined,
+			}];
+		  }
+
+		  return {
+			type: chartType,
+			data: { labels, datasets },
+			options: {
+			  responsive: true,
+			  maintainAspectRatio: false,
+			  plugins: {
+				title: {
+				  display: !!data.title,
+				  text: data.title || '',
+				  color: '#e8eaf4',
+				  font: { family: 'Outfit', size: 13, weight: 600 }
+				},
+				legend: {
+				  display: datasets.length > 1 || chartType === 'pie' || chartType === 'doughnut',
+				  labels: { color: '#8690b8', font: { family: 'Outfit', size: 11 } }
+				}
+			  },
+			  scales: (chartType !== 'pie' && chartType !== 'doughnut' && chartType !== 'radar') ? {
+				x: {
+				  ticks: { color: '#505878', font: { family: 'IBM Plex Mono', size: 10 } },
+				  grid: { color: 'rgba(40,50,80,0.3)' }
+				},
+				y: {
+				  ticks: { color: '#505878', font: { family: 'IBM Plex Mono', size: 10 } },
+				  grid: { color: 'rgba(40,50,80,0.3)' }
+				}
+			  } : undefined
+			}
+		  };
+		}
+
+		function renderChartInMessage(canvasId, data, chartType = 'bar') {
+		  if (typeof Chart === 'undefined') return;
+
+		  // Destroy existing instance
+		  if (_chartInstances[canvasId]) {
+			_chartInstances[canvasId].destroy();
+			delete _chartInstances[canvasId];
+		  }
+
+		  const canvas = document.getElementById(canvasId);
+		  if (!canvas) return;
+
+		  const config = buildChartConfig(data, chartType);
+		  _chartInstances[canvasId] = new Chart(canvas.getContext('2d'), config);
+		}
+
+		function switchChartType(canvasId, newType, dataJson) {
+		  const data = JSON.parse(decodeURIComponent(dataJson));
+		  // Update active button
+		  const container = document.getElementById(canvasId)?.closest('.msg-chart-container');
+		  if (container) {
+			container.querySelectorAll('.chart-type-btn').forEach(b => b.classList.remove('active'));
+			container.querySelector(`[data-type="${newType}"]`)?.classList.add('active');
+		  }
+		  renderChartInMessage(canvasId, data, newType);
+		}
+
+		function downloadChart(canvasId) {
+		  const canvas = document.getElementById(canvasId);
+		  if (!canvas) return;
+		  const a = document.createElement('a');
+		  a.href = canvas.toDataURL('image/png', 1.0);
+		  a.download = `know3-chart-${Date.now()}.png`;
+		  a.click();
+		}
+
+		function generateChartHTML(data, msgIdx) {
+		  const canvasId = `chart-${msgIdx}-${Date.now()}`;
+		  const dataEncoded = encodeURIComponent(JSON.stringify(data));
+		  const types = ['bar', 'line', 'pie', 'doughnut', 'radar'];
+
+		  return `
+			<div class="msg-chart-container">
+			  <div class="chart-type-switcher">
+				${types.map(t => `<button class="chart-type-btn ${t === 'bar' ? 'active' : ''}" data-type="${t}" onclick="switchChartType('${canvasId}','${t}','${dataEncoded}')">${t}</button>`).join('')}
+			  </div>
+			  <div style="position:relative;height:250px">
+				<canvas id="${canvasId}"></canvas>
+			  </div>
+			  <div class="msg-chart-actions">
+				<button class="chart-action-btn" onclick="downloadChart('${canvasId}')">⬇ Save PNG</button>
+			  </div>
+			</div>
+		  `;
+		}
+
+		// Auto-detect numeric data in responses and offer visualization
+		function detectChartableData(text) {
+		  // Look for table-like patterns: rows with labels and numbers
+		  const lines = text.split('\n').filter(l => l.trim());
+		  const dataLines = [];
+
+		  for (const line of lines) {
+			// Match patterns like "Label: 123" or "Label | 123" or "- Label: 123" or "| Label | 123 |"
+			const cleaned = line.replace(/^\s*[-*•|]\s*/, '').replace(/\|/g, ',').trim();
+			const match = cleaned.match(/^(.+?)[:\-,\t]\s*([\d,.]+)\s*(%|units?|kg|lbs?|mi|km|hrs?|days?|months?|years?)?\s*$/);
+			if (match) {
+			  const label = match[1].replace(/\*+/g, '').trim();
+			  const value = parseFloat(match[2].replace(/,/g, ''));
+			  if (!isNaN(value) && label.length > 0 && label.length < 50) {
+				dataLines.push({ label, value });
+			  }
+			}
+		  }
+
+		  if (dataLines.length >= 3) {
+			return {
+			  labels: dataLines.map(d => d.label),
+			  values: dataLines.map(d => d.value)
+			};
+		  }
+		  return null;
+		}
 // ═══════════════════════════════════════════════
 // VOICE COMPANION ENGINE
 // ═══════════════════════════════════════════════
@@ -3317,5 +3705,58 @@ function initInput() {
   document.getElementById('toolbar-topk').addEventListener('change', (e) => setSetting('top_k', e.target.value));
 });
 </script>
+
+	<!-- VOICE COMPANION FAB -->
+	<button class="voice-fab" id="voice-fab" onclick="toggleVoicePanel()" title="Voice Companion">🎙</button>
+
+	<!-- VOICE PANEL -->
+	<div class="voice-panel" id="voice-panel">
+	  <div class="voice-panel-header">
+		<span class="voice-panel-title">🎙 Voice Companion</span>
+		<button class="btn-icon" onclick="toggleVoicePanel()" style="width:24px;height:24px;font-size:0.65rem">✕</button>
+	  </div>
+
+	  <div class="voice-status" id="voice-status">Tap mic to start speaking</div>
+
+	  <div class="voice-transcript" id="voice-transcript" style="display:none"></div>
+
+	  <div class="voice-controls">
+		<button class="voice-btn" id="btn-voice-mic" onclick="toggleVoiceRecording()">🎤 Hold to Speak</button>
+		<button class="voice-btn" id="btn-voice-stop" onclick="stopVoiceSpeaking()" style="display:none">⏹ Stop</button>
+	  </div>
+
+	  <div class="voice-settings">
+		<div>
+		  <label class="field-label">Voice Output</label>
+		  <select id="voice-output-mode" onchange="onVoiceOutputChange()">
+			<option value="browser">Browser (Free / Offline)</option>
+			<option value="elevenlabs">ElevenLabs (Emotional)</option>
+		  </select>
+		</div>
+		<div id="voice-el-config" style="display:none">
+		  <label class="field-label">ElevenLabs API Key</label>
+		  <input type="password" id="voice-el-key" placeholder="From elevenlabs.io" onchange="setSetting('el_key',this.value)">
+		  <label class="field-label" style="margin-top:0.3rem">Voice</label>
+		  <select id="voice-el-voice">
+			<option value="21m00Tcm4TlvDq8ikWAM">Rachel (warm, calm)</option>
+			<option value="EXAVITQu4vr4xnSDxMaL">Bella (soft, expressive)</option>
+			<option value="ErXwobaYiN019PkySvjV">Antoni (warm, male)</option>
+			<option value="MF3mGyEYCl7XYWbV9V6O">Elli (young, friendly)</option>
+			<option value="TxGEqnHWrfWFTfGW9XjX">Josh (deep, narrative)</option>
+			<option value="pNInz6obpgDQGcFmaJgB">Adam (clear, articulate)</option>
+		  </select>
+		</div>
+		<div id="voice-browser-config">
+		  <label class="field-label">Browser Voice</label>
+		  <select id="voice-browser-select"></select>
+		</div>
+		<label class="field-label" style="margin-top:0.3rem">Speed</label>
+		<input type="range" id="voice-speed" min="0.5" max="2" step="0.1" value="1">
+		<label style="display:flex;align-items:center;gap:0.3rem;font-size:0.7rem;color:var(--text3);cursor:pointer;margin-top:0.2rem">
+		  <input type="checkbox" id="voice-auto-listen" style="accent-color:var(--accent)"> Auto-listen after reply
+		</label>
+	  </div>
+	</div>
+
 </body>
 </html>
