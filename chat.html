@@ -423,6 +423,35 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text3); }
+/* ── EMBED PROGRESS BAR ── */
+.embed-progress {
+  position: relative;
+  height: 3px;
+  background: var(--surface2);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 0.3rem;
+  display: none;
+}
+.embed-progress.active { display: block; }
+.embed-progress-fill {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  background: var(--accent);
+  border-radius: 2px;
+  width: 0%;
+  transition: width 0.3s ease;
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+.embed-progress-text {
+  font-size: 0.62rem;
+  color: var(--text3);
+  font-family: var(--mono);
+  margin-top: 0.15rem;
+  text-align: right;
+  display: none;
+}
+.embed-progress-text.active { display: block; }
 /* ── FOLLOW-UP CHIPS ── */
 .followup-chips {
   display: flex;
@@ -498,7 +527,11 @@ body {
   <div class="header">
     <div class="logo"><h1><span class="k">know</span>3 Chat</h1><a href="https://github.com/khalecl/know3" target="_blank" class="k3-origin">by khalecl</a></div>
     <div class="header-controls">
-      <span id="embed-status" class="header-status">⏳ Loading...</span>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;min-width:120px">
+          <span id="embed-status" class="header-status">⏳ Loading...</span>
+          <div class="embed-progress" id="embed-progress"><div class="embed-progress-fill" id="embed-progress-fill"></div></div>
+          <div class="embed-progress-text" id="embed-progress-text"></div>
+        </div>
       <button class="btn-icon" onclick="startNewConversation()" title="New Chat">✚</button>
       <button class="btn-icon" id="btn-sidebar" onclick="toggleSidebar()" title="Toggle History">☰</button>
       <button class="btn-icon" onclick="openSettings()" title="Settings">⚙</button>
@@ -914,57 +947,66 @@ if (embeddingReady && this.chunks.length > 0) {
     }
     updateChunkCount();
     }
-
-async computeEmbeddings() {
-    try {
-      const total = this.chunks.length;
-      setEmbedStatus('loading', `Indexing 0/${total}...`);
-      this.embeddings = new Array(total);
-      const BATCH = 16;
-      for (let start = 0; start < total; start += BATCH) {
-        const end = Math.min(start + BATCH, total);
-        const batchTexts = this.chunks.slice(start, end).map(c => c.text);
-        // Batch call — transformers.js handles array input
-        const batchEmb = await embeddingModel(batchTexts, { pooling: 'mean', normalize: true });
-        for (let j = 0; j < batchTexts.length; j++) {
-          // batchEmb.data is a flat Float32Array: extract each vector by stride
-          const dim = batchEmb.dims[batchEmb.dims.length - 1];
-          const offset = j * dim;
-          this.embeddings[start + j] = Array.from(batchEmb.data.slice(offset, offset + dim));
+  
+    async computeEmbeddings() {
+      try {
+        const total = this.chunks.length;
+        _embedStartTime = Date.now();
+        setEmbedStatus('loading', `Indexing...`);
+        setEmbedProgress(0, total);
+        this.embeddings = new Array(total);
+        const BATCH = 16;
+        for (let start = 0; start < total; start += BATCH) {
+          const end = Math.min(start + BATCH, total);
+          const batchTexts = this.chunks.slice(start, end).map(c => c.text);
+          const batchEmb = await embeddingModel(batchTexts, { pooling: 'mean', normalize: true });
+          for (let j = 0; j < batchTexts.length; j++) {
+            const dim = batchEmb.dims[batchEmb.dims.length - 1];
+            const offset = j * dim;
+            this.embeddings[start + j] = Array.from(batchEmb.data.slice(offset, offset + dim));
+          }
+          setEmbedStatus('loading', `Indexing ${end.toLocaleString()}/${total.toLocaleString()}`);
+          setEmbedProgress(end, total);
+          await new Promise(r => setTimeout(r, 0));
         }
-        setEmbedStatus('loading', `Indexing ${end}/${total}...`);
-        await new Promise(r => setTimeout(r, 0));
+        setEmbedProgress(-1, 0);
+        setEmbedStatus('ready', `✓ ${total.toLocaleString()} indexed`);
+      } catch (e) {
+        console.warn('Embedding failed:', e);
+        setEmbedProgress(-1, 0);
+        setEmbedStatus('', '⚠ Keyword only');
       }
-      setEmbedStatus('ready', `✓ ${total} indexed`);
-    } catch (e) {
-      console.warn('Embedding failed:', e);
-      setEmbedStatus('', '⚠ Keyword only');
     }
-  }
-async computeEmbeddingsFrom(startIdx) {
-    try {
-      const total = this.chunks.length;
-      const newCount = total - startIdx;
-      setEmbedStatus('loading', `Indexing ${newCount} new chunks...`);
-      const BATCH = 16;
-      for (let start = startIdx; start < total; start += BATCH) {
-        const end = Math.min(start + BATCH, total);
-        const batchTexts = this.chunks.slice(start, end).map(c => c.text);
-        const batchEmb = await embeddingModel(batchTexts, { pooling: 'mean', normalize: true });
-        for (let j = 0; j < batchTexts.length; j++) {
-          const dim = batchEmb.dims[batchEmb.dims.length - 1];
-          const offset = j * dim;
-          this.embeddings[start + j] = Array.from(batchEmb.data.slice(offset, offset + dim));
+    async computeEmbeddingsFrom(startIdx) {
+        try {
+          const total = this.chunks.length;
+          const newCount = total - startIdx;
+          _embedStartTime = Date.now();
+          setEmbedStatus('loading', `Indexing new...`);
+          setEmbedProgress(0, newCount);
+          const BATCH = 16;
+          for (let start = startIdx; start < total; start += BATCH) {
+            const end = Math.min(start + BATCH, total);
+            const batchTexts = this.chunks.slice(start, end).map(c => c.text);
+            const batchEmb = await embeddingModel(batchTexts, { pooling: 'mean', normalize: true });
+            for (let j = 0; j < batchTexts.length; j++) {
+              const dim = batchEmb.dims[batchEmb.dims.length - 1];
+              const offset = j * dim;
+              this.embeddings[start + j] = Array.from(batchEmb.data.slice(offset, offset + dim));
+            }
+            const done = end - startIdx;
+            setEmbedStatus('loading', `Indexing ${done.toLocaleString()}/${newCount.toLocaleString()} new`);
+            setEmbedProgress(done, newCount);
+            await new Promise(r => setTimeout(r, 0));
+          }
+          setEmbedProgress(-1, 0);
+          setEmbedStatus('ready', `✓ ${total.toLocaleString()} indexed`);
+        } catch (e) {
+          console.warn('Incremental embedding failed:', e);
+          setEmbedProgress(-1, 0);
+          setEmbedStatus('', '⚠ Keyword only');
         }
-        setEmbedStatus('loading', `Indexing ${end - startIdx}/${newCount} new...`);
-        await new Promise(r => setTimeout(r, 0));
       }
-      setEmbedStatus('ready', `✓ ${total} indexed`);
-    } catch (e) {
-      console.warn('Incremental embedding failed:', e);
-      setEmbedStatus('', '⚠ Keyword only');
-    }
-  }
   cosineSim(a, b) {
     if (!a || !b || a.length !== b.length) return 0;
     let dot = 0, na = 0, nb = 0;
@@ -1160,11 +1202,37 @@ async function initEmbeddings() {
   }
 }
 
-function setEmbedStatus(cls, text) {
-  const el = document.getElementById('embed-status');
-  el.textContent = text;
-  el.className = 'header-status' + (cls ? ' ' + cls : '');
-}
+    function setEmbedStatus(cls, text) {
+      const el = document.getElementById('embed-status');
+      el.textContent = text;
+      el.className = 'header-status' + (cls ? ' ' + cls : '');
+    }
+    
+    function setEmbedProgress(current, total) {
+      const bar = document.getElementById('embed-progress');
+      const fill = document.getElementById('embed-progress-fill');
+      const label = document.getElementById('embed-progress-text');
+    
+      if (current < 0 || total <= 0) {
+        // Hide progress
+        bar.classList.remove('active');
+        label.classList.remove('active');
+        return;
+      }
+    
+      const pct = Math.min(100, Math.round((current / total) * 100));
+      bar.classList.add('active');
+      fill.style.width = pct + '%';
+    
+      label.classList.add('active');
+      const elapsed = (Date.now() - _embedStartTime) / 1000;
+      const rate = current / Math.max(1, elapsed);
+      const remaining = rate > 0 ? Math.round((total - current) / rate) : 0;
+      const eta = remaining > 60 ? `${Math.floor(remaining/60)}m ${remaining%60}s` : `${remaining}s`;
+      label.textContent = `${current.toLocaleString()} / ${total.toLocaleString()} (${pct}%) · ~${eta} left`;
+    }
+    
+    let _embedStartTime = Date.now();
 
 function updateChunkCount() {
   const el = document.getElementById('toolbar-chunks-label');
@@ -2053,9 +2121,10 @@ async function loadGitHubDataset() {
           }
       
           const done = Math.min(end, total);
-          const pct = Math.round((done / total) * 100);
-          setEmbedStatus('loading', `Embedding ${done.toLocaleString()}/${total.toLocaleString()} (${pct}%)`);
-          btn.textContent = `⏸ ${pct}%`;
+              const pct = Math.round((done / total) * 100);
+              setEmbedStatus('loading', `Embedding ${done.toLocaleString()}/${total.toLocaleString()}`);
+              setEmbedProgress(done, total);
+              btn.textContent = `⏸ ${pct}%`;
       
           // Save checkpoint every 500 chunks
           if (done % 500 === 0 || done === total) {
@@ -2075,11 +2144,12 @@ async function loadGitHubDataset() {
           setEmbedStatus('', `⚡ ${completed.toLocaleString()}/${total.toLocaleString()} embedded`);
         }
       
-        btn.textContent = completed === total ? '✓ Done' : '▶ Resume';
-        btn.onclick = startBackgroundEmbedding;
-        _bgEmbedding = false;
-        await saveEmbeddings(vectorStore.chunks, vectorStore.embeddings);
-      }
+        setEmbedProgress(-1, 0);
+          btn.textContent = completed === total ? '✓ Done' : '▶ Resume';
+          btn.onclick = startBackgroundEmbedding;
+          _bgEmbedding = false;
+          await saveEmbeddings(vectorStore.chunks, vectorStore.embeddings);
+        }
       
       function stopBackgroundEmbedding() {
         _bgEmbedding = false;
