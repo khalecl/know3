@@ -522,6 +522,36 @@ body {
 .msg-bubble .katex .mop {
   color: var(--text);
 }
+
+/* ── MESSAGE PLAY BUTTON ── */
+.msg-play-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text3);
+  font-size: 0.65rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: var(--sans);
+  transition: all var(--transition);
+}
+.msg-play-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+.msg-play-btn.playing {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+.msg-play-btn.loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
 /* ── MESSAGE ACTIONS ── */
 	.msg-actions {
 	  display: flex;
@@ -965,6 +995,7 @@ body {
         </div>
         <div class="input-hint">
           <span>Enter to send · Shift+Enter for newline</span>
+          <span id="memory-label" style="color:var(--text3)"></span>
           <span id="provider-label">Ollama / mistral</span>
         </div>
       </div>
@@ -1112,11 +1143,11 @@ body {
 
       <!-- TAB: Advanced -->
       <div class="modal-pane" id="tab-advanced">
-        <div class="field">
-          <label class="field-label">Max Context Chunks</label>
-          <input type="number" id="s-max-context" value="5" min="1" max="20">
-          <div class="field-hint">Maximum chunks to include in the LLM context window</div>
-        </div>
+			<div class="field">
+	          <label class="field-label">Chat Memory (message pairs)</label>
+	          <input type="number" id="s-chat-memory" value="5" min="0" max="20">
+	          <div class="field-hint">Number of previous message pairs (user+assistant) sent with each request. 0 = no memory, each message is standalone. Higher = better continuity but more tokens used.</div>
+	        </div>
         <div class="field">
           <label class="field-label">Embedding Model</label>
           <input type="text" id="s-embed-model" value="Xenova/all-MiniLM-L6-v2" disabled>
@@ -1772,23 +1803,23 @@ function renderChat() {
   const container = document.getElementById('chat-messages');
   const welcome = document.getElementById('welcome-state');
 
-if (!conv.messages.length) {
-    container.innerHTML = `<div class="welcome-state" id="welcome-state">
-      <div class="welcome-logo"><span class="k">k</span>now3</div>
-      <div class="welcome-sub">Local-first semantic RAG chat. Load your data, pick a provider, and ask away — or toggle RAG off for free-form chat.</div>
-      <div class="welcome-chips">
-        <span class="welcome-chip" onclick="quickPrompt('Summarize the key concepts')">Summarize key concepts</span>
-        <span class="welcome-chip" onclick="quickPrompt('What are the main topics covered?')">Main topics covered?</span>
-        <span class="welcome-chip" onclick="quickPrompt('Explain this in simple terms')">Explain simply</span>
-      </div>
-    </div>`;
-    return;
-  }
+	if (!conv.messages.length) {
+		container.innerHTML = `<div class="welcome-state" id="welcome-state">
+		  <div class="welcome-logo"><span class="k">k</span>now3</div>
+		  <div class="welcome-sub">Local-first semantic RAG chat. Load your data, pick a provider, and ask away — or toggle RAG off for free-form chat.</div>
+		  <div class="welcome-chips">
+			<span class="welcome-chip" onclick="quickPrompt('Summarize the key concepts')">Summarize key concepts</span>
+			<span class="welcome-chip" onclick="quickPrompt('What are the main topics covered?')">Main topics covered?</span>
+			<span class="welcome-chip" onclick="quickPrompt('Explain this in simple terms')">Explain simply</span>
+		  </div>
+		</div>`;
+		return;
+	  }
 
   container.innerHTML = conv.messages.map((m, i) => {
     const time = new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const avatar = m.role === 'user' ? 'U' : 'K';
-const textContent = m.role === 'assistant' ? renderMarkdown(m.content || '') : escapeHtml(m.content || '');
+	const textContent = m.role === 'assistant' ? renderMarkdown(m.content || '') : escapeHtml(m.content || '');
     const imgContent = m.imageHtml || '';
     const bubbleContent = textContent + imgContent;
 
@@ -1809,11 +1840,15 @@ const textContent = m.role === 'assistant' ? renderMarkdown(m.content || '') : e
               <button class="msg-action-btn" onclick="editMessage(${i})" title="Edit and resend">✎ Edit</button>
             </div>` : '';
       
-          const assistantActions = m.role === 'assistant' ? `
-            <div class="msg-actions">
-              <button class="msg-action-btn" onclick="copyMessage(${i})" title="Copy to clipboard">⧉ Copy</button>
-              <button class="msg-action-btn" onclick="regenerateMessage(${i})" title="Regenerate response">↻ Redo</button>
-            </div>` : '';
+		const playBtn = m.role === 'assistant' && m.content?.length > 5 ? `
+				<button class="msg-play-btn" id="play-btn-${i}" onclick="playMessageAudio(${i})" title="Listen to this message">▶ Play</button>` : '';
+
+		const assistantActions = m.role === 'assistant' ? `
+		  <div class="msg-actions">
+			${playBtn}
+			<button class="msg-action-btn" onclick="copyMessage(${i})" title="Copy to clipboard">⧉ Copy</button>
+			<button class="msg-action-btn" onclick="regenerateMessage(${i})" title="Regenerate response">↻ Redo</button>
+		  </div>` : '';
       
           const actions = userActions + assistantActions;
       
@@ -1844,6 +1879,7 @@ const textContent = m.role === 'assistant' ? renderMarkdown(m.content || '') : e
 			  }
 			});
 		  });
+		  updateMemoryLabel();
 		}
     function addMessage(role, content, sources = null, imageHtml = null) {
       const conv = conversations[currentConversationId];
@@ -1947,7 +1983,12 @@ async function sendMessage() {
 		// Show contextual follow-up suggestions
 			if (finalAnswer && finalAnswer.length > 20) {
 			  renderFollowUpChips(q, finalAnswer);
-
+			// Auto-speak reply if enabled (and not already spoken via voice mode)
+			  if (!window._voiceModeActive && getSetting('voice_auto_speak', 'false') === 'true') {
+				const conv = conversations[currentConversationId];
+				const lastIdx = conv ? conv.messages.length - 1 : -1;
+				if (lastIdx >= 0) playMessageAudio(lastIdx);
+			  }
 		// Auto-detect chartable data and offer visualization
 		      const chartData = detectChartableData(finalAnswer);
 		      const userWantedChart = /\bchart\b|\/chart|visuali[sz]e|compare.*chart|graph/i.test(q);
@@ -2166,7 +2207,189 @@ function useFollowUp(el) {
 	  document.getElementById('chat-input').value = userMsg.content || '';
 	  sendMessage();
 	}
+		
+		let _playingMsgIdx = -1;
 
+function playMessageAudio(idx) {
+  const conv = conversations[currentConversationId];
+  if (!conv || !conv.messages[idx]) return;
+  const text = conv.messages[idx].content || '';
+  if (!text) return;
+
+  const btn = document.getElementById(`play-btn-${idx}`);
+
+  // If already playing this message, stop it
+  if (_playingMsgIdx === idx) {
+    stopAllAudio();
+    return;
+  }
+
+  // Stop any other playing audio
+  stopAllAudio();
+  _playingMsgIdx = idx;
+
+  if (btn) { btn.textContent = '⏳ Loading...'; btn.classList.add('loading'); }
+
+  // Clean text for speech
+  const cleanText = text
+    .replace(/```[\s\S]*?```/g, '... code block omitted ...')
+    .replace(/[#*_`~\[\](){}|<>]/g, '')
+    .replace(/\n{2,}/g, '. ')
+    .replace(/\n/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  const speed = parseFloat(getSetting('voice_speed', '1')) || 1;
+  const outputMode = getSetting('voice_output', 'kokoro');
+
+  if (outputMode === 'elevenlabs') {
+    speakElevenLabsMsg(cleanText, speed, btn, idx);
+  } else if (outputMode === 'kokoro') {
+    speakKokoroMsg(cleanText, speed, btn, idx);
+  } else {
+    speakBrowserMsg(cleanText, speed, btn, idx);
+  }
+}
+
+function stopAllAudio() {
+  // Stop browser speech
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+
+  // Stop any audio element
+  if (_currentAudio) {
+    _currentAudio.pause();
+    _currentAudio.currentTime = 0;
+    _currentAudio = null;
+  }
+
+  // Reset all play buttons
+  document.querySelectorAll('.msg-play-btn').forEach(btn => {
+    btn.textContent = '▶ Play';
+    btn.classList.remove('playing', 'loading');
+  });
+
+  _playingMsgIdx = -1;
+  _isSpeaking = false;
+}
+
+function onAudioStart(btn) {
+  if (btn) { btn.textContent = '⏹ Stop'; btn.classList.remove('loading'); btn.classList.add('playing'); }
+  _isSpeaking = true;
+}
+
+function onAudioEnd(btn, idx) {
+  if (btn) { btn.textContent = '▶ Play'; btn.classList.remove('playing', 'loading'); }
+  _playingMsgIdx = -1;
+  _isSpeaking = false;
+  _currentAudio = null;
+
+  // Auto-play next message if enabled
+  if (getSetting('voice_autoplay', 'false') === 'true') {
+    const conv = conversations[currentConversationId];
+    if (conv) {
+      // Find next assistant message
+      for (let i = idx + 1; i < conv.messages.length; i++) {
+        if (conv.messages[i].role === 'assistant' && conv.messages[i].content?.length > 5) {
+          setTimeout(() => playMessageAudio(i), 500);
+          break;
+        }
+      }
+    }
+  }
+}
+
+// ── Kokoro TTS (Free, Emotional) ──
+async function speakKokoroMsg(text, speed, btn, idx) {
+  try {
+    const voice = getSetting('kokoro_voice', 'af_heart');
+    const res = await fetch('https://api.kokorotts.com/v1/audio/speech', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        input: text.substring(0, 3000),
+        voice: voice,
+        speed: speed,
+        response_format: 'mp3'
+      })
+    });
+
+    if (!res.ok) {
+      console.warn('Kokoro failed, falling back to browser voice');
+      speakBrowserMsg(text, speed, btn, idx);
+      return;
+    }
+
+    const blob = await res.blob();
+    const audioUrl = URL.createObjectURL(blob);
+    _currentAudio = new Audio(audioUrl);
+
+    _currentAudio.onplay = () => onAudioStart(btn);
+    _currentAudio.onended = () => { URL.revokeObjectURL(audioUrl); onAudioEnd(btn, idx); };
+    _currentAudio.onerror = () => { URL.revokeObjectURL(audioUrl); onAudioEnd(btn, idx); };
+
+    await _currentAudio.play();
+  } catch (e) {
+    console.warn('Kokoro error:', e);
+    speakBrowserMsg(text, speed, btn, idx);
+  }
+}
+
+// ── ElevenLabs TTS (Premium) ──
+async function speakElevenLabsMsg(text, speed, btn, idx) {
+  const key = getSetting('el_key', '');
+  if (!key) { speakKokoroMsg(text, speed, btn, idx); return; }
+
+  try {
+    const voiceId = getSetting('el_voice', '21m00Tcm4TlvDq8ikWAM');
+    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`, {
+      method: 'POST',
+      headers: { 'xi-api-key': key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: text.substring(0, 5000),
+        model_id: 'eleven_multilingual_v2',
+        voice_settings: { stability: 0.4, similarity_boost: 0.8, style: 0.6, use_speaker_boost: true }
+      })
+    });
+
+    if (!res.ok) { speakKokoroMsg(text, speed, btn, idx); return; }
+
+    const blob = await res.blob();
+    const audioUrl = URL.createObjectURL(blob);
+    _currentAudio = new Audio(audioUrl);
+    _currentAudio.playbackRate = speed;
+
+    _currentAudio.onplay = () => onAudioStart(btn);
+    _currentAudio.onended = () => { URL.revokeObjectURL(audioUrl); onAudioEnd(btn, idx); };
+    _currentAudio.onerror = () => { URL.revokeObjectURL(audioUrl); onAudioEnd(btn, idx); };
+
+    await _currentAudio.play();
+  } catch (e) {
+    speakKokoroMsg(text, speed, btn, idx);
+  }
+}
+
+// ── Browser TTS (Offline fallback) ──
+function speakBrowserMsg(text, speed, btn, idx) {
+  if (!('speechSynthesis' in window)) { onAudioEnd(btn, idx); return; }
+
+  speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = speed;
+  utterance.pitch = 1.1;
+
+  const voices = speechSynthesis.getVoices();
+  const savedVoice = getSetting('browser_voice', '');
+  const match = voices.find(v => v.name === savedVoice);
+  if (match) utterance.voice = match;
+
+  // iOS fix: must be triggered from user gesture chain
+  utterance.onstart = () => onAudioStart(btn);
+  utterance.onend = () => onAudioEnd(btn, idx);
+  utterance.onerror = () => onAudioEnd(btn, idx);
+
+  speechSynthesis.speak(utterance);
+}
+		
 	function copyMessage(idx) {
 	  const conv = conversations[currentConversationId];
 	  if (!conv || !conv.messages[idx]) return;
@@ -2549,21 +2772,48 @@ async function readOllamaStream(response) {
 function getProvider() { return getSetting('provider', 'ollama'); }
 function getTemp() { return (parseInt(getSetting('temperature', '70')) / 100); }
 
-  function buildMessages(query, context, images = []) {
-    const isVoice = window._voiceModeActive || false;
-    const baseSysPrompt = getSetting('system_prompt', DEFAULT_SYSTEM_PROMPT);
-    const sysPrompt = isVoice ? VOICE_COMPANION_PROMPT + '\n\n' + baseSysPrompt : baseSysPrompt;
-    let userText = query || 'Describe this image.';
-    if (context) {
-      userText = `Based on the following context, answer the question.\n\nContext:\n${context}\n\nQuestion: ${query}`;
-    }
-    return { system: sysPrompt, userText, images };
-  }
+	function buildMessages(query, context, images = []) {
+	  const isVoice = window._voiceModeActive || false;
+	  const baseSysPrompt = getSetting('system_prompt', DEFAULT_SYSTEM_PROMPT);
+	  const sysPrompt = isVoice ? VOICE_COMPANION_PROMPT + '\n\n' + baseSysPrompt : baseSysPrompt;
+	  let userText = query || 'Describe this image.';
+	  if (context) {
+	    userText = `Based on the following context, answer the question.\n\nContext:\n${context}\n\nQuestion: ${query}`;
+	  }
+	
+	  // Build conversation history
+	  const memoryPairs = parseInt(getSetting('chat_memory', '5'));
+	  const history = [];
+	
+	  if (memoryPairs > 0) {
+	    const conv = conversations[currentConversationId];
+	    if (conv && conv.messages.length > 0) {
+	      // Get previous messages (exclude the current user message we just added)
+	      // Messages are already in the conversation at this point
+	      const prevMessages = conv.messages.slice(0, -1); // exclude current
+	
+	      // Take last N pairs (each pair = 1 user + 1 assistant)
+	      const pairCount = memoryPairs;
+	      let collected = 0;
+	      for (let i = prevMessages.length - 1; i >= 0 && collected < pairCount * 2; i--) {
+	        const m = prevMessages[i];
+	        if (m.role === 'user' || m.role === 'assistant') {
+	          // Truncate long messages to save tokens
+	          const content = (m.content || '').substring(0, 800);
+	          history.unshift({ role: m.role, content });
+	          collected++;
+	        }
+	      }
+	    }
+	  }
+	
+	  return { system: sysPrompt, userText, images, history };
+	}
 
 async function queryInference(query, context, attachedImages = []) {
   const provider = getProvider();
   const temp = getTemp();
-  const { system, userText, images } = buildMessages(query, context, attachedImages);
+	const { system, userText, images, history } = buildMessages(query, context, attachedImages);
   const hasImages = images.length > 0;
   const doStream = getSetting('streaming', 'true') === 'true';
 
@@ -2572,7 +2822,17 @@ async function queryInference(query, context, attachedImages = []) {
   if (provider === 'ollama') {
     const url = getSetting('ollama_url', 'http://localhost:11434');
     const model = getSetting('ollama_model', 'mistral');
-    const prompt = system + '\n\n' + userText;
+
+	  // Build prompt with history for Ollama (uses raw prompt, not chat format)
+    let prompt = system + '\n\n';
+    if (history.length > 0) {
+      prompt += 'Previous conversation:\n';
+      history.forEach(m => {
+        prompt += m.role === 'user' ? `User: ${m.content}\n` : `Assistant: ${m.content}\n`;
+      });
+      prompt += '\n';
+    }
+    prompt += `User: ${userText}\nAssistant:`;
     const body = { model, prompt, temperature: temp, stream: doStream };
     if (hasImages) { body.images = images.map(img => img.base64); }
 
@@ -2602,7 +2862,11 @@ async function queryInference(query, context, attachedImages = []) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: system }] },
-          contents: [{ parts: hasImages ? buildGeminiImageParts(userText, images) : [{ text: userText }] }],
+          contents: [
+          ...history.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
+          { role: 'user', parts: hasImages ? buildGeminiImageParts(userText, images) : [{ text: userText }] }
+        ],
+			
           generationConfig: { temperature: temp }
         })
       });
@@ -2614,8 +2878,11 @@ async function queryInference(query, context, attachedImages = []) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: system }] },
-          contents: [{ parts: hasImages ? buildGeminiImageParts(userText, images) : [{ text: userText }] }],
-          generationConfig: { temperature: temp }
+		  contents: [
+		          ...history.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
+		          { role: 'user', parts: hasImages ? buildGeminiImageParts(userText, images) : [{ text: userText }] }
+		        ],
+		  generationConfig: { temperature: temp }
         })
       });
       if (!res.ok) throw new Error(`Gemini: ${res.status}`);
@@ -2634,9 +2901,12 @@ async function queryInference(query, context, attachedImages = []) {
       'anthropic-version': '2023-06-01',
       'Content-Type': 'application/json'
     };
-    const userContent = hasImages ? buildAnthropicImageContent(userText, images) : userText;
-    const messages = [{ role: 'user', content: userContent }];
-    const body = { model, max_tokens: 2048, system, messages, temperature: temp };
+	const userContent = hasImages ? buildAnthropicImageContent(userText, images) : userText;
+	    const messages = [
+	      ...history,
+	      { role: 'user', content: userContent }
+	    ];
+	    const body = { model, max_tokens: 2048, system, messages, temperature: temp };
 
     if (doStream) {
       body.stream = true;
@@ -2675,13 +2945,17 @@ async function queryInference(query, context, attachedImages = []) {
   const headers = { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' };
   if (provider === 'openrouter') headers['HTTP-Referer'] = 'https://khalecl.github.io/know3';
 
-  const userMsgContent = hasImages ? buildImageContent(userText, images) : userText;
-    const body = {
-      model,
-      messages: [{ role: 'system', content: system }, { role: 'user', content: userMsgContent }],
-      temperature: temp,
-      stream: doStream
-    };
+	const userMsgContent = hasImages ? buildImageContent(userText, images) : userText;
+	  const body = {
+	    model,
+	    messages: [
+	      { role: 'system', content: system },
+	      ...history,
+	      { role: 'user', content: userMsgContent }
+	    ],
+	    temperature: temp,
+	    stream: doStream
+	  };
 
   const res = await fetch(cfg.url, { method: 'POST', headers, body: JSON.stringify(body) });
   if (!res.ok) throw new Error(`${PROVIDERS[provider].name}: ${res.status}`);
@@ -2704,8 +2978,8 @@ function openSettings() {
   document.getElementById('s-temperature').value = getSetting('temperature', '70');
   document.getElementById('temp-val').textContent = (parseInt(getSetting('temperature','70'))/100).toFixed(2);
   document.getElementById('s-system-prompt').value = getSetting('system_prompt', DEFAULT_SYSTEM_PROMPT);
-  document.getElementById('s-max-context').value = getSetting('max_context', '5');
-  document.getElementById('s-streaming').value = getSetting('streaming', 'true');
+	document.getElementById('s-chat-memory').value = getSetting('chat_memory', '5');
+	document.getElementById('s-streaming').value = getSetting('streaming', 'true');
 
   // Provider keys & models (skip ollama model — it's a select populated by fetchOllamaModels)
   for (const p of Object.keys(PROVIDERS)) {
@@ -2750,6 +3024,7 @@ function saveSettings() {
   setSetting('temperature', document.getElementById('s-temperature').value);
   setSetting('system_prompt', document.getElementById('s-system-prompt').value);
   setSetting('max_context', document.getElementById('s-max-context').value);
+	setSetting('chat_memory', document.getElementById('s-chat-memory').value);
   setSetting('streaming', document.getElementById('s-streaming').value);
   setSetting('ollama_url', document.getElementById('s-ollama-url').value);
   setSetting('el_key', document.getElementById('voice-el-key')?.value || getSetting('el_key', ''));
@@ -2765,7 +3040,26 @@ function saveSettings() {
   updateProviderLabel();
   closeSettings();
 }
+   function updateMemoryLabel() {
+		  const el = document.getElementById('memory-label');
+		  if (!el) return;
+		  const pairs = parseInt(getSetting('chat_memory', '5'));
+		  const conv = conversations[currentConversationId];
+		  if (!conv || !conv.messages.length) { el.textContent = ''; return; }
 
+		  const msgCount = conv.messages.length;
+		  const historyUsed = Math.min(pairs * 2, Math.max(0, msgCount - 1));
+
+		  if (pairs === 0) {
+			el.textContent = 'Memory: off';
+		  } else {
+			// Rough token estimate: ~1 token per 4 chars
+			const prevMessages = conv.messages.slice(Math.max(0, msgCount - 1 - historyUsed), msgCount - 1);
+			const charCount = prevMessages.reduce((sum, m) => sum + Math.min((m.content || '').length, 800), 0);
+			const tokenEst = Math.round(charCount / 4);
+			el.textContent = `Memory: ${Math.floor(historyUsed/2)}/${pairs} pairs (~${tokenEst} tokens)`;
+		  }
+		}
     function updateProviderLabel() {
       const p = getProvider();
       const model = getSetting(`${p}_model`, getSetting('ollama_model', 'mistral'));
@@ -3386,20 +3680,32 @@ function initInput() {
       stopVoiceRecording();
       stopVoiceSpeaking();
     } else {
-      panel.classList.add('open');
-      fab.classList.add('active');
-      window._voiceModeActive = true;
-      populateBrowserVoices();
-      // Restore ElevenLabs key
-      document.getElementById('voice-el-key').value = getSetting('el_key', '');
+	panel.classList.add('open');
+		fab.classList.add('active');
+		window._voiceModeActive = true;
+		populateBrowserVoices();
+
+		// Restore saved settings
+		document.getElementById('voice-output-mode').value = getSetting('voice_output', 'kokoro');
+		document.getElementById('voice-el-key').value = getSetting('el_key', '');
+		document.getElementById('voice-el-voice').value = getSetting('el_voice', '21m00Tcm4TlvDq8ikWAM');
+		document.getElementById('voice-kokoro-voice').value = getSetting('kokoro_voice', 'af_heart');
+		document.getElementById('voice-speed').value = getSetting('voice_speed', '1');
+		document.getElementById('speed-val').textContent = getSetting('voice_speed', '1') + 'x';
+		document.getElementById('voice-auto-listen').checked = getSetting('voice_auto_listen', 'false') === 'true';
+		document.getElementById('voice-auto-speak').checked = getSetting('voice_auto_speak', 'false') === 'true';
+		document.getElementById('voice-autoplay-all').checked = getSetting('voice_autoplay', 'false') === 'true';
+		onVoiceOutputChange();
     }
   }
   
-  function onVoiceOutputChange() {
-    const mode = document.getElementById('voice-output-mode').value;
-    document.getElementById('voice-el-config').style.display = mode === 'elevenlabs' ? 'block' : 'none';
-    document.getElementById('voice-browser-config').style.display = mode === 'browser' ? 'block' : 'none';
-  }
+	function onVoiceOutputChange() {
+	  const mode = document.getElementById('voice-output-mode').value;
+	  setSetting('voice_output', mode);
+	  document.getElementById('voice-kokoro-config').style.display = mode === 'kokoro' ? 'block' : 'none';
+	  document.getElementById('voice-el-config').style.display = mode === 'elevenlabs' ? 'block' : 'none';
+	  document.getElementById('voice-browser-config').style.display = mode === 'browser' ? 'block' : 'none';
+	}
   
   function populateBrowserVoices() {
     const sel = document.getElementById('voice-browser-select');
@@ -3435,11 +3741,14 @@ function initInput() {
   }
   
   function startVoiceRecording() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setVoiceStatus('Speech recognition not supported in this browser');
-      return;
-    }
+	const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+	  if (!SpeechRecognition) {
+		const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+		setVoiceStatus(isIOS
+		  ? 'Voice input not available on iOS Safari. Use the text input, and tap ▶ Play on replies to listen.'
+		  : 'Speech recognition not supported. Try Chrome or Edge.');
+		return;
+	  }
   
     // Stop any current speech
     stopVoiceSpeaking();
@@ -3582,26 +3891,87 @@ function initInput() {
     }
   }
 
-  // ── TEXT-TO-SPEECH (output) ──
-  async function speakResponse(text) {
-    const outputMode = document.getElementById('voice-output-mode').value;
-    const speed = parseFloat(document.getElementById('voice-speed').value) || 1;
-  
-    // Clean text for speech — remove markdown artifacts
-    const cleanText = text
-      .replace(/```[\s\S]*?```/g, '... code block omitted ...')
-      .replace(/[#*_`~\[\](){}|<>]/g, '')
-      .replace(/\n{2,}/g, '. ')
-      .replace(/\n/g, ' ')
-      .replace(/\s{2,}/g, ' ')
-      .trim();
-  
-    if (outputMode === 'elevenlabs') {
-      await speakElevenLabs(cleanText, speed);
-    } else {
-      speakBrowser(cleanText, speed);
-    }
-  }
+ // ── TEXT-TO-SPEECH (output) ──
+
+	async function speakResponse(text) {
+	  const speed = parseFloat(getSetting('voice_speed', '1')) || 1;
+	  const outputMode = getSetting('voice_output', 'kokoro');
+
+	  const cleanText = text
+		.replace(/```[\s\S]*?```/g, '... code block omitted ...')
+		.replace(/[#*_`~\[\](){}|<>]/g, '')
+		.replace(/\n{2,}/g, '. ')
+		.replace(/\n/g, ' ')
+		.replace(/\s{2,}/g, ' ')
+		.trim();
+
+	  const btn = document.getElementById('btn-voice-stop');
+	  const micBtn = document.getElementById('btn-voice-mic');
+	  if (btn) btn.style.display = '';
+	  if (micBtn) micBtn.style.display = 'none';
+
+	  if (outputMode === 'elevenlabs') {
+		await speakElevenLabs(cleanText, speed);
+	  } else if (outputMode === 'kokoro') {
+		await speakKokoroVoicePanel(cleanText, speed);
+	  } else {
+		speakBrowser(cleanText, speed);
+	  }
+	}
+
+	async function speakKokoroVoicePanel(text, speed) {
+	  const btn = document.getElementById('btn-voice-stop');
+	  const micBtn = document.getElementById('btn-voice-mic');
+	  setVoiceStatus('Generating voice...', false);
+
+	  try {
+		const voice = getSetting('kokoro_voice', 'af_heart');
+		const res = await fetch('https://api.kokorotts.com/v1/audio/speech', {
+		  method: 'POST',
+		  headers: { 'Content-Type': 'application/json' },
+		  body: JSON.stringify({
+			input: text.substring(0, 3000),
+			voice: voice,
+			speed: speed,
+			response_format: 'mp3'
+		  })
+		});
+
+		if (!res.ok) throw new Error(`Kokoro: ${res.status}`);
+
+		const blob = await res.blob();
+		const audioUrl = URL.createObjectURL(blob);
+		_currentAudio = new Audio(audioUrl);
+
+		_currentAudio.onplay = () => {
+		  _isSpeaking = true;
+		  setVoiceStatus('Speaking...', true);
+		};
+		_currentAudio.onended = () => {
+		  _isSpeaking = false;
+		  if (btn) btn.style.display = 'none';
+		  if (micBtn) micBtn.style.display = '';
+		  setVoiceStatus('Tap mic to speak');
+		  URL.revokeObjectURL(audioUrl);
+		  _currentAudio = null;
+		};
+		_currentAudio.onerror = () => {
+		  _isSpeaking = false;
+		  if (btn) btn.style.display = 'none';
+		  if (micBtn) micBtn.style.display = '';
+		  setVoiceStatus('Audio playback error');
+		  _currentAudio = null;
+		};
+
+		await _currentAudio.play();
+	  } catch (e) {
+		console.warn('Kokoro voice panel error:', e);
+		setVoiceStatus('Kokoro failed, using browser voice');
+		if (btn) btn.style.display = 'none';
+		if (micBtn) micBtn.style.display = '';
+		speakBrowser(text, speed);
+	  }
+	}
   
   function speakBrowser(text, speed) {
     if (!('speechSynthesis' in window)) {
@@ -3778,6 +4148,34 @@ function initInput() {
   
   document.addEventListener('DOMContentLoaded', () => {
   _initBrandGuard();
+	  // iOS audio unlock — must play a silent audio on first user gesture
+	  let _audioUnlocked = false;
+	  function unlockAudio() {
+		if (_audioUnlocked) return;
+		_audioUnlocked = true;
+
+		// Create and play a silent audio buffer
+		try {
+		  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+		  const buffer = ctx.createBuffer(1, 1, 22050);
+		  const source = ctx.createBufferSource();
+		  source.buffer = buffer;
+		  source.connect(ctx.destination);
+		  source.start(0);
+
+		  // Also unlock speechSynthesis
+		  if ('speechSynthesis' in window) {
+			const u = new SpeechSynthesisUtterance('');
+			u.volume = 0;
+			speechSynthesis.speak(u);
+		  }
+		} catch {}
+
+		document.removeEventListener('touchstart', unlockAudio);
+		document.removeEventListener('click', unlockAudio);
+	  }
+	  document.addEventListener('touchstart', unlockAudio, { once: true });
+	  document.addEventListener('click', unlockAudio, { once: true });
   initMatrix();
   initInput();
   loadConversations();
@@ -3816,37 +4214,81 @@ function initInput() {
 		<button class="voice-btn" id="btn-voice-stop" onclick="stopVoiceSpeaking()" style="display:none">⏹ Stop</button>
 	  </div>
 
-	  <div class="voice-settings">
-		<div>
-		  <label class="field-label">Voice Output</label>
-		  <select id="voice-output-mode" onchange="onVoiceOutputChange()">
-			<option value="browser">Browser (Free / Offline)</option>
-			<option value="elevenlabs">ElevenLabs (Emotional)</option>
-		  </select>
-		</div>
-		<div id="voice-el-config" style="display:none">
-		  <label class="field-label">ElevenLabs API Key</label>
-		  <input type="password" id="voice-el-key" placeholder="From elevenlabs.io" onchange="setSetting('el_key',this.value)">
-		  <label class="field-label" style="margin-top:0.3rem">Voice</label>
-		  <select id="voice-el-voice">
-			<option value="21m00Tcm4TlvDq8ikWAM">Rachel (warm, calm)</option>
-			<option value="EXAVITQu4vr4xnSDxMaL">Bella (soft, expressive)</option>
-			<option value="ErXwobaYiN019PkySvjV">Antoni (warm, male)</option>
-			<option value="MF3mGyEYCl7XYWbV9V6O">Elli (young, friendly)</option>
-			<option value="TxGEqnHWrfWFTfGW9XjX">Josh (deep, narrative)</option>
-			<option value="pNInz6obpgDQGcFmaJgB">Adam (clear, articulate)</option>
-		  </select>
-		</div>
-		<div id="voice-browser-config">
-		  <label class="field-label">Browser Voice</label>
-		  <select id="voice-browser-select"></select>
-		</div>
-		<label class="field-label" style="margin-top:0.3rem">Speed</label>
-		<input type="range" id="voice-speed" min="0.5" max="2" step="0.1" value="1">
-		<label style="display:flex;align-items:center;gap:0.3rem;font-size:0.7rem;color:var(--text3);cursor:pointer;margin-top:0.2rem">
-		  <input type="checkbox" id="voice-auto-listen" style="accent-color:var(--accent)"> Auto-listen after reply
-		</label>
-	  </div>
+		<div class="voice-settings">
+			<div>
+			  <label class="field-label">Voice Engine</label>
+			  <select id="voice-output-mode" onchange="onVoiceOutputChange()">
+				<option value="kokoro">Kokoro (Free / Emotional)</option>
+				<option value="browser">Browser (Free / Offline)</option>
+				<option value="elevenlabs">ElevenLabs (Premium)</option>
+			  </select>
+			</div>
+
+			<!-- Kokoro config -->
+			<div id="voice-kokoro-config">
+			  <label class="field-label" style="margin-top:0.3rem">Voice</label>
+			  <select id="voice-kokoro-voice" onchange="setSetting('kokoro_voice',this.value)">
+				<optgroup label="Female — Expressive">
+				  <option value="af_heart" selected>Heart (warm, emotional)</option>
+				  <option value="af_bella">Bella (soft, gentle)</option>
+				  <option value="af_sarah">Sarah (clear, friendly)</option>
+				  <option value="af_nova">Nova (bright, energetic)</option>
+				  <option value="af_sky">Sky (light, airy)</option>
+				  <option value="af_nicole">Nicole (mature, calm)</option>
+				</optgroup>
+				<optgroup label="Male — Expressive">
+				  <option value="am_adam">Adam (deep, warm)</option>
+				  <option value="am_michael">Michael (clear, steady)</option>
+				  <option value="am_eric">Eric (friendly, casual)</option>
+				</optgroup>
+				<optgroup label="British">
+				  <option value="bf_emma">Emma (British, warm)</option>
+				  <option value="bf_isabella">Isabella (British, elegant)</option>
+				  <option value="bm_george">George (British, classic)</option>
+				  <option value="bm_lewis">Lewis (British, narrative)</option>
+				</optgroup>
+			  </select>
+			  <div class="field-hint">Free — no API key needed. Emotional, natural voices.</div>
+			</div>
+
+			<!-- ElevenLabs config -->
+			<div id="voice-el-config" style="display:none">
+			  <label class="field-label" style="margin-top:0.3rem">API Key</label>
+			  <input type="password" id="voice-el-key" placeholder="From elevenlabs.io" onchange="setSetting('el_key',this.value)">
+			  <label class="field-label" style="margin-top:0.3rem">Voice</label>
+			  <select id="voice-el-voice" onchange="setSetting('el_voice',this.value)">
+				<option value="21m00Tcm4TlvDq8ikWAM">Rachel (warm, calm)</option>
+				<option value="EXAVITQu4vr4xnSDxMaL">Bella (soft, expressive)</option>
+				<option value="ErXwobaYiN019PkySvjV">Antoni (warm, male)</option>
+				<option value="MF3mGyEYCl7XYWbV9V6O">Elli (young, friendly)</option>
+				<option value="TxGEqnHWrfWFTfGW9XjX">Josh (deep, narrative)</option>
+				<option value="pNInz6obpgDQGcFmaJgB">Adam (clear, articulate)</option>
+			  </select>
+			</div>
+
+			<!-- Browser config -->
+			<div id="voice-browser-config" style="display:none">
+			  <label class="field-label" style="margin-top:0.3rem">Browser Voice</label>
+			  <select id="voice-browser-select"></select>
+			  <div class="field-hint">Offline — works without internet. Quality varies by device.</div>
+			</div>
+
+			<label class="field-label" style="margin-top:0.5rem">Speed</label>
+			<input type="range" id="voice-speed" min="0.5" max="2" step="0.1" value="1" oninput="setSetting('voice_speed',this.value);document.getElementById('speed-val').textContent=this.value+'x'">
+			<div style="font-size:0.65rem;color:var(--text3);text-align:center;font-family:var(--mono)" id="speed-val">1x</div>
+
+			<div style="display:flex;flex-direction:column;gap:0.3rem;margin-top:0.3rem">
+			  <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.7rem;color:var(--text3);cursor:pointer">
+				<input type="checkbox" id="voice-auto-listen" style="accent-color:var(--accent)" onchange="setSetting('voice_auto_listen',this.checked)"> Auto-listen after reply
+			  </label>
+			  <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.7rem;color:var(--text3);cursor:pointer">
+				<input type="checkbox" id="voice-auto-speak" style="accent-color:var(--accent)" onchange="setSetting('voice_auto_speak',this.checked)"> Auto-speak replies
+			  </label>
+			  <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.7rem;color:var(--text3);cursor:pointer">
+				<input type="checkbox" id="voice-autoplay-all" style="accent-color:var(--accent)" onchange="setSetting('voice_autoplay',this.checked)"> Auto-play next message
+			  </label>
+			</div>
+		  </div>
 	</div>
 
 </body>
