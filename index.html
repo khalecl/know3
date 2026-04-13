@@ -3281,6 +3281,7 @@ OUTPUT: [complete answer]`,
 
 Rules:
 - INSTRUCTION types: How to use X? What does Y do? Fix this bug? Explain Z?
+- NEVER reference figures, tables, charts, diagrams, or images (e.g., "as shown in Figure X", "see Table Y"). The input is extracted text only with no visuals. Describe the CONCEPT instead of pointing to a visual.
 - Include code examples in outputs when relevant
 - Use actual API names, method signatures, parameters
 - Explain WHY not just WHAT
@@ -3298,8 +3299,12 @@ OUTPUT: [complete explanation with code example if applicable]`,
 
 Rules:
 - INSTRUCTION types: Derive this formula? What does this equation mean? Solve for X? When would you use this?
+- NEVER reference figures, tables, charts, diagrams, or images (e.g., "as shown in Figure X", "see Table Y"). The input is extracted text only with no visuals. Describe the CONCEPT instead of pointing to a visual.
 - Preserve mathematical notation exactly (use ^, _, sqrt(), pi, etc.)
 - Explain derivations step-by-step
+- ALL mathematical expressions MUST use LaTeX notation: inline $...$ or display $$...$$. Examples: $E = mc^2$, $\\frac{dQ}{dt} = hA(T_s - T_\\infty)$
+- If the source contains garbled or incomplete equations, reconstruct the INTENDED equation from context. If unrecoverable, describe the concept instead.
+- NEVER output raw ASCII math like "E = mc2" — always use LaTeX delimiters.
 - Include physical/practical meaning, not just algebra
 - Handle units and dimensions
 - Show assumptions and approximations
@@ -3315,6 +3320,7 @@ OUTPUT: [detailed explanation with notation preserved]`,
 Rules:
 - INSTRUCTION types: What does this passage reveal? Compare X and Y? Analyze the symbolism? How does character develop?
 - Include textual evidence (quotes)
+- NEVER reference figures, tables, charts, diagrams, or images (e.g., "as shown in Figure X", "see Table Y"). The input is extracted text only with no visuals. Describe the CONCEPT instead of pointing to a visual.
 - Discuss themes, motifs, writing style, tone
 - Connect to broader literary context
 - Avoid superficial plot summary — focus on analysis
@@ -3331,6 +3337,7 @@ OUTPUT: [critical analysis with textual evidence]`,
 Rules:
 - INSTRUCTION types: What does this clause mean? When does this apply? What are obligations? What are risks?
 - Use precise legal terminology
+- NEVER reference figures, tables, charts, diagrams, or images (e.g., "as shown in Figure X", "see Table Y"). The input is extracted text only with no visuals. Describe the CONCEPT instead of pointing to a visual.
 - Cite specific sections/articles
 - Explain practical implications, not just definitions
 - Cover both letter (exact words) and spirit (intent)
@@ -3348,6 +3355,7 @@ Rules:
 - INSTRUCTION types: What's the business model? How does X apply to Y? What are risks/opportunities? Why did this strategy work?
 - Use metrics and financial reasoning
 - Connect to real-world examples
+- NEVER reference figures, tables, charts, diagrams, or images (e.g., "as shown in Figure X", "see Table Y"). The input is extracted text only with no visuals. Describe the CONCEPT instead of pointing to a visual.
 - Include both strategic and tactical insights
 - Explain assumptions and tradeoffs
 - Show competitive context
@@ -3362,7 +3370,11 @@ OUTPUT: [detailed explanation with examples]`,
 
 Rules:
 - INSTRUCTION types: What's the research question? What methodology was used? What are the key findings? How do results support the hypothesis? What are implications?
+- NEVER reference figures, tables, charts, diagrams, or images (e.g., "as shown in Figure X", "see Table Y"). The input is extracted text only with no visuals. Describe the CONCEPT instead of pointing to a visual.
 - Preserve technical accuracy and domain-specific terminology
+- Preserve technical accuracy and domain-specific terminology
+- ALL mathematical expressions and statistical formulas MUST use LaTeX notation: inline $...$ or display $$...$$. Never output raw ASCII math.
+- If equations are garbled in the source, reconstruct from context or describe conceptually.
 - Include quantitative results, statistical significance, effect sizes
 - Explain practical implications and limitations
 - Show connections between hypothesis, methodology, and findings
@@ -3789,8 +3801,9 @@ async function parsePDF(file) {
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    const pageText = content.items.map(item => item.str).join(' ');
-    text += pageText + '\n\n';
+    let pageText = content.items.map(item => item.str).join(' ');
+        pageText = normalizeMathInText(pageText);
+        text += pageText + '\n\n';
   }
   log(`PDF: ${pdf.numPages} pages extracted`, 'ok');
   return text;
@@ -3857,7 +3870,40 @@ function isJunkChunk(text) {
   if ((text.match(/\(\d{4}\)/g) || []).length > 5 && text.length < 500) return true;
   return false;
 }
+// Strip figure/table references that have no visual backing
+    function sanitizeChunkForGeneration(text) {
+      text = text.replace(
+        /\b(as\s+)?(shown|illustrated|depicted|summarized|listed|presented|described)\s+(in|by)\s+(Figure|Fig\.|Table|Chart|Diagram|Graph)\s*[\d.\-]+/gi,
+        ''
+      );
+      text = text.replace(
+        /\(?(see|refer\s+to|cf\.?)\s+(Figure|Fig\.|Table|Chart|Diagram|Graph)\s*[\d.\-]+\)?/gi,
+        ''
+      );
+      text = text.replace(
+        /^(Figure|Fig\.|Table|Chart|Diagram)\s*[\d.\-]+[.:]\s*.{0,100}$/gim,
+        ''
+      );
+      return text.replace(/\n{3,}/g, '\n\n').trim();
+    }
 
+  // Normalize common PDF math extraction artifacts
+    function normalizeMathInText(text) {
+      text = text.replace(/(\w)\s*2\s*(?=[+\-=\s,;.)(\]|$)/g, '$1^2');
+      text = text.replace(/(\w)\s*3\s*(?=[+\-=\s,;.)(\]|$)/g, '$1^3');
+      text = text.replace(/(\w)\s*n\s*(?=[+\-=\s,;.)(\]|$)/g, '$1^n');
+      text = text.replace(/\balpha\b/gi, 'α');
+      text = text.replace(/\bbeta\b/gi, 'β');
+      text = text.replace(/\bgamma\b/gi, 'γ');
+      text = text.replace(/\bdelta\b/gi, 'δ');
+      text = text.replace(/\bsigma\b/gi, 'σ');
+      text = text.replace(/\btheta\b/gi, 'θ');
+      text = text.replace(/\blambda\b/gi, 'λ');
+      text = text.replace(/\bpi\b/gi, 'π');
+      text = text.replace(/\bmu\b/gi, 'μ');
+      text = text.replace(/\bsqrt\s*\(([^)]+)\)/gi, '√($1)');
+      return text;
+    }
 // ════════════════════════════════════════════════════════════════════════════
 // MULTI-PAIR PARSER (beats single-pair approach)
 // ════════════════════════════════════════════════════════════════════════════
@@ -3880,10 +3926,14 @@ function parsePairResponse(response) {
     instruction = instruction.replace(/^["'\s]+|["'\s]+$/g, '').trim();
     output = output.replace(/^["'\s]+|["'\s]+$/g, '').trim();
 
-    // ──── QUALITY GATE ────
+// ──── QUALITY GATE ────
     if (instruction.length < 10) continue;      // Question too short
     if (output.length < 50) continue;            // Answer too shallow
     if (output.split(/\s+/).length < 8) continue; // Fewer than 8 words
+
+    // ──── PHANTOM REFERENCE GATE ────
+    const phantomRef = /(figure|fig\.|table|chart|diagram|graph)\s*[\d.\-]+/i;
+    if (phantomRef.test(instruction) || phantomRef.test(output)) continue;
 
     pairs.push({ instruction, output });
   }
@@ -4050,7 +4100,7 @@ async function generatePairsFromSelected() {
 
     try {
       const chunk = chunksToProcess[i];
-      const prompt = `${systemPrompt}\n\nText:\n${chunk.text}`;
+      const prompt = `${systemPrompt}\n\nText:\n${sanitizeChunkForGeneration(chunk.text)}`;
       const response = await ollamaGenerate(prompt, model);
       const parsedPairs = parsePairResponse(response);
 
