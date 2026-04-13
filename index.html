@@ -3893,9 +3893,9 @@ function isJunkChunk(text) {
 
   // Normalize common PDF math extraction artifacts
     function normalizeMathInText(text) {
-      text = text.replace(/(\w)\s*2\s*(?=[+\-=\s,;.)(\]|$)/g, '$1^2');
-      text = text.replace(/(\w)\s*3\s*(?=[+\-=\s,;.)(\]|$)/g, '$1^3');
-      text = text.replace(/(\w)\s*n\s*(?=[+\-=\s,;.)(\]|$)/g, '$1^n');
+      text = text.replace(/(\w)\s*2\s*(?=[+\-=\s,;.)(\]|$])/g, '$1^2');
+		text = text.replace(/(\w)\s*3\s*(?=[+\-=\s,;.)(\]|$])/g, '$1^3');
+		text = text.replace(/(\w)\s*n\s*(?=[+\-=\s,;.)(\]|$])/g, '$1^n');
       text = text.replace(/\balpha\b/gi, 'α');
       text = text.replace(/\bbeta\b/gi, 'β');
       text = text.replace(/\bgamma\b/gi, 'γ');
