@@ -3240,6 +3240,61 @@ function getCloudBaseUrl() {
   return urls[CLOUD_PROVIDER] || '';
 }
 
+// ── LOAD EXTERNAL PROMPTS FROM JSON ──
+let DOMAIN_PROMPTS = {
+  generic: `You are a training data generator. Given text, create {N} high-quality instruction-output training pairs.
+
+Rules:
+- Each pair must teach a DIFFERENT aspect
+- Vary question types: definitional, procedural, analytical, comparative
+- NEVER provide surface-level answers
+- Include WHY and WHEN, not just WHAT
+- Show reasoning: "Because..." or "The reason is..."
+- Avoid generic statements; be specific and concrete
+- Instruction: Clear, specific question (1-2 sentences)
+- Output: Complete, detailed answer (minimum 2-3 sentences)
+
+Format EXACTLY (repeat for each pair):
+INSTRUCTION: [question or task]
+OUTPUT: [complete answer]`
+};
+
+async function loadExternalPrompts() {
+  try {
+    const response = await fetch('prompts.json');
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    
+    const data = await response.json();
+    if (data.prompts && typeof data.prompts === 'object') {
+      Object.entries(data.prompts).forEach(([key, obj]) => {
+        if (obj.system) {
+          DOMAIN_PROMPTS[key] = obj.system;
+        }
+      });
+      console.log('✅ Loaded prompts from JSON:', Object.keys(DOMAIN_PROMPTS));
+      updateDomainSelects();
+    }
+  } catch(e) {
+    console.warn('⚠️ Could not load prompts.json, using Generic fallback:', e.message);
+  }
+}
+
+function updateDomainSelects() {
+  const domainKeys = Object.keys(DOMAIN_PROMPTS);
+  
+  [$('domain-select'), $('settings-domain')].forEach(sel => {
+    if (!sel) return;
+    const current = sel.value;
+    sel.innerHTML = domainKeys
+      .map(key => `<option value="${key}">${key.charAt(0).toUpperCase() + key.slice(1)}</option>`)
+      .join('');
+    sel.value = current || 'generic';
+  });
+}
+
+// Call on module init (right after this function definition)
+loadExternalPrompts();
+
 // Expose to global scope for settings drawer (non-module script)
 window.CLOUD_PROVIDER = CLOUD_PROVIDER;
 window.CLOUD_API_KEY = CLOUD_API_KEY;
@@ -3262,134 +3317,6 @@ window.addEventListener('cloud-settings-changed', (e) => {
     checkOllama(); // Refresh model list for new provider
   }
 });
-
-// ── DOMAIN-SPECIFIC PROMPTS ──
-const DOMAIN_PROMPTS = {
-  generic: `You are a training data generator. Given text, create {N} high-quality instruction-output training pairs.
-
-Rules:
-- Each pair must teach a DIFFERENT aspect
-- Vary question types: definitional, procedural, analytical, comparative
-- NEVER provide surface-level answers
-- Include WHY and WHEN, not just WHAT
-- Show reasoning: "Because..." or "The reason is..."
-- Avoid generic statements; be specific and concrete
-- Instruction: Clear, specific question (1-2 sentences)
-- Output: Complete, detailed answer (minimum 2-3 sentences)
-
-Format EXACTLY (repeat for each pair):
-INSTRUCTION: [question or task]
-OUTPUT: [complete answer]`,
-
-  coding: `You are a software engineer training data generator. Given code documentation or technical text, create {N} instruction-output pairs.
-
-Rules:
-- INSTRUCTION types: How to use X? What does Y do? Fix this bug? Explain Z?
-- NEVER reference figures, tables, charts, diagrams, or images (e.g., "as shown in Figure X", "see Table Y"). The input is extracted text only with no visuals. Describe the CONCEPT instead of pointing to a visual.
-- Include code examples in outputs when relevant
-- Use actual API names, method signatures, parameters
-- Explain WHY not just WHAT
-- Cover both theory and practical usage
-- For APIs: include method names, parameters, return types
-- Show edge cases and common mistakes
-- Instruction: Clear, actionable question about code/APIs
-- Output: Complete explanation with code example if applicable
-
-Format EXACTLY (repeat for each pair):
-INSTRUCTION: [specific, actionable question about code/APIs]
-OUTPUT: [complete explanation with code example if applicable]`,
-
-  scientific: `You are a scientific/mathematical training data generator. Given academic or technical text with equations, create {N} pairs.
-
-Rules:
-- INSTRUCTION types: Derive this formula? What does this equation mean? Solve for X? When would you use this?
-- NEVER reference figures, tables, charts, diagrams, or images (e.g., "as shown in Figure X", "see Table Y"). The input is extracted text only with no visuals. Describe the CONCEPT instead of pointing to a visual.
-- Preserve mathematical notation exactly (use ^, _, sqrt(), pi, etc.)
-- Explain derivations step-by-step
-- ALL mathematical expressions MUST use LaTeX notation: inline $...$ or display $$...$$. Examples: $E = mc^2$, $\\frac{dQ}{dt} = hA(T_s - T_\\infty)$
-- If the source contains garbled or incomplete equations, reconstruct the INTENDED equation from context. If unrecoverable, describe the concept instead.
-- NEVER output raw ASCII math like "E = mc2" — always use LaTeX delimiters.
-- Include physical/practical meaning, not just algebra
-- Handle units and dimensions
-- Show assumptions and approximations
-- Instruction: Specific question about concept, derivation, or application
-- Output: Detailed explanation with notation preserved and steps shown
-
-Format EXACTLY (repeat for each pair):
-INSTRUCTION: [question about concept, derivation, or application]
-OUTPUT: [detailed explanation with notation preserved]`,
-
-  literature: `You are a literature/humanities training data generator. Given novels, essays, or literary text, create {N} pairs.
-
-Rules:
-- INSTRUCTION types: What does this passage reveal? Compare X and Y? Analyze the symbolism? How does character develop?
-- Include textual evidence (quotes)
-- NEVER reference figures, tables, charts, diagrams, or images (e.g., "as shown in Figure X", "see Table Y"). The input is extracted text only with no visuals. Describe the CONCEPT instead of pointing to a visual.
-- Discuss themes, motifs, writing style, tone
-- Connect to broader literary context
-- Avoid superficial plot summary — focus on analysis
-- Show interpretation, not just description
-- Instruction: Analytical question about text, themes, or craft
-- Output: Critical analysis with textual evidence and interpretation
-
-Format EXACTLY (repeat for each pair):
-INSTRUCTION: [analytical question about text, themes, or craft]
-OUTPUT: [critical analysis with textual evidence]`,
-
-  legal: `You are a legal document training data generator. Given contracts, statutes, or legal text, create {N} pairs.
-
-Rules:
-- INSTRUCTION types: What does this clause mean? When does this apply? What are obligations? What are risks?
-- Use precise legal terminology
-- NEVER reference figures, tables, charts, diagrams, or images (e.g., "as shown in Figure X", "see Table Y"). The input is extracted text only with no visuals. Describe the CONCEPT instead of pointing to a visual.
-- Cite specific sections/articles
-- Explain practical implications, not just definitions
-- Cover both letter (exact words) and spirit (intent)
-- Show real-world applications
-- Instruction: Specific legal question about interpretation or application
-- Output: Precise explanation with references and practical implications
-
-Format EXACTLY (repeat for each pair):
-INSTRUCTION: [specific legal question about interpretation or application]
-OUTPUT: [precise explanation with references]`,
-
-  business: `You are a business/economics training data generator. Given business books, case studies, or reports, create {N} pairs.
-
-Rules:
-- INSTRUCTION types: What's the business model? How does X apply to Y? What are risks/opportunities? Why did this strategy work?
-- Use metrics and financial reasoning
-- Connect to real-world examples
-- NEVER reference figures, tables, charts, diagrams, or images (e.g., "as shown in Figure X", "see Table Y"). The input is extracted text only with no visuals. Describe the CONCEPT instead of pointing to a visual.
-- Include both strategic and tactical insights
-- Explain assumptions and tradeoffs
-- Show competitive context
-- Instruction: Business question about strategy, operations, or analysis
-- Output: Detailed explanation with examples and reasoning
-
-Format EXACTLY (repeat for each pair):
-INSTRUCTION: [business question about strategy, operations, or analysis]
-OUTPUT: [detailed explanation with examples]`,
-
-  researchpaper: `You are a research paper training data generator. Given academic research papers (abstracts, methods, results, discussion), create {N} pairs.
-
-Rules:
-- INSTRUCTION types: What's the research question? What methodology was used? What are the key findings? How do results support the hypothesis? What are implications?
-- NEVER reference figures, tables, charts, diagrams, or images (e.g., "as shown in Figure X", "see Table Y"). The input is extracted text only with no visuals. Describe the CONCEPT instead of pointing to a visual.
-- Preserve technical accuracy and domain-specific terminology
-- Preserve technical accuracy and domain-specific terminology
-- ALL mathematical expressions and statistical formulas MUST use LaTeX notation: inline $...$ or display $$...$$. Never output raw ASCII math.
-- If equations are garbled in the source, reconstruct from context or describe conceptually.
-- Include quantitative results, statistical significance, effect sizes
-- Explain practical implications and limitations
-- Show connections between hypothesis, methodology, and findings
-- Avoid oversimplification — maintain academic rigor
-- Instruction: Specific research question about methodology, findings, or implications
-- Output: Detailed explanation grounded in the paper's evidence and findings
-
-Format EXACTLY (repeat for each pair):
-INSTRUCTION: [specific research question about methodology, findings, or implications]
-OUTPUT: [detailed explanation grounded in evidence and findings]`
-};
 
 // Review tab state: selected chunks for generation
 let selectedChunks = new Set();
@@ -5511,6 +5438,15 @@ $('domain-select').addEventListener('change', (e) => {
   const pairsN = $('pairs-per-chunk').value;
   $('system-prompt').value = prompt.replace('{N}', pairsN);
 });
+
+// Same for settings domain selector
+if ($('settings-domain')) {
+  $('settings-domain').addEventListener('change', async (e) => {
+    const domain = e.target.value;
+    const prompt = DOMAIN_PROMPTS[domain] || DOMAIN_PROMPTS.generic;
+    $('system-prompt').value = prompt.replace('{N}', $('settings-pairs-per-chunk').value);
+  });
+}
 
 // RAG event listeners (guard against missing elements from old layout)
 if ($('btn-rag-search')) $('btn-rag-search').addEventListener('click', () => ragSearch('search'));
