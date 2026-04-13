@@ -8,7 +8,7 @@
 
 Created by **[Dr. Khaled Diab](https://github.com/khalecl)** · PhD Electrical Power Engineering
 
-[![Version](https://img.shields.io/badge/version-v3.5-00e5a0?style=for-the-badge)](https://github.com/khalecl/know3)
+[![Version](https://img.shields.io/badge/version-v3.21-00e5a0?style=for-the-badge)](https://github.com/khalecl/know3/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
 [![Ollama](https://img.shields.io/badge/Powered_by-Ollama-white?style=for-the-badge)](https://ollama.com)
 [![GitHub Pages](https://img.shields.io/badge/Live_Demo-GitHub_Pages-purple?style=for-the-badge)](https://khalecl.github.io/know3/)
@@ -21,11 +21,11 @@ Created by **[Dr. Khaled Diab](https://github.com/khalecl)** · PhD Electrical P
 
 ## What is know3?
 
-know3 is a powerful, **completely offline** training data generation engine that transforms your documents into high-quality instruction/output pairs optimized for fine-tuning large language models.
+know3 is a powerful **local-first** training data generation engine that transforms your documents into high-quality instruction/output pairs optimized for fine-tuning large language models.
 
-Upload your PDFs, Word documents, eBooks, or text files, and know3 uses a locally running LLM (via [Ollama](https://ollama.com)) to generate domain-specific training pairs — ready for HuggingFace, LLaMA, Mistral, or any fine-tuning pipeline.
+Upload your PDFs, Word documents, eBooks, or text files. By default, know3 uses a locally running LLM via [Ollama](https://ollama.com).  
 
-**No cloud APIs. No subscriptions. No data ever leaves your machine.**
+**New in v3.21**: Added **Cloud Inference fallback** for training pair generation and RAG chat when Ollama is not available or you want faster responses. Documents stay on your machine in local mode; they leave only when Cloud mode is explicitly enabled.
 
 know3 also includes a full **RAG (Retrieval-Augmented Generation)** system — have multi-turn conversations with your documents, with real-time streaming, source citations, and hybrid search.
 
@@ -37,11 +37,13 @@ know3 also includes a full **RAG (Retrieval-Augmented Generation)** system — h
 Your Documents          Ollama (Local AI)         Training Data
 ┌──────────┐           ┌──────────────┐          ┌──────────────┐
 │  PDF     │           │              │          │  JSONL       │
-│  DOCX    │──ingest──▶│  Chunk +     │──gen────▶│  JSON        │
+│  DOCX    │──ingest──▶│  Chunk +     │──gen────▶│  JSON       │
 │  EPUB    │           │  Embed +     │          │  Alpaca      │
 │  TXT     │           │  Generate    │          │  ShareGPT    │
+│  TXT     │           │  (local or   │          │  ShareGPT    │
+│  TXT     │           │  cloud)      │          │  ShareGPT    │
 └──────────┘           └──────────────┘          │  CSV         │
-                                                  └──────────────┘
+                                                 └──────────────┘
                               │
                               ▼
                        ┌──────────────┐
@@ -55,11 +57,11 @@ Your Documents          Ollama (Local AI)         Training Data
 
 1. **Ingest** — Drop your documents. know3 extracts text, removes junk, and splits it into optimized chunks. Each chunk is embedded into a vector for semantic search.
 
-2. **Generate** — Select a content domain (Generic, Coding, Scientific, Legal, Business, Literature, Research Papers). know3 sends each chunk to your local LLM with domain-optimized prompts and generates instruction/output training pairs.
+2. **Generate** — Select a content domain. know3 sends each chunk to your chosen backend (local Ollama preferred, or Cloud Inference) with domain-optimized prompts and generates instruction/output training pairs.
 
 3. **Export** — Download your training data in 5 formats ready for fine-tuning any LLM.
 
-4. **Chat (RAG)** — Have multi-turn conversations with your documents using hybrid search (vector + keyword + Reciprocal Rank Fusion). Responses stream in real-time with source citations.
+4. **Chat (RAG)** — Have multi-turn conversations with your documents using hybrid search. Responses stream in real-time with source citations. Cloud fallback available for speed.
 
 ---
 
@@ -88,7 +90,10 @@ ollama pull nomic-embed-text     # Required for search/RAG
 ### 4. Open the App
 
 Visit [khalecl.github.io/know3](https://khalecl.github.io/know3). The status indicator turns green once Ollama is detected.
+In Settings, you can:
 
+Keep default local Ollama (http://localhost:11434)
+Or toggle ☁️ Cloud Inference (Faster) — faster responses, but documents will leave your machine.
 ---
 
 ## 🚀 Core Features
@@ -96,29 +101,26 @@ Visit [khalecl.github.io/know3](https://khalecl.github.io/know3). The status ind
 ### Document Processing
 - **Multi-format ingestion** — PDF, DOCX, EPUB, TXT
 - **Intelligent chunking** — configurable chunk sizes with automatic junk filtering
-- **Chunk review** — preview, select, and filter chunks before generating
-- **Multiple collections** — organize documents by topic or project
+- **Chunk review and multiple collections**
 
 ### Training Data Generation
-- **7 domain-specific prompts** — Generic, Coding, Scientific, Legal, Business, Literature, Research
+- **7 domain-specific prompts** — (Generic, Coding, Scientific, Legal, Business, Literature, Research and way more ready prompt!)
 - **Quality-gated generation** — configurable pairs per chunk (1-3)
-- **Real-time progress** — live tracking with time estimates
-- **Neural network visualization** — background animation reacts to processing state
+- **Real-time progress** — Real-time progress + neural network visualization
+- **New:** — Cloud Inference fallback when local Ollama unavailable
 
 ### RAG Conversation (v3.5)
-- **Hybrid search** — combines vector similarity + keyword matching using Reciprocal Rank Fusion (RRF) for significantly better retrieval
+- **Hybrid search** — (vector + keyword + Reciprocal Rank Fusion)
 - **Real-time streaming** — responses stream token-by-token as Ollama generates them
 - **ChatGPT-style UI** — message bubbles with avatars, typing indicator, suggestion prompts
 - **Source citations** — every answer references specific source documents with relevance scores
 - **Multi-turn context** — conversation history is maintained for follow-up questions
-- **Copy button** — hover to copy any response
-- **Grounded answers** — improved prompting with strict anti-hallucination rules
+- **New:** — Cloud Inference fallback for chat
 
 ### Customization
-- **6 color themes** — Emerald, Ocean, Sunset, Cyber Pink, Royal Gold, Monochrome
-- **Custom accent color** — pick any hex color and the full UI adapts
-- **Theme persistence** — your choice is saved across sessions
-- **Ollama connection settings** — connect to localhost or any LAN IP from the Settings panel
+- **6 built-in themes + custom accent color picker** 
+- **Ollama connection (localhost or LAN) + Cloud Inference toggle**
+- Configurable chunk sizes, generation parameters, RAG settings, and model selection
 
 ### Export
 - **5 formats** — JSONL, JSON, Alpaca, ShareGPT, CSV
@@ -151,28 +153,10 @@ Visit [khalecl.github.io/know3](https://khalecl.github.io/know3). The status ind
 - **Frontend** — Single HTML file, vanilla HTML5 + CSS3 + ES6 JavaScript
 - **Vector Store** — In-memory cosine similarity search
 - **Search** — Hybrid retrieval (vector + keyword) with Reciprocal Rank Fusion
-- **AI Backend** — Local Ollama REST API with streaming support
+- **AI Backend** — Local Ollama REST API or Cloud Inference fallback
 - **Persistence** — Settings, themes, and conversation history in browser localStorage
-- **Visualization** — Canvas-based 3-layer neural network with state-reactive animations
 
----
 
-## 🎨 Theming
-
-know3 includes a full theme system accessible from Settings → Theme:
-
-| Theme | Accent Color |
-|-------|-------------|
-| Emerald (default) | `#00e5a0` |
-| Ocean | `#38bdf8` |
-| Sunset | `#fb923c` |
-| Cyber Pink | `#f472b6` |
-| Royal Gold | `#fbbf24` |
-| Monochrome | `#94a3b8` |
-
-You can also pick any custom color using the color picker — the entire UI automatically adapts.
-
----
 
 ## ⚖️ License
 
