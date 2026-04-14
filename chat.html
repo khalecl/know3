@@ -2328,10 +2328,10 @@ function onAudioEnd(btn, idx) {
 async function speakKokoroMsg(text, speed, btn, idx) {
   try {
     const voice = getSetting('kokoro_voice', 'af_heart');
-    const res = await fetch('https://kokoro-proxy.khaled-mohamed-rady.workers.dev/kokoro-proxy', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+const res = await fetch('https://kokoro-proxy.khaled-mohamed-rady.workers.dev/v1/audio/speech', {
+		method: 'POST',
+      	headers: { 'Content-Type': 'application/json' },
+      	body: JSON.stringify({
         input: text.substring(0, 3000),
         voice: voice,
         speed: speed,
@@ -3960,7 +3960,7 @@ function initInput() {
 
 	  try {
 		const voice = getSetting('kokoro_voice', 'af_heart');
-		const res = await fetch('https://kokoro-proxy.khaled-mohamed-rady.workers.dev/kokoro-proxy', {
+		const res = await fetch('https://kokoro-proxy.khaled-mohamed-rady.workers.dev/v1/audio/speech', {
 		  method: 'POST',
 		  headers: { 'Content-Type': 'application/json' },
 		  body: JSON.stringify({
@@ -4261,37 +4261,38 @@ function initInput() {
 			<div>
 			  <label class="field-label">Voice Engine</label>
 			  <select id="voice-output-mode" onchange="onVoiceOutputChange()">
-				<option value="kokoro">Kokoro (Free / Emotional)</option>
+				<option value="kokoro">Edge TTS (Free / Natural)</option>
 				<option value="browser">Browser (Free / Offline)</option>
 				<option value="elevenlabs">ElevenLabs (Premium)</option>
 			  </select>
 			</div>
 
 			<!-- Kokoro config -->
+<!-- Edge TTS config -->
 			<div id="voice-kokoro-config">
 			  <label class="field-label" style="margin-top:0.3rem">Voice</label>
 			  <select id="voice-kokoro-voice" onchange="setSetting('kokoro_voice',this.value)">
-				<optgroup label="Female — Expressive">
-				  <option value="af_heart" selected>Heart (warm, emotional)</option>
-				  <option value="af_bella">Bella (soft, gentle)</option>
-				  <option value="af_sarah">Sarah (clear, friendly)</option>
-				  <option value="af_nova">Nova (bright, energetic)</option>
-				  <option value="af_sky">Sky (light, airy)</option>
-				  <option value="af_nicole">Nicole (mature, calm)</option>
+				<optgroup label="Female — American">
+				  <option value="af_heart" selected>Aria (warm, expressive)</option>
+				  <option value="af_bella">Sara (soft, gentle)</option>
+				  <option value="af_sarah">Jenny (clear, friendly)</option>
+				  <option value="af_nova">Ana (bright, energetic)</option>
+				  <option value="af_sky">Michelle (light, airy)</option>
+				  <option value="af_nicole">Nancy (mature, calm)</option>
 				</optgroup>
-				<optgroup label="Male — Expressive">
-				  <option value="am_adam">Adam (deep, warm)</option>
-				  <option value="am_michael">Michael (clear, steady)</option>
+				<optgroup label="Male — American">
+				  <option value="am_adam">Guy (deep, warm)</option>
+				  <option value="am_michael">Christopher (clear, steady)</option>
 				  <option value="am_eric">Eric (friendly, casual)</option>
 				</optgroup>
 				<optgroup label="British">
-				  <option value="bf_emma">Emma (British, warm)</option>
-				  <option value="bf_isabella">Isabella (British, elegant)</option>
-				  <option value="bm_george">George (British, classic)</option>
-				  <option value="bm_lewis">Lewis (British, narrative)</option>
+				  <option value="bf_emma">Sonia (British, warm)</option>
+				  <option value="bf_isabella">Maisie (British, elegant)</option>
+				  <option value="bm_george">Ryan (British, classic)</option>
+				  <option value="bm_lewis">Thomas (British, narrative)</option>
 				</optgroup>
 			  </select>
-			  <div class="field-hint">Free — no API key needed. Emotional, natural voices.</div>
+			  <div class="field-hint">Free — Microsoft Edge TTS. No API key needed.</div>
 			</div>
 
 			<!-- ElevenLabs config -->
