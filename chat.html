@@ -2324,41 +2324,103 @@ function onAudioEnd(btn, idx) {
   }
 }
 
+	// ── Edge TTS (browser-side WebSocket, high quality, free) ──
+	async function speakEdgeTTS(text, voice, speed) {
+	  const VOICE_MAP = {
+	    'af_heart':'en-US-AriaNeural','af_bella':'en-US-SaraNeural','af_sarah':'en-US-JennyNeural',
+	    'af_nova':'en-US-AnaNeural','af_sky':'en-US-MichelleNeural','af_nicole':'en-US-NancyNeural',
+	    'am_adam':'en-US-GuyNeural','am_michael':'en-US-ChristopherNeural','am_eric':'en-US-EricNeural',
+	    'bf_emma':'en-GB-SoniaNeural','bf_isabella':'en-GB-MaisieNeural',
+	    'bm_george':'en-GB-RyanNeural','bm_lewis':'en-GB-ThomasNeural',
+	  };
+	  const edgeVoice = VOICE_MAP[voice] || 'en-US-AriaNeural';
+	  const TOKEN = '6A5AA1D4EAFF4E9FB37E23D68491D6F4';
+	  const id = crypto.randomUUID().replace(/-/g, '');
+	  const ratePct = Math.round((speed - 1) * 100);
+	  const rateStr = ratePct >= 0 ? `+${ratePct}%` : `${ratePct}%`;
+	  const escaped = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+	  const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='${edgeVoice}'><prosody rate='${rateStr}' pitch='+0Hz'>${escaped}</prosody></voice></speak>`;
+	
+	  return new Promise((resolve, reject) => {
+	    const ws = new WebSocket(`wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=${TOKEN}&ConnectionId=${id}`);
+	    const chunks = [];
+	    const timer = setTimeout(() => { ws.close(); reject(new Error('Edge TTS timeout')); }, 15000);
+	
+	    ws.onopen = () => {
+	      ws.send(`X-Timestamp:${new Date().toUTCString()}\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"false"},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}`);
+	      ws.send(`X-Timestamp:${new Date().toUTCString()}\r\nContent-Type:application/ssml+xml\r\nX-RequestId:${id}\r\nPath:ssml\r\n\r\n${ssml}`);
+	    };
+	
+	    ws.onmessage = (evt) => {
+	      if (typeof evt.data === 'string') {
+	        if (evt.data.includes('Path:turn.end')) {
+	          clearTimeout(timer);
+	          ws.close();
+	          if (!chunks.length) { reject(new Error('No audio')); return; }
+	          const total = chunks.reduce((s, c) => s + c.byteLength, 0);
+	          const merged = new Uint8Array(total);
+	          let off = 0;
+	          for (const c of chunks) { merged.set(new Uint8Array(c), off); off += c.byteLength; }
+	          resolve(new Blob([merged], { type: 'audio/mpeg' }));
+	        }
+	      } else if (evt.data instanceof Blob) {
+	        evt.data.arrayBuffer().then(buf => {
+	          const view = new DataView(buf);
+	          const hLen = view.getInt16(0);
+	          const header = new TextDecoder().decode(buf.slice(2, 2 + hLen));
+	          if (header.includes('Path:audio')) {
+	            const audio = buf.slice(2 + hLen);
+	            if (audio.byteLength > 0) chunks.push(audio);
+	          }
+	        });
+	      }
+	    };
+	
+	    ws.onerror = () => { clearTimeout(timer); reject(new Error('Edge WS error')); };
+	    ws.onclose = () => { clearTimeout(timer); if (!chunks.length) reject(new Error('Edge WS closed')); };
+	  });
+	}
 // ── Kokoro TTS (Free, Emotional) ──
 async function speakKokoroMsg(text, speed, btn, idx) {
+  const voice = getSetting('kokoro_voice', 'af_heart');
+
+  // Try 1: Edge TTS (browser WebSocket — best quality)
   try {
-    const voice = getSetting('kokoro_voice', 'af_heart');
-const res = await fetch('https://kokoro-proxy.khaled-mohamed-rady.workers.dev/v1/audio/speech', {
-		method: 'POST',
-      	headers: { 'Content-Type': 'application/json' },
-      	body: JSON.stringify({
-        input: text.substring(0, 3000),
-        voice: voice,
-        speed: speed,
-        response_format: 'mp3'
-      })
+    const blob = await speakEdgeTTS(text.substring(0, 3000), voice, speed);
+    const audioUrl = URL.createObjectURL(blob);
+    _currentAudio = new Audio(audioUrl);
+    _currentAudio.onplay = () => onAudioStart(btn);
+    _currentAudio.onended = () => { URL.revokeObjectURL(audioUrl); onAudioEnd(btn, idx); };
+    _currentAudio.onerror = () => { URL.revokeObjectURL(audioUrl); onAudioEnd(btn, idx); };
+    await _currentAudio.play();
+    return;
+  } catch (e) {
+    console.warn('Edge TTS failed, trying proxy:', e.message);
+  }
+
+  // Try 2: Proxy (Google TTS via Cloudflare Worker)
+  try {
+    const res = await fetch('https://kokoro-proxy.khaled-mohamed-rady.workers.dev/v1/audio/speech', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ input: text.substring(0, 3000), voice, speed, response_format: 'mp3' })
     });
-
-    if (!res.ok) {
-      console.warn('Kokoro failed, falling back to browser voice');
-      speakBrowserMsg(text, speed, btn, idx);
-      return;
-    }
-
+    if (!res.ok) throw new Error(`Proxy: ${res.status}`);
     const raw = await res.blob();
     const blob = new Blob([raw], { type: 'audio/mpeg' });
     const audioUrl = URL.createObjectURL(blob);
     _currentAudio = new Audio(audioUrl);
-
     _currentAudio.onplay = () => onAudioStart(btn);
     _currentAudio.onended = () => { URL.revokeObjectURL(audioUrl); onAudioEnd(btn, idx); };
     _currentAudio.onerror = () => { URL.revokeObjectURL(audioUrl); onAudioEnd(btn, idx); };
-
     await _currentAudio.play();
+    return;
   } catch (e) {
-    console.warn('Kokoro error:', e);
-    speakBrowserMsg(text, speed, btn, idx);
+    console.warn('Proxy TTS failed, using browser voice:', e.message);
   }
+
+  // Try 3: Browser speech (always works offline)
+  speakBrowserMsg(text, speed, btn, idx);
 }
 
 // ── ElevenLabs TTS (Premium) ──
@@ -3953,60 +4015,52 @@ function initInput() {
 	  }
 	}
 
-	async function speakKokoroVoicePanel(text, speed) {
-	  const btn = document.getElementById('btn-voice-stop');
-	  const micBtn = document.getElementById('btn-voice-mic');
-	  setVoiceStatus('Generating voice...', false);
+async function speakKokoroVoicePanel(text, speed) {
+  const btn = document.getElementById('btn-voice-stop');
+  const micBtn = document.getElementById('btn-voice-mic');
+  setVoiceStatus('Generating voice...', false);
+  const voice = getSetting('kokoro_voice', 'af_heart');
 
-	  try {
-		const voice = getSetting('kokoro_voice', 'af_heart');
-		const res = await fetch('https://kokoro-proxy.khaled-mohamed-rady.workers.dev/v1/audio/speech', {
-		  method: 'POST',
-		  headers: { 'Content-Type': 'application/json' },
-		  body: JSON.stringify({
-			input: text.substring(0, 3000),
-			voice: voice,
-			speed: speed,
-			response_format: 'mp3'
-		  })
-		});
+  // Try 1: Edge TTS
+  try {
+    const blob = await speakEdgeTTS(text.substring(0, 3000), voice, speed);
+    const audioUrl = URL.createObjectURL(blob);
+    _currentAudio = new Audio(audioUrl);
+    _currentAudio.onplay = () => { _isSpeaking = true; setVoiceStatus('Speaking...', true); };
+    _currentAudio.onended = () => { _isSpeaking = false; if (btn) btn.style.display = 'none'; if (micBtn) micBtn.style.display = ''; setVoiceStatus('Tap mic to speak'); URL.revokeObjectURL(audioUrl); _currentAudio = null; };
+    _currentAudio.onerror = () => { _isSpeaking = false; if (btn) btn.style.display = 'none'; if (micBtn) micBtn.style.display = ''; setVoiceStatus('Audio error'); _currentAudio = null; };
+    await _currentAudio.play();
+    return;
+  } catch (e) {
+    console.warn('Edge TTS voice panel failed:', e.message);
+  }
 
-		if (!res.ok) throw new Error(`Kokoro: ${res.status}`);
+  // Try 2: Proxy
+  try {
+    const res = await fetch('https://kokoro-proxy.khaled-mohamed-rady.workers.dev/v1/audio/speech', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ input: text.substring(0, 3000), voice, speed, response_format: 'mp3' })
+    });
+    if (!res.ok) throw new Error(`Proxy: ${res.status}`);
+    const raw = await res.blob();
+    const blob = new Blob([raw], { type: 'audio/mpeg' });
+    const audioUrl = URL.createObjectURL(blob);
+    _currentAudio = new Audio(audioUrl);
+    _currentAudio.onplay = () => { _isSpeaking = true; setVoiceStatus('Speaking...', true); };
+    _currentAudio.onended = () => { _isSpeaking = false; if (btn) btn.style.display = 'none'; if (micBtn) micBtn.style.display = ''; setVoiceStatus('Tap mic to speak'); URL.revokeObjectURL(audioUrl); _currentAudio = null; };
+    _currentAudio.onerror = () => { _isSpeaking = false; if (btn) btn.style.display = 'none'; if (micBtn) micBtn.style.display = ''; setVoiceStatus('Audio error'); _currentAudio = null; };
+    await _currentAudio.play();
+    return;
+  } catch (e) {
+    console.warn('Proxy voice panel failed:', e.message);
+  }
 
-		const raw = await res.blob();
-		const blob = new Blob([raw], { type: 'audio/mpeg' });
-		const audioUrl = URL.createObjectURL(blob);
-		_currentAudio = new Audio(audioUrl);
-
-		_currentAudio.onplay = () => {
-		  _isSpeaking = true;
-		  setVoiceStatus('Speaking...', true);
-		};
-		_currentAudio.onended = () => {
-		  _isSpeaking = false;
-		  if (btn) btn.style.display = 'none';
-		  if (micBtn) micBtn.style.display = '';
-		  setVoiceStatus('Tap mic to speak');
-		  URL.revokeObjectURL(audioUrl);
-		  _currentAudio = null;
-		};
-		_currentAudio.onerror = () => {
-		  _isSpeaking = false;
-		  if (btn) btn.style.display = 'none';
-		  if (micBtn) micBtn.style.display = '';
-		  setVoiceStatus('Audio playback error');
-		  _currentAudio = null;
-		};
-
-		await _currentAudio.play();
-	  } catch (e) {
-		console.warn('Kokoro voice panel error:', e);
-		setVoiceStatus('Kokoro failed, using browser voice');
-		if (btn) btn.style.display = 'none';
-		if (micBtn) micBtn.style.display = '';
-		speakBrowser(text, speed);
-	  }
-	}
+  // Try 3: Browser fallback
+  if (btn) btn.style.display = 'none';
+  if (micBtn) micBtn.style.display = '';
+  speakBrowser(text, speed);
+}
   
   function speakBrowser(text, speed) {
     if (!('speechSynthesis' in window)) {
