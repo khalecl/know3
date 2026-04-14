@@ -1353,12 +1353,14 @@ function renderMath(text) {
 			  return '';
 			});
   
-      if (typeof DOMPurify === 'undefined') return html;
-      return DOMPurify.sanitize(html, {
-        ALLOWED_TAGS: ['h1','h2','h3','h4','h5','h6','p','br','strong','em','u','code','pre','blockquote','ul','ol','li','table','thead','tbody','tr','th','td','a','hr','del','sup','sub',
-          'span','div','svg','path','line','rect','circle','g','use','defs','clipPath','style','annotation','math','semantics','mrow','mi','mo','mn','mfrac','msup','msub','mover','munder','msqrt','mtext','mspace','mtable','mtr','mtd'],
-        ALLOWED_ATTR: ['href','target','class','style','xmlns','viewBox','d','width','height','fill','stroke','aria-hidden','role','focusable','preserveAspectRatio','encoding']
-      });
+		if (typeof DOMPurify === 'undefined') return html;
+	      return DOMPurify.sanitize(html, {
+	        ALLOWED_TAGS: ['h1','h2','h3','h4','h5','h6','p','br','strong','em','u','code','pre','blockquote','ul','ol','li','table','thead','tbody','tr','th','td','a','hr','del','sup','sub',
+	          'span','div','svg','path','line','rect','circle','g','use','defs','clipPath','style','annotation','math','semantics','mrow','mi','mo','mn','mfrac','msup','msub','mover','munder','msqrt','mtext','mspace','mtable','mtr','mtd',
+	          'canvas','button'],
+			ALLOWED_ATTR: ['href','target','class','style','xmlns','viewBox','d','width','height','fill','stroke','aria-hidden','role','focusable','preserveAspectRatio','encoding',
+	          'id','onclick','data-type','data-chart-json','title']
+	      });
     } catch { return escapeHtml(text); }
   }
 
@@ -1887,19 +1889,18 @@ function renderChat() {
 
 		container.scrollTop = container.scrollHeight;
 
-		  // Initialize any chart canvases that were just rendered
+	// Initialize any chart canvases that were just rendered
 		  requestAnimationFrame(() => {
-			container.querySelectorAll('.msg-chart-container canvas').forEach(canvas => {
-			  if (!_chartInstances[canvas.id]) {
-				const switcher = canvas.closest('.msg-chart-container')?.querySelector('.chart-type-btn.active');
-				const type = switcher?.dataset.type || 'bar';
-				const dataAttr = switcher?.getAttribute('onclick')?.match(/'([^']+)'\)$/)?.[1];
-				if (dataAttr) {
-				  try {
-					const data = JSON.parse(decodeURIComponent(dataAttr));
-					renderChartInMessage(canvas.id, data, type);
-				  } catch {}
-				}
+			container.querySelectorAll('.msg-chart-container').forEach(chartContainer => {
+			  const canvas = chartContainer.querySelector('canvas');
+			  if (!canvas || !canvas.id || _chartInstances[canvas.id]) return;
+			  const dataEl = chartContainer.querySelector('[data-chart-json]');
+			  if (dataEl) {
+				try {
+				  const data = JSON.parse(decodeURIComponent(dataEl.dataset.chartJson));
+				  const type = chartContainer.querySelector('.chart-type-btn.active')?.dataset.type || 'bar';
+				  renderChartInMessage(canvas.id, data, type);
+				} catch {}
 			  }
 			});
 		  });
@@ -3653,12 +3654,20 @@ function initInput() {
 		  const canvasId = `chart-${msgIdx}-${Date.now()}`;
 		  const dataEncoded = encodeURIComponent(JSON.stringify(data));
 		  const types = ['bar', 'line', 'pie', 'doughnut', 'radar'];
-
-		  return `
-			<div class="msg-chart-container">
-			  <div class="chart-type-switcher">
-				${types.map(t => `<button class="chart-type-btn ${t === 'bar' ? 'active' : ''}" data-type="${t}" onclick="switchChartType('${canvasId}','${t}','${dataEncoded}')">${t}</button>`).join('')}
-			  </div>
+			return `
+				<div class="msg-chart-container" data-chart-json="${dataEncoded}">
+				  <div class="chart-type-switcher">
+					${types.map(t => `<button class="chart-type-btn ${t === 'bar' ? 'active' : ''}" data-type="${t}" onclick="switchChartType('${canvasId}','${t}','${dataEncoded}')">${t}</button>`).join('')}
+				  </div>
+				  <div style="position:relative;height:250px">
+					<canvas id="${canvasId}"></canvas>
+				  </div>
+				  <div class="msg-chart-actions">
+					<button class="chart-action-btn" onclick="downloadChart('${canvasId}')">⬇ Save PNG</button>
+				  </div>
+				</div>
+			  `;
+			</div>
 			  <div style="position:relative;height:250px">
 				<canvas id="${canvasId}"></canvas>
 			  </div>
