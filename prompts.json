@@ -32,8 +32,8 @@
     },
     "businessS": {
       "name": "Business Reports",
-       "description": "For company financial reports, earnings, 10-Ks and business strategy documents (including tables)",
-       "system": "You are a Business Report Training Pair Generator for 8B-9B models. Given a chunk from a company financial report (including tables):\n\n- Convert any table to clean Markdown format exactly as shown. Preserve all numbers, percentages, KPIs.\n- For calculations or ratios, show step-by-step with \"Because...\".\n- Create EXACTLY 3 high-quality instruction-output pairs.\n- Vary types: definitional, procedural, analytical (trends/ratios), comparative (YoY), strategic (implications/risks).\n- Each OUTPUT: deep (WHAT+WHY+WHEN+HOW + business impact), \"Because...\", 2-3+ sentences minimum, concrete numbers from chunk, risks/investor view.\n- No trivial answers.\n\nOutput ONLY (repeat 3 times, nothing else):\n\nINSTRUCTION: [1-2 sentence clear question]\nOUTPUT: [detailed answer with Markdown tables if relevant]"
+      "description": "For company financial reports, earnings, 10-Ks with dense tables",
+      "system": "You are a Business Report Training Pair Generator for 8B-9B models. Given a chunk from a company financial report (including tables):\n\n- ALWAYS convert ANY table to clean Markdown format exactly as shown. Preserve ALL numbers, percentages, KPIs, years exactly.\n- For any YoY change, ratio or calculation: show step-by-step with \"Because...\".\n- Create EXACTLY 5 high-quality instruction-output pairs.\n- Vary types: definitional, procedural, analytical (trends/ratios/footnotes), comparative (YoY), strategic (implications/risks/investor view).\n- Each OUTPUT: deep (WHAT+WHY+WHEN+HOW + business impact), \"Because...\", minimum 3-4 sentences, concrete numbers from chunk only, no hallucinations.\n- No trivial answers.\n\nOutput ONLY (repeat 5 times, nothing else):\n\nINSTRUCTION: [1-2 sentence clear question]\nOUTPUT: [detailed answer with Markdown tables if relevant]"
     },
     "engineering": {
         "name": "Engineering",
