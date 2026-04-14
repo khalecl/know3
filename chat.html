@@ -1424,25 +1424,13 @@ class VectorStore {
         });
       }
     });
-if (embeddingReady && this.chunks.length > 0) {
-      const EMBED_THRESHOLD = 5000;
-      if (this.chunks.length <= EMBED_THRESHOLD) {
-        const prevCount = this.embeddings.length;
-        if (prevCount === 0) {
-          await this.computeEmbeddings();
-        } else {
-          await this.computeEmbeddingsFrom(prevCount);
-        }
-        await saveEmbeddings(this.chunks, this.embeddings);
-      } else {
-        // Too large for blocking embed — switch to keyword, offer background option
-        setEmbedStatus('', `⚡ ${this.chunks.length.toLocaleString()} chunks — keyword mode`);
-        this.embeddings = [];
-        // Auto-switch toolbar to keyword
-        const modeEl = document.getElementById('toolbar-search-mode');
-        if (modeEl) { modeEl.value = 'keyword'; setSetting('search_mode', 'keyword'); }
-        this._pendingEmbedStart = this.embeddings.length;
-      }
+// Never block UI on embedding — always defer to background
+    if (embeddingReady && this.chunks.length > 0) {
+      const prevCount = this.embeddings.length;
+      this._pendingEmbedStart = prevCount;
+      setEmbedStatus('', `⚡ ${this.chunks.length.toLocaleString()} chunks — keyword ready, embedding in background...`);
+      // Auto-start background embedding after a short delay
+      setTimeout(() => startBackgroundEmbedding(), 500);
     }
     updateChunkCount();
     }
@@ -1466,7 +1454,7 @@ if (embeddingReady && this.chunks.length > 0) {
           }
           setEmbedStatus('loading', `Indexing ${end.toLocaleString()}/${total.toLocaleString()}`);
           setEmbedProgress(end, total);
-          await new Promise(r => setTimeout(r, 0));
+          await new Promise(r => setTimeout(r, 50));
         }
         setEmbedProgress(-1, 0);
         setEmbedStatus('ready', `✓ ${total.toLocaleString()} indexed`);
@@ -1496,7 +1484,7 @@ if (embeddingReady && this.chunks.length > 0) {
             const done = end - startIdx;
             setEmbedStatus('loading', `Indexing ${done.toLocaleString()}/${newCount.toLocaleString()} new`);
             setEmbedProgress(done, newCount);
-            await new Promise(r => setTimeout(r, 0));
+            await new Promise(r => setTimeout(r, 50));
           }
           setEmbedProgress(-1, 0);
           setEmbedStatus('ready', `✓ ${total.toLocaleString()} indexed`);
@@ -3288,13 +3276,15 @@ async function loadGitHubDataset() {
 // ═══════════════════════════════════════════════
       let _bgEmbedding = false;
       
-      function showEmbedButton() {
-        const btn = document.getElementById('btn-bg-embed');
-        if (btn && vectorStore.chunks.length > 5000 && vectorStore.embeddings.length < vectorStore.chunks.length && embeddingReady) {
-          btn.style.display = '';
-        }
-      }
-      
+		function showEmbedButton() {
+	        const btn = document.getElementById('btn-bg-embed');
+	        if (btn && vectorStore.chunks.length > 0 && vectorStore.embeddings.length < vectorStore.chunks.length && embeddingReady) {
+	          btn.style.display = '';
+	        } else if (btn && vectorStore.embeddings.length >= vectorStore.chunks.length) {
+	          btn.style.display = 'none';
+	        }
+	      }
+	      
       async function startBackgroundEmbedding() {
         if (_bgEmbedding || !embeddingReady) return;
         _bgEmbedding = true;
@@ -3310,8 +3300,7 @@ async function loadGitHubDataset() {
         }
       
         const BATCH = 16;
-        const PAUSE_MS = 50;  // breathing room for UI
-      
+        const PAUSE_MS = 100;  // generous breathing room for UI responsiveness   
         for (let start = startFrom; start < total; start += BATCH) {
           if (!_bgEmbedding) break;  // user stopped
       
