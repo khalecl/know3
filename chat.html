@@ -2258,14 +2258,13 @@ function playMessageAudio(idx) {
   // INSIDE the .onended and .onerror handlers, add:
   if (requestId !== _playingRequestId) return;  // Stale request, ignore
 }
-	
   // Clean text for speech
   const cleanText = text
     .replace(/```[\s\S]*?```/g, '... code block omitted ...')
     .replace(/[#*_`~\[\](){}|<>]/g, '')
     .replace(/\n{2,}/g, '. ')
     .replace(/\n/g, ' ')
-    .replace(/\s{2,}/g, ' ')
+    .replace(/\s{2,}/g, ' ');
     .trim();
 
   const speed = parseFloat(getSetting('voice_speed', '1')) || 1;
