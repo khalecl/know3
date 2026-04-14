@@ -3364,14 +3364,33 @@ function exportCurrentChat() {
   URL.revokeObjectURL(a.href);
 }
 
-function clearAllData() {
-  if (!confirm('Delete ALL chats and loaded data?')) return;
-  conversations = {};
-  vectorStore.clear();
-  localStorage.clear();
-  startNewConversation();
-  updateChunkCount();
-}
+	function clearAllData() {
+	  if (!confirm('Delete ALL chats AND all indexed data? This cannot be undone.')) return;
+	  
+	  conversations = {};
+	  currentConversationId = null;
+	  vectorStore.clear();
+	  
+	  // Clear all localStorage
+	  localStorage.clear();
+	  
+	  // Clear IndexedDB if used
+	  if (window.indexedDB) {
+	    const dbs = ['know3_embeddings', 'k3_embeddings', 'k3_vectorstore'];
+	    dbs.forEach(db => {
+	      indexedDB.deleteDatabase(db);
+	    });
+	  }
+	  
+	  // Reset UI
+	  startNewConversation();
+	  updateChunkCount();
+	  document.getElementById('data-summary').innerHTML = '<div>No data loaded</div>';
+	  document.getElementById('toolbar-chunks-label').textContent = '0 chunks';
+	  
+	  alert('✓ All data cleared. Page will refresh.');
+	  location.reload();
+	}
 
 // ═══════════════════════════════════════════════
 // SIDEBAR
@@ -3927,7 +3946,7 @@ function initInput() {
 	  const cleanText = text
 	    .replace(/```[\s\S]*?```/g, '... code block omitted ...')
 	    .replace(/[#*_`~\[\](){}|<>]/g, '')
-	    .replace(/\n{2,}/g, '. ')
+	    .replace(/\n{2,}/g, '. ');
 	    // ... rest of function ...
 	    if (!res.ok) {
 	      const err = await res.text();
