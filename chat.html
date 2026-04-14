@@ -1739,11 +1739,35 @@ function updateChunkCount() {
     if (!vectorStore.chunks.length) { ds.textContent = 'No data loaded'; return; }
     const cols = {};
     vectorStore.chunks.forEach(c => { const col = c.metadata?.collection || 'Default'; cols[col] = (cols[col]||0)+1; });
-    ds.innerHTML = Object.entries(cols).map(([n,c]) => `<div>${escapeHtml(n)}: ${c} chunks</div>`).join('');
+    ds.innerHTML = Object.entries(cols).map(([n,c]) =>
+      `<div style="display:flex;align-items:center;justify-content:space-between;padding:2px 0;">
+        <span>${escapeHtml(n)}: ${c} chunks</span>
+        <button onclick="removeCollection('${escapeHtml(n)}')" style="background:none;border:none;color:var(--danger,#f44);cursor:pointer;font-size:0.75rem;padding:2px 6px;" title="Remove this collection">✕</button>
+      </div>`
+    ).join('');
     }
     showEmbedButton();
   }
-
+function removeCollection(name) {
+  if (!confirm(`Remove collection "${name}" and all its chunks?`)) return;
+  // Filter out chunks belonging to this collection
+  const before = vectorStore.chunks.length;
+  const keepIndices = [];
+  vectorStore.chunks = vectorStore.chunks.filter((c, i) => {
+    const col = c.metadata?.collection || 'Default';
+    if (col !== name) { keepIndices.push(i); return true; }
+    return false;
+  });
+  // Filter matching embeddings
+  if (vectorStore.embeddings.length > 0) {
+    vectorStore.embeddings = keepIndices.map(i => vectorStore.embeddings[i]);
+  }
+  // Save updated cache
+  saveEmbeddings(vectorStore.chunks, vectorStore.embeddings);
+  updateChunkCount();
+  const removed = before - vectorStore.chunks.length;
+  console.log(`Removed ${removed} chunks from "${name}"`);
+}
 // ═══════════════════════════════════════════════
 // CONVERSATIONS
 // ═══════════════════════════════════════════════
@@ -1990,7 +2014,7 @@ async function sendMessage() {
 			if (finalAnswer && finalAnswer.length > 20) {
 			  renderFollowUpChips(q, finalAnswer);
 			// Auto-speak reply if enabled (and not already spoken via voice mode)
-			  if (!window._voiceModeActive && getSetting('voice_auto_speak', 'false') === 'true') {
+			  if (!window._voiceModeActive && !_isSpeaking && _playingMsgIdx === -1 && getSetting('voice_auto_speak', 'false') === 'true') {
 				const conv = conversations[currentConversationId];
 				const lastIdx = conv ? conv.messages.length - 1 : -1;
 				if (lastIdx >= 0) playMessageAudio(lastIdx);
@@ -2261,8 +2285,10 @@ function stopAllAudio() {
   // Stop browser speech
   if ('speechSynthesis' in window) speechSynthesis.cancel();
 
-  // Stop any audio element
+// Stop any audio element
   if (_currentAudio) {
+    _currentAudio.onended = null;
+    _currentAudio.onerror = null;
     _currentAudio.pause();
     _currentAudio.currentTime = 0;
     _currentAudio = null;
@@ -3343,13 +3369,19 @@ function exportCurrentChat() {
 }
 
 function clearAllData() {
-  if (!confirm('Delete ALL chats and loaded data?')) return;
-  conversations = {};
-  vectorStore.clear();
-  localStorage.clear();
-  startNewConversation();
-  updateChunkCount();
-}
+	  if (!confirm('Delete ALL chats and loaded data?')) return;
+	  conversations = {};
+	  vectorStore.clear();
+	  // Clear IndexedDB embedding cache too
+	  try { indexedDB.deleteDatabase('know3-embeddings'); } catch(e) {}
+	  localStorage.clear();
+	  startNewConversation();
+	  updateChunkCount();
+	  // Force UI to reflect empty state
+	  const ds = document.getElementById('data-summary');
+	  if (ds) ds.textContent = 'No data loaded';
+	  setEmbedStatus('', '⚠ Keyword only');
+	}
 
 // ═══════════════════════════════════════════════
 // SIDEBAR
@@ -4105,11 +4137,13 @@ function initInput() {
     if ('speechSynthesis' in window) speechSynthesis.cancel();
   
     // Stop ElevenLabs audio
-    if (_currentAudio) {
-      _currentAudio.pause();
-      _currentAudio.currentTime = 0;
-      _currentAudio = null;
-    }
+	if (_currentAudio) {
+	      _currentAudio.onended = null;
+	      _currentAudio.onerror = null;
+	      _currentAudio.pause();
+	      _currentAudio.currentTime = 0;
+	      _currentAudio = null;
+	    }
   
     _isSpeaking = false;
     document.getElementById('btn-voice-stop').style.display = 'none';
@@ -4274,7 +4308,7 @@ function initInput() {
 			<!-- Browser config -->
 			<div id="voice-browser-config" style="display:none">
 			  <label class="field-label" style="margin-top:0.3rem">Browser Voice</label>
-			  <select id="voice-browser-select"></select>
+			  <select id="voice-browser-select" onchange="setSetting('browser_voice', speechSynthesis.getVoices()[this.value]?.name || '')"></select>
 			  <div class="field-hint">Offline — works without internet. Quality varies by device.</div>
 			</div>
 
