@@ -2380,7 +2380,8 @@ async function speakElevenLabsMsg(text, speed, btn, idx) {
 
     if (!res.ok) { speakKokoroMsg(text, speed, btn, idx); return; }
 
-    const blob = await res.blob();
+    const raw = await res.blob();
+	const blob = new Blob([raw], { type: 'audio/mpeg' });;
     const audioUrl = URL.createObjectURL(blob);
     _currentAudio = new Audio(audioUrl);
     _currentAudio.playbackRate = speed;
@@ -4091,7 +4092,8 @@ function initInput() {
         throw new Error(`ElevenLabs ${res.status}: ${err.substring(0, 100)}`);
       }
   
-      const blob = await res.blob();
+      const raw = await res.blob();
+		const blob = new Blob([raw], { type: 'audio/mpeg' });
       const audioUrl = URL.createObjectURL(blob);
       _currentAudio = new Audio(audioUrl);
       _currentAudio.playbackRate = speed;
