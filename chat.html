@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1917,30 +1918,19 @@ function removeThinking() {
   document.getElementById('thinking-msg')?.remove();
 }
 
-	function updateStreamBubble(text) {
-	  const conv = conversations[currentConversationId];
-	  if (!conv || currentStreamingIndex < 0) return;
-	  conv.messages[currentStreamingIndex].content = text;
-	
-	  const msgs = document.getElementById('chat-messages');
-	  const allMsgs = msgs.querySelectorAll('.msg');
-	  
-	  // Find the message element that corresponds to currentStreamingIndex
-	  let targetMsgIdx = 0;
-	  for (let i = 0; i < allMsgs.length; i++) {
-	    if (allMsgs[i].classList.contains('assistant')) {
-	      if (targetMsgIdx === currentStreamingIndex) {
-	        const bubble = allMsgs[i].querySelector('.msg-bubble');
-	        if (bubble) {
-	          bubble.innerHTML = renderMarkdown(text);
-	          msgs.scrollTop = msgs.scrollHeight;
-	        }
-	        return;
-	      }
-	      targetMsgIdx++;
-	    }
-	  }
-	}
+function updateStreamBubble(text) {
+  const conv = conversations[currentConversationId];
+  if (!conv || currentStreamingIndex < 0) return;
+  conv.messages[currentStreamingIndex].content = text;
+
+  const msgs = document.getElementById('chat-messages');
+  const allBubbles = msgs.querySelectorAll('.msg.assistant .msg-bubble');
+  if (allBubbles.length > 0) {
+    const last = allBubbles[allBubbles.length - 1];
+    last.innerHTML = renderMarkdown(text);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+}
 
 // ═══════════════════════════════════════════════
 // SEND MESSAGE
@@ -2205,32 +2195,26 @@ function useFollowUp(el) {
 	  const conv = conversations[currentConversationId];
 	  if (!conv || !conv.messages[idx]) return;
 	  if (conv.messages[idx].role !== 'assistant') return;
-	
+
+	  // Find the user message that triggered this response
 	  let userIdx = idx - 1;
 	  while (userIdx >= 0 && conv.messages[userIdx].role !== 'user') userIdx--;
 	  if (userIdx < 0) return;
-	
+
 	  const userMsg = conv.messages[userIdx];
-	  const deletedCount = conv.messages.length - idx;
-	
-	  // Warn user if deleting follow-ups
-	  if (deletedCount > 1 && !confirm(`Delete ${deletedCount - 1} follow-up message(s) and regenerate? This can't be undone.`)) {
-	    return;
-	  }
-	
+
 	  // Remove from the assistant message onward
 	  conv.messages = conv.messages.slice(0, idx);
 	  saveConversations();
 	  renderChat();
 	  renderHistoryList();
-	
+
 	  // Re-send the original user prompt
 	  document.getElementById('chat-input').value = userMsg.content || '';
 	  sendMessage();
 	}
 		
-let _playingMsgIdx = -1;
-let _playingRequestId = 0;
+		let _playingMsgIdx = -1;
 
 function playMessageAudio(idx) {
   const conv = conversations[currentConversationId];
@@ -2249,22 +2233,16 @@ function playMessageAudio(idx) {
   // Stop any other playing audio
   stopAllAudio();
   _playingMsgIdx = idx;
-  _playingRequestId++;  // Increment for this request
-  const requestId = _playingRequestId;
 
   if (btn) { btn.textContent = '⏳ Loading...'; btn.classList.add('loading'); }
-  
-  // ... async TTS call, but add this check after await completes ...
-  // INSIDE the .onended and .onerror handlers, add:
-  if (requestId !== _playingRequestId) return;  // Stale request, ignore
-}
+
   // Clean text for speech
   const cleanText = text
     .replace(/```[\s\S]*?```/g, '... code block omitted ...')
     .replace(/[#*_`~\[\](){}|<>]/g, '')
     .replace(/\n{2,}/g, '. ')
     .replace(/\n/g, ' ')
-    .replace(/\s{2,}/g, ' ');
+    .replace(/\s{2,}/g, ' ')
     .trim();
 
   const speed = parseFloat(getSetting('voice_speed', '1')) || 1;
@@ -2277,6 +2255,7 @@ function playMessageAudio(idx) {
   } else {
     speakBrowserMsg(cleanText, speed, btn, idx);
   }
+}
 
 function stopAllAudio() {
   // Stop browser speech
@@ -3363,33 +3342,14 @@ function exportCurrentChat() {
   URL.revokeObjectURL(a.href);
 }
 
-	function clearAllData() {
-	  if (!confirm('Delete ALL chats AND all indexed data? This cannot be undone.')) return;
-	  
-	  conversations = {};
-	  currentConversationId = null;
-	  vectorStore.clear();
-	  
-	  // Clear all localStorage
-	  localStorage.clear();
-	  
-	  // Clear IndexedDB if used
-	  if (window.indexedDB) {
-	    const dbs = ['know3_embeddings', 'k3_embeddings', 'k3_vectorstore'];
-	    dbs.forEach(db => {
-	      indexedDB.deleteDatabase(db);
-	    });
-	  }
-	  
-	  // Reset UI
-	  startNewConversation();
-	  updateChunkCount();
-	  document.getElementById('data-summary').innerHTML = '<div>No data loaded</div>';
-	  document.getElementById('toolbar-chunks-label').textContent = '0 chunks';
-	  
-	  alert('✓ All data cleared. Page will refresh.');
-	  location.reload();
-	}
+function clearAllData() {
+  if (!confirm('Delete ALL chats and loaded data?')) return;
+  conversations = {};
+  vectorStore.clear();
+  localStorage.clear();
+  startNewConversation();
+  updateChunkCount();
+}
 
 // ═══════════════════════════════════════════════
 // SIDEBAR
@@ -3941,38 +3901,28 @@ function initInput() {
 	async function speakResponse(text) {
 	  const speed = parseFloat(getSetting('voice_speed', '1')) || 1;
 	  const outputMode = getSetting('voice_output', 'kokoro');
-	
+
 	  const cleanText = text
-	    .replace(/```[\s\S]*?```/g, '... code block omitted ...')
-	    .replace(/[#*_`~\[\](){}|<>]/g, '')
-	    .replace(/\n{2,}/g, '. ');
-	    // ... rest of function ...
-	    if (!res.ok) {
-	      const err = await res.text();
-	      throw new Error(`ElevenLabs ${res.status}: ${err.substring(0, 100)}`);
-	    }
-	
-	    const blob = await res.blob();
-	    const audioUrl = URL.createObjectURL(blob);
-	    _currentAudio = new Audio(audioUrl);
-	    _currentAudio.playbackRate = speed;
-	
-	    const btn = document.getElementById('btn-voice-stop');
-	    const micBtn = document.getElementById('voice-fab');
-	
-	    _currentAudio.onplay = () => {
-	      _isSpeaking = true;
-	      setVoiceStatus('Speaking...', true);
-	    };
-	
-	    _currentAudio.onended = () => {
-	      _isSpeaking = false;
-	      if (btn) btn.style.display = 'none';
-	      if (micBtn) micBtn.style.display = '';
-	      setVoiceStatus('Tap mic to speak');
-	      URL.revokeObjectURL(audioUrl);
-	      _currentAudio = null;
-	    };}
+		.replace(/```[\s\S]*?```/g, '... code block omitted ...')
+		.replace(/[#*_`~\[\](){}|<>]/g, '')
+		.replace(/\n{2,}/g, '. ')
+		.replace(/\n/g, ' ')
+		.replace(/\s{2,}/g, ' ')
+		.trim();
+
+	  const btn = document.getElementById('btn-voice-stop');
+	  const micBtn = document.getElementById('btn-voice-mic');
+	  if (btn) btn.style.display = '';
+	  if (micBtn) micBtn.style.display = 'none';
+
+	  if (outputMode === 'elevenlabs') {
+		await speakElevenLabs(cleanText, speed);
+	  } else if (outputMode === 'kokoro') {
+		await speakKokoroVoicePanel(cleanText, speed);
+	  } else {
+		speakBrowser(cleanText, speed);
+	  }
+	}
 
 	async function speakKokoroVoicePanel(text, speed) {
 	  const btn = document.getElementById('btn-voice-stop');
