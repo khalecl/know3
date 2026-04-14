@@ -2308,7 +2308,7 @@ function onAudioEnd(btn, idx) {
 async function speakKokoroMsg(text, speed, btn, idx) {
   try {
     const voice = getSetting('kokoro_voice', 'af_heart');
-    const res = await fetch('https://api.kokorotts.com/v1/audio/speech', {
+    const res = await fetch('https://kokoro-proxy.khaled-mohamed-rady.workers.dev/kokoro-proxy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -3931,7 +3931,7 @@ function initInput() {
 
 	  try {
 		const voice = getSetting('kokoro_voice', 'af_heart');
-		const res = await fetch('https://api.kokorotts.com/v1/audio/speech', {
+		const res = await fetch('https://kokoro-proxy.khaled-mohamed-rady.workers.dev/kokoro-proxy', {
 		  method: 'POST',
 		  headers: { 'Content-Type': 'application/json' },
 		  body: JSON.stringify({
