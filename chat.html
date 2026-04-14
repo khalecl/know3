@@ -231,7 +231,9 @@ body {
   flex: 1; display: flex; flex-direction: column;
   align-items: center; justify-content: center;
   text-align: center; gap: 1rem; padding: 2rem;
+  transition: opacity 0.5s ease;
 }
+.welcome-state.fading { opacity: 0.15; pointer-events: none; }
 .welcome-logo { font-size: 2.5rem; font-weight: 800; letter-spacing: -0.03em; }
 .welcome-logo .k { color: var(--accent); text-shadow: 0 0 30px var(--accent-glow); }
 .welcome-sub { color: var(--text3); font-size: 0.9rem; max-width: 400px; line-height: 1.6; }
@@ -1833,18 +1835,23 @@ function renderChat() {
   const container = document.getElementById('chat-messages');
   const welcome = document.getElementById('welcome-state');
 
-	if (!conv.messages.length) {
-		container.innerHTML = `<div class="welcome-state" id="welcome-state">
-		  <div class="welcome-logo"><span class="k">k</span>now3</div>
-		  <div class="welcome-sub">Local-first semantic RAG chat. Load your data, pick a provider, and ask away — or toggle RAG off for free-form chat.</div>
-		  <div class="welcome-chips">
-			<span class="welcome-chip" onclick="quickPrompt('Summarize the key concepts')">Summarize key concepts</span>
-			<span class="welcome-chip" onclick="quickPrompt('What are the main topics covered?')">Main topics covered?</span>
-			<span class="welcome-chip" onclick="quickPrompt('Explain this in simple terms')">Explain simply</span>
-		  </div>
-		</div>`;
-		return;
-	  }
+		if (!conv.messages.length) {
+				container.innerHTML = `<div class="welcome-state" id="welcome-state">
+				  <div class="welcome-logo"><span class="k">k</span>now3</div>
+				  <div class="welcome-sub">Local-first semantic RAG chat. Load your data, pick a provider, and ask away — or toggle RAG off for free-form chat.</div>
+				  <div class="welcome-chips">
+					<span class="welcome-chip" onclick="quickPrompt('Summarize the key concepts')">Summarize key concepts</span>
+					<span class="welcome-chip" onclick="quickPrompt('What are the main topics covered?')">Main topics covered?</span>
+					<span class="welcome-chip" onclick="quickPrompt('Explain this in simple terms')">Explain simply</span>
+				  </div>
+				</div>`;
+				// Auto-fade welcome after 3s
+				setTimeout(() => {
+				  const w = document.getElementById('welcome-state');
+				  if (w) w.classList.add('fading');
+				}, 3000);
+				return;
+			  }
 
   container.innerHTML = conv.messages.map((m, i) => {
     const time = new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -1972,8 +1979,8 @@ async function sendMessage() {
   const imageHtml = images.map(img => `<img class="msg-image" src="data:${img.mimeType};base64,${img.base64}" onclick="window.open(this.src)">`).join('');
   clearAttachments();
 
+  document.getElementById('welcome-state')?.remove();
   addMessage('user', q, null, imageHtml);
-
   isGenerating = true;
     document.getElementById('btn-send').disabled = true;
     clearFollowUpChips();
@@ -4187,6 +4194,11 @@ function initInput() {
   
   document.addEventListener('DOMContentLoaded', () => {
   _initBrandGuard();
+	  // Auto-fade welcome state after 3s
+		  setTimeout(() => {
+		    const welcome = document.getElementById('welcome-state');
+		    if (welcome) welcome.classList.add('fading');
+		  }, 3000);
 	  // iOS audio unlock — must play a silent audio on first user gesture
 	  let _audioUnlocked = false;
 	  function unlockAudio() {
