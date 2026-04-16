@@ -3279,26 +3279,53 @@ async function loadDataFile() {
   }
 }
 
-let _ghDatasetCache = null;
-async function fetchGitHubDatasets() {
-  const sel = document.getElementById('s-github-dataset');
-  if (_ghDatasetCache) { sel.innerHTML = _ghDatasetCache; return; }
-  sel.innerHTML = '<option value="">Loading list...</option>';
+let _ghDatasetCache = null;  // rename it to _datasetCache if you want
+
+async function fetchDatasets() {
+  const sel = document.getElementById('s-github-dataset');  // keep your ID or change it
+  if (_ghDatasetCache) {
+    sel.innerHTML = _ghDatasetCache;
+    return;
+  }
+
+  sel.innerHTML = 'Loading list...';
   sel.disabled = true;
+
   try {
-    const res = await fetch('https://1drv.ms/f/c/28c09c5f358f6467/IgAsJ8r6nqiRS67sbwPUFJ_-AVcA3Okceaene_nxgD6DyJs?e=nymXcG');
-    if (!res.ok) throw new Error();
-    const files = (await res.json()).filter(f => f.name.endsWith('.json') || f.name.endsWith('.jsonl'));
-    const html = files.map(f => `<option value="${f.download_url}">${f.name} (${(f.size/1024).toFixed(0)} KB)</option>`).join('');
-    sel.innerHTML = html || '<option value="">No datasets found</option>';
+    // 1. Encode the sharing URL (important step)
+    const shareUrl = "https://1drv.ms/f/c/28c09c5f358f6467/IgAsJ8r6nqiRS67sbwPUFJ_-AVcA3Okceaene_nxgD6DyJs?e=nymXcG";
+    const base64 = btoa(shareUrl).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const encodedShare = `u!${base64}`;
+
+    // 2. Fetch the folder + its children (expand=children gives the list)
+    const res = await fetch(`https://api.onedrive.com/v1.0/shares/${encodedShare}/root?expand=children`);
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const data = await res.json();
+
+    // data.children.value = array of files/folders
+    const files = (data.children?.value || []).filter(f =>
+      f.name.endsWith('.json') ||
+      f.name.endsWith('.jsonl') ||
+      f.name.endsWith('.indexed.json')
+    );
+
+    const html = files.map(f => {
+      const sizeKB = f.size ? (f.size / 1024).toFixed(0) : '??';
+      return `<option value="${f.name}">${f.name} (${sizeKB} KB)</option>`;
+    }).join('');
+
+    sel.innerHTML = html || 'No matching datasets found';
     _ghDatasetCache = sel.innerHTML;
-  } catch {
-    sel.innerHTML = '<option value="https://khalecl.github.io/know3/prelude/oil.jsonl">oil.jsonl (fallback)</option>';
+
+  } catch (err) {
+    console.error(err);
+    sel.innerHTML = '<option>oil.jsonl (fallback)</option>';  // or your preferred fallback
   } finally {
     sel.disabled = false;
   }
 }
-
 async function loadGitHubDataset() {
   if (_isLoadingData) return;  // double-click guard
   const url = document.getElementById('s-github-dataset').value;
