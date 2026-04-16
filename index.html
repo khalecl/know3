@@ -1463,7 +1463,7 @@ OUTPUT: [your output here]</textarea>
         <span style="width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 6px var(--accent);"></span>
         <span id="fc-visitors">—</span> visitors
         <span style="opacity:.3;">|</span>
-        <span id="fc-online" style="color:var(--accent);">—</span> online now
+        <span id="fc-online" style="color:var(--accent);">—</span> today
         <span style="opacity:.3;">|</span>
         <span style="font-size:.7rem;opacity:.5;">▼ details</span>
       </div>
@@ -3028,57 +3028,19 @@ function copyToClipboard(text) {
 }
 
 function initHitCounter() {
-  // Use CountAPI / free hit counter service
-  // Primary: api.countapi.xyz alternative: we use a simple image-based counter + localStorage fallback
-  const NAMESPACE = 'know3-khalecl';
-  const KEY = 'visits';
-
-  // Increment visit count
-  fetch(`https://api.countapi.xyz/hit/${NAMESPACE}/${KEY}`)
-    .then(r => r.json())
+  // GoatCounter handles analytics via its own script tag.
+  // We just fetch the public count for display.
+  fetch('https://khalecl.goatcounter.com/counter//know3.json')
+    .then(r => r.ok ? r.json() : Promise.reject('not available'))
     .then(data => {
-      const count = data.value || 0;
+      const count = data.count || 0;
       updateCounterUI(count);
     })
     .catch(() => {
-      // Fallback: use localStorage counter
+      // Fallback: localStorage estimate
       let localCount = parseInt(localStorage.getItem('know3_visit_count') || '0') + 1;
       localStorage.setItem('know3_visit_count', String(localCount));
       updateCounterUI(localCount);
-    });
-
-  // Simulate online users (based on time-of-day pattern + random)
-  const hour = new Date().getHours();
-  const baseOnline = hour >= 8 && hour <= 22 ? 3 : 1;
-  const online = baseOnline + Math.floor(Math.random() * 4);
-  const onlineEl = document.getElementById('fc-online');
-  const onlineDetail = document.getElementById('fc-online-detail');
-  if (onlineEl) onlineEl.textContent = online;
-  if (onlineDetail) onlineDetail.textContent = online;
-
-  // Get visitor country flags using free IP geolocation
-  fetch('https://ipapi.co/json/')
-    .then(r => r.json())
-    .then(data => {
-      const flag = countryToFlag(data.country_code || 'US');
-      const country = data.country_name || 'Unknown';
-
-      // Store recent visitors in localStorage
-      let recentVisitors = JSON.parse(localStorage.getItem('know3_visitors') || '[]');
-      recentVisitors.unshift({ flag, country, time: Date.now() });
-      recentVisitors = recentVisitors.slice(0, 20); // Keep last 20
-      localStorage.setItem('know3_visitors', JSON.stringify(recentVisitors));
-
-      renderVisitorFlags(recentVisitors);
-    })
-    .catch(() => {
-      // Show cached visitors
-      const cached = JSON.parse(localStorage.getItem('know3_visitors') || '[]');
-      if (cached.length > 0) renderVisitorFlags(cached);
-      else {
-        const flagsEl = document.getElementById('fc-flags');
-        if (flagsEl) flagsEl.innerHTML = '<span style="opacity:.5;">Visitor data unavailable</span>';
-      }
     });
 
   // Today's visits from localStorage
@@ -3087,6 +3049,33 @@ function initHitCounter() {
   localStorage.setItem('know3_today_' + today, String(todayCount));
   const todayEl = document.getElementById('fc-today-detail');
   if (todayEl) todayEl.textContent = todayCount;
+
+  // Remove fake "online now" — set to dash
+  const onlineEl = document.getElementById('fc-online');
+  const onlineDetail = document.getElementById('fc-online-detail');
+  if (onlineEl) onlineEl.textContent = '—';
+  if (onlineDetail) onlineDetail.textContent = '—';
+
+  // Country flags from ipapi.co (keep — this is real data)
+  fetch('https://ipapi.co/json/')
+    .then(r => r.json())
+    .then(data => {
+      const flag = countryToFlag(data.country_code || 'US');
+      const country = data.country_name || 'Unknown';
+      let recentVisitors = JSON.parse(localStorage.getItem('know3_visitors') || '[]');
+      recentVisitors.unshift({ flag, country, time: Date.now() });
+      recentVisitors = recentVisitors.slice(0, 20);
+      localStorage.setItem('know3_visitors', JSON.stringify(recentVisitors));
+      renderVisitorFlags(recentVisitors);
+    })
+    .catch(() => {
+      const cached = JSON.parse(localStorage.getItem('know3_visitors') || '[]');
+      if (cached.length > 0) renderVisitorFlags(cached);
+      else {
+        const flagsEl = document.getElementById('fc-flags');
+        if (flagsEl) flagsEl.innerHTML = '<span style="opacity:.5;">Visitor data unavailable</span>';
+      }
+    });
 }
 
 function updateCounterUI(count) {
@@ -5494,5 +5483,6 @@ window.clearRAGConversation = clearRAGConversation;
 window.fillRAGInput = fillRAGInput;
 
 </script>
+<script data-goatcounter="https://khalecl.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>
