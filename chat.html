@@ -1115,7 +1115,7 @@ body {
           <label class="field-label">Load RAG Data</label>
           <select id="s-load-method" onchange="toggleLoadMethod()">
             <option value="manual">Upload JSON / JSONL</option>
-            <option value="github">From GitHub Prelude</option>
+            <option value="github">From Personal Prelude</option>
           </select>
         </div>
         <div id="load-manual">
@@ -3286,7 +3286,7 @@ async function fetchGitHubDatasets() {
   sel.innerHTML = '<option value="">Loading list...</option>';
   sel.disabled = true;
   try {
-    const res = await fetch('https://api.github.com/repos/khalecl/know3/contents/prelude');
+    const res = await fetch('https://1drv.ms/f/c/28c09c5f358f6467/IgAsJ8r6nqiRS67sbwPUFJ_-AVcA3Okceaene_nxgD6DyJs?e=nymXcG');
     if (!res.ok) throw new Error();
     const files = (await res.json()).filter(f => f.name.endsWith('.json') || f.name.endsWith('.jsonl'));
     const html = files.map(f => `<option value="${f.download_url}">${f.name} (${(f.size/1024).toFixed(0)} KB)</option>`).join('');
