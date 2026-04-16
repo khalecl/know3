@@ -1247,12 +1247,22 @@ OUTPUT: [your output here]</textarea>
       <div id="progress-log"></div>
     </div>
 
-    <!-- Results Preview -->
-    <div id="results">
-      <h2>Generated Pairs</h2>
-      <div id="results-count"></div>
-      <div id="results-list"></div>
-    </div>
+	<!-- Results Preview -->
+		<div id="results">
+		  <h2>Generated Pairs</h2>
+		  <div id="results-count"></div>
+		  
+		  <!-- Quality & Dedup Controls -->
+		  <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-bottom:1rem; padding:.8rem; background:var(--surface2); border-radius:10px; border:1px solid var(--border);">
+			<button class="btn btn-secondary" onclick="scoreAllPairsWithLLM()" title="Score all pairs by quality">📊 Score Quality</button>
+			<button class="btn btn-secondary" onclick="manualDedup()" title="Remove near-duplicate pairs">🔄 Deduplicate</button>
+			<button class="btn btn-secondary" onclick="filterPairsByQuality(3)" title="Keep only 3★+ pairs">✂️ Filter ≥3★</button>
+			<button class="btn btn-secondary" onclick="filterPairsByQuality(4)" title="Keep only 4★+ pairs">✂️ Filter ≥4★</button>
+			<span style="align-self:center; font-size:.72rem; color:var(--text3); margin-left:auto;">Score → Dedup → Filter → Export</span>
+		  </div>
+		  
+		  <div id="results-list"></div>
+		</div>
   </div>
 
   <!-- ═══════════════════ TAB 3: TOOLS ═══════════════════ -->
@@ -3380,6 +3390,189 @@ const vectorStore = {
   }
 };
 
+	 // ════════════════════════════════════════════════════════════════════════════
+	// IndexedDB PERSISTENCE — Survive page refresh
+	// ════════════════════════════════════════════════════════════════════════════
+	const DB_NAME = 'know3_db';
+	const DB_VERSION = 2;
+
+	function openDB() {
+	  return new Promise((resolve, reject) => {
+		const req = indexedDB.open(DB_NAME, DB_VERSION);
+		req.onupgradeneeded = (e) => {
+		  const db = e.target.result;
+		  if (!db.objectStoreNames.contains('vectorStore')) {
+			db.createObjectStore('vectorStore', { keyPath: 'collection' });
+		  }
+		  if (!db.objectStoreNames.contains('pairs')) {
+			db.createObjectStore('pairs', { keyPath: 'id', autoIncrement: true });
+		  }
+		  if (!db.objectStoreNames.contains('meta')) {
+			db.createObjectStore('meta', { keyPath: 'key' });
+		  }
+		};
+		req.onsuccess = () => resolve(req.result);
+		req.onerror = () => reject(req.error);
+	  });
+	}
+
+	async function saveVectorStoreToDB() {
+	  try {
+		const db = await openDB();
+		const tx = db.transaction(['vectorStore', 'meta'], 'readwrite');
+		const store = tx.objectStore('vectorStore');
+		
+		// Clear and re-save all collections
+		store.clear();
+		for (const [name, col] of Object.entries(vectorStore.collections)) {
+		  store.put({
+			collection: name,
+			chunks: col.chunks,
+			embeddings: col.embeddings,
+			metadata: col.metadata
+		  });
+		}
+		
+		// Save metadata
+		const metaStore = tx.objectStore('meta');
+		metaStore.put({ key: 'documentsIngested', value: documentsIngested });
+		metaStore.put({ key: 'savedAt', value: Date.now() });
+		
+		await new Promise((resolve, reject) => {
+		  tx.oncomplete = resolve;
+		  tx.onerror = () => reject(tx.error);
+		});
+		
+		console.log(`💾 Vector store saved to IndexedDB (${Object.keys(vectorStore.collections).length} collections)`);
+	  } catch (e) {
+		console.warn('⚠️ IndexedDB save failed:', e.message);
+	  }
+	}
+
+	async function savePairsToDB() {
+	  try {
+		const db = await openDB();
+		const tx = db.transaction('pairs', 'readwrite');
+		const store = tx.objectStore('pairs');
+		
+		store.clear();
+		for (let i = 0; i < allPairs.length; i++) {
+		  store.put({ ...allPairs[i], id: i });
+		}
+		
+		await new Promise((resolve, reject) => {
+		  tx.oncomplete = resolve;
+		  tx.onerror = () => reject(tx.error);
+		});
+		
+		console.log(`💾 ${allPairs.length} pairs saved to IndexedDB`);
+	  } catch (e) {
+		console.warn('⚠️ IndexedDB pairs save failed:', e.message);
+	  }
+	}
+
+	async function loadFromDB() {
+	  try {
+		const db = await openDB();
+		
+		// Load vector store
+		const vsTx = db.transaction('vectorStore', 'readonly');
+		const vsStore = vsTx.objectStore('vectorStore');
+		const vsReq = vsStore.getAll();
+		
+		const vsData = await new Promise((resolve, reject) => {
+		  vsReq.onsuccess = () => resolve(vsReq.result);
+		  vsReq.onerror = () => reject(vsReq.error);
+		});
+		
+		if (vsData && vsData.length > 0) {
+		  for (const col of vsData) {
+			vectorStore.collections[col.collection] = {
+			  chunks: col.chunks || [],
+			  embeddings: col.embeddings || [],
+			  metadata: col.metadata || []
+			};
+		  }
+		  console.log(`📂 Loaded ${vsData.length} collections from IndexedDB`);
+		}
+		
+		// Load pairs
+		const pTx = db.transaction('pairs', 'readonly');
+		const pStore = pTx.objectStore('pairs');
+		const pReq = pStore.getAll();
+		
+		const pData = await new Promise((resolve, reject) => {
+		  pReq.onsuccess = () => resolve(pReq.result);
+		  pReq.onerror = () => reject(pReq.error);
+		});
+		
+		if (pData && pData.length > 0) {
+		  allPairs = pData.map(p => {
+			const { id, ...rest } = p;
+			return rest;
+		  });
+		  console.log(`📂 Loaded ${allPairs.length} pairs from IndexedDB`);
+		  
+		  // Render pairs
+		  resultsList.innerHTML = '';
+		  allPairs.forEach((p, i) => addPairToUI(p, i + 1));
+		  resultsDiv.style.display = allPairs.length > 0 ? 'block' : 'none';
+		  if (allPairs.length > 0) {
+			$('btn-export').disabled = false;
+			resultsCount.textContent = `${allPairs.length} pairs (restored from session)`;
+		  }
+		}
+		
+		// Load meta
+		const mTx = db.transaction('meta', 'readonly');
+		const mStore = mTx.objectStore('meta');
+		const docReq = mStore.get('documentsIngested');
+		
+		const docData = await new Promise((resolve, reject) => {
+		  docReq.onsuccess = () => resolve(docReq.result);
+		  docReq.onerror = () => reject(docReq.error);
+		});
+		
+		if (docData) documentsIngested = docData.value || 0;
+		
+		updateStoreUI();
+		
+		if (vsData?.length > 0 || pData?.length > 0) {
+		  log(`📂 Restored session: ${vsData?.length || 0} collections, ${allPairs.length} pairs`, 'ok');
+		}
+		
+	  } catch (e) {
+		console.warn('⚠️ IndexedDB load failed (first run?):', e.message);
+	  }
+	}
+
+	async function clearDB() {
+	  try {
+		const db = await openDB();
+		const tx = db.transaction(['vectorStore', 'pairs', 'meta'], 'readwrite');
+		tx.objectStore('vectorStore').clear();
+		tx.objectStore('pairs').clear();
+		tx.objectStore('meta').clear();
+		await new Promise((resolve, reject) => {
+		  tx.oncomplete = resolve;
+		  tx.onerror = () => reject(tx.error);
+		});
+		console.log('🗑️ IndexedDB cleared');
+	  } catch (e) {
+		console.warn('⚠️ IndexedDB clear failed:', e.message);
+	  }
+	}
+
+	// Auto-save to IndexedDB after key operations (debounced)
+	let _dbSaveTimer = null;
+	function scheduleSaveToDB() {
+	  if (_dbSaveTimer) clearTimeout(_dbSaveTimer);
+	  _dbSaveTimer = setTimeout(async () => {
+		await saveVectorStoreToDB();
+		await savePairsToDB();
+	  }, 2000); // Save 2s after last change
+	}
+
 // Training pairs store
 let allPairs = [];
 let running = false;
@@ -3411,6 +3604,178 @@ const resultsList = $('results-list');
 const resultsCount = $('results-count');
 const setupGuide = $('setup-guide');
 
+// ════════════════════════════════════════════════════════════════════════════
+// DEDUPLICATION ENGINE — Jaccard + Trigram similarity
+// ════════════════════════════════════════════════════════════════════════════
+function deduplicatePairs(pairs, threshold = 0.65) {
+  if (pairs.length < 2) return { unique: pairs, duplicates: 0 };
+  
+  const unique = [];
+  const seen = []; // trigram sets of kept pairs
+  let duplicates = 0;
+  
+  for (const pair of pairs) {
+    const instrTrigrams = getTrigrams(pair.instruction.toLowerCase());
+    const outTrigrams = getTrigrams(pair.output.toLowerCase().substring(0, 300));
+    const combined = new Set([...instrTrigrams, ...outTrigrams]);
+    
+    let isDuplicate = false;
+    
+    for (const seenSet of seen) {
+      const similarity = jaccardSimilarity(combined, seenSet);
+      if (similarity > threshold) {
+        isDuplicate = true;
+        duplicates++;
+        break;
+      }
+    }
+    
+    if (!isDuplicate) {
+      unique.push(pair);
+      seen.push(combined);
+    }
+  }
+  
+  return { unique, duplicates };
+}
+
+function getTrigrams(text) {
+  const clean = text.replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+  const trigrams = new Set();
+  for (let i = 0; i <= clean.length - 3; i++) {
+    trigrams.add(clean.substring(i, i + 3));
+  }
+  return trigrams;
+}
+
+function jaccardSimilarity(setA, setB) {
+  let intersection = 0;
+  for (const item of setA) {
+    if (setB.has(item)) intersection++;
+  }
+  const union = setA.size + setB.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
+// Also add a manual dedup button for existing pairs
+function manualDedup() {
+  if (allPairs.length < 2) return;
+  const before = allPairs.length;
+  const { unique, duplicates } = deduplicatePairs(allPairs);
+  allPairs = unique;
+  resultsList.innerHTML = '';
+  allPairs.forEach((p, i) => addPairToUI(p, i + 1));
+  resultsCount.textContent = `${allPairs.length} pairs (removed ${duplicates} duplicates)`;
+  log(`🔄 Manual dedup: ${before} → ${allPairs.length} (removed ${duplicates})`, 'ok');
+  localStorage.setItem('know3_saved_pairs', JSON.stringify(allPairs));
+  updateStoreUI();
+}
+window.manualDedup = manualDedup;
+
+// ════════════════════════════════════════════════════════════════════════════
+// QUALITY SCORING — Heuristic + optional LLM scoring
+// ════════════════════════════════════════════════════════════════════════════
+function scorePairQuality(pair) {
+  let score = 0;
+  const instr = pair.instruction;
+  const out = pair.output;
+  
+  // 1. Instruction quality (max 20 points)
+  const instrWords = instr.split(/\s+/).length;
+  if (instrWords >= 5 && instrWords <= 40) score += 5;   // Good length
+  if (/\?$/.test(instr.trim())) score += 3;                // Ends with question
+  if (/\b(why|how|what|when|where|which|explain|describe|compare|analyze|calculate)\b/i.test(instr)) score += 5; // Has question word
+  if (/\b(specific|detail|example|difference|relationship|impact|cause|effect)\b/i.test(instr)) score += 4; // Analytical depth
+  if (instr !== instr.toLowerCase() && instr !== instr.toUpperCase()) score += 3; // Proper casing
+  
+  // 2. Output quality (max 40 points)
+  const outWords = out.split(/\s+/).length;
+  const outSentences = out.split(/[.!?]+/).filter(s => s.trim().length > 10).length;
+  
+  if (outWords >= 20) score += 5;                          // Minimum substance
+  if (outWords >= 50) score += 5;                          // Good length
+  if (outWords >= 100) score += 3;                         // Thorough
+  if (outSentences >= 2) score += 5;                       // Multi-sentence
+  if (outSentences >= 4) score += 3;                       // Detailed
+  if (/\b(because|therefore|however|specifically|for example|in particular|this means|as a result)\b/i.test(out)) score += 7; // Reasoning markers
+  if (/\d/.test(out)) score += 4;                          // Contains numbers/data
+  if (/\b(first|second|third|additionally|furthermore|moreover)\b/i.test(out)) score += 3; // Structured
+  if (out.includes('|') && out.includes('---')) score += 5; // Contains table data
+  
+  // 3. Relevance (max 20 points)
+  // Check instruction-output keyword overlap
+  const instrKeywords = new Set(instr.toLowerCase().split(/\s+/).filter(w => w.length > 3));
+  const outKeywords = out.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+  let overlap = 0;
+  for (const w of outKeywords) {
+    if (instrKeywords.has(w)) overlap++;
+  }
+  const overlapRatio = instrKeywords.size > 0 ? Math.min(overlap / instrKeywords.size, 1) : 0;
+  score += Math.round(overlapRatio * 10);                  // Topical relevance
+  
+  // Avoid generic answers
+  const genericPhrases = ['it is important', 'there are many', 'in conclusion', 'as we can see', 'it should be noted'];
+  const genericCount = genericPhrases.filter(p => out.toLowerCase().includes(p)).length;
+  score -= genericCount * 3;
+  
+  // 4. Penalties
+  if (outWords < 10) score -= 15;                          // Too short
+  if (instrWords < 3) score -= 10;                         // Instruction too vague
+  if (/^(yes|no|true|false)\b/i.test(out.trim())) score -= 10; // Binary answer
+  if (out.toLowerCase().startsWith(instr.toLowerCase().substring(0, 20))) score -= 5; // Parrot start
+  
+  // Normalize to 1-5 scale
+  const normalized = Math.max(1, Math.min(5, Math.round(score / 16)));
+  return { score: normalized, rawScore: score };
+}
+
+async function scoreAllPairsWithLLM() {
+  if (allPairs.length === 0) return;
+  
+  log('📊 Scoring pairs with heuristic quality gate...', 'info');
+  if (window.neuralBG) window.neuralBG.state = 'generate';
+  
+  let scored = 0;
+  for (const pair of allPairs) {
+    const { score, rawScore } = scorePairQuality(pair);
+    pair.qualityScore = score;
+    pair.rawQualityScore = rawScore;
+    scored++;
+  }
+  
+  // Sort by quality (highest first)
+  allPairs.sort((a, b) => (b.qualityScore || 0) - (a.qualityScore || 0));
+  
+  // Re-render
+  resultsList.innerHTML = '';
+  allPairs.forEach((p, i) => addPairToUI(p, i + 1));
+  
+  const avg = (allPairs.reduce((s, p) => s + (p.qualityScore || 0), 0) / allPairs.length).toFixed(1);
+  const excellent = allPairs.filter(p => p.qualityScore >= 4).length;
+  const poor = allPairs.filter(p => p.qualityScore <= 2).length;
+  
+  log(`📊 Quality scores: avg ${avg}/5 · ★★★★+ ${excellent} pairs · ★★ or less: ${poor} pairs`, 'ok');
+  resultsCount.textContent = `${allPairs.length} pairs · avg quality: ${avg}/5 · ${excellent} excellent · ${poor} poor`;
+  
+  if (window.neuralBG) window.neuralBG.state = 'complete';
+  setTimeout(() => { if (window.neuralBG) window.neuralBG.state = 'idle'; }, 2000);
+  
+  updateStoreUI();
+}
+window.scoreAllPairsWithLLM = scoreAllPairsWithLLM;
+
+function filterPairsByQuality(minScore) {
+  if (allPairs.length === 0) return;
+  const before = allPairs.length;
+  allPairs = allPairs.filter(p => (p.qualityScore || scorePairQuality(p).score) >= minScore);
+  resultsList.innerHTML = '';
+  allPairs.forEach((p, i) => addPairToUI(p, i + 1));
+  log(`🔍 Quality filter (≥${minScore}★): ${before} → ${allPairs.length} pairs (removed ${before - allPairs.length})`, 'ok');
+  resultsCount.textContent = `${allPairs.length} pairs (filtered ≥${minScore}★)`;
+  localStorage.setItem('know3_saved_pairs', JSON.stringify(allPairs));
+  updateStoreUI();
+}
+window.filterPairsByQuality = filterPairsByQuality;
 // ════════════════════════════════════════════════════════════════════════════
 // MATH: Cosine Similarity (the core of vector search)
 // ════════════════════════════════════════════════════════════════════════════
@@ -4388,7 +4753,8 @@ async function ingestFile(file) {
     log(`✨ Ingested "${file.name}" → collection "${collection}" (${filteredChunks.length} chunks)`, 'ok');
     $('file-meta').textContent = `${(file.size / 1024).toFixed(0)} KB · ${words.toLocaleString()} words · ${filteredChunks.length} chunks → "${collection}"`;
     
-    updateStoreUI();
+	updateStoreUI();
+    scheduleSaveToDB(); // Persist to IndexedDB
     btnStart.disabled = false;
     
     progressFill.style.width = '100%';
@@ -4510,15 +4876,24 @@ async function generatePairsFromSelected() {
   btnStop.disabled = true;
   btnStop.style.display = 'none';
 
-  if (allPairs.length > 0) {
-    resultsDiv.style.display = 'block';
-    resultsCount.textContent = `${allPairs.length} total pairs generated`;
-    log(`\n✨ Complete! ${newPairsCount} pairs from selection, ${allPairs.length} total.`, 'ok');
-    $('btn-export').disabled = false;
-  }
+	if (allPairs.length > 0) {
+		const beforeDedup = allPairs.length;
+		const { unique, duplicates } = deduplicatePairs(allPairs);
+		if (duplicates > 0) {
+		  allPairs = unique;
+		  log(`🔄 Dedup: removed ${duplicates} near-duplicate pairs (${beforeDedup} → ${allPairs.length})`, 'info');
+		  resultsList.innerHTML = '';
+		  allPairs.forEach((p, i) => addPairToUI(p, i + 1));
+		}
 
-  updateStoreUI();
-}
+		resultsDiv.style.display = 'block';
+		resultsCount.textContent = `${allPairs.length} total pairs generated`;
+		log(`\n✨ Complete! ${newPairsCount} pairs from selection, ${allPairs.length} total.`, 'ok');
+		$('btn-export').disabled = false;
+	  }
+
+	  updateStoreUI();
+	}
 
 async function generatePairs() {
   running = true;
@@ -4637,24 +5012,34 @@ try {
   btnStop.disabled = true;
   btnStop.style.display = 'none';
 
-  if (allPairs.length > 0) {
-    resultsDiv.style.display = 'block';
-    resultsCount.textContent = `${allPairs.length} total pairs generated`;
-    log(`\n✨ Complete! ${newPairsCount} new pairs this run, ${allPairs.length} total.`, 'ok');
-    $('btn-export').disabled = false;
-  }
-// Clear saved progress on completion
-  localStorage.removeItem('know3_gen_progress');
-  // Final save
-  if (allPairs.length > 0) {
-    localStorage.setItem('know3_saved_pairs', JSON.stringify(allPairs));
-  }
-  btnPause.disabled = true;
-  btnPause.style.display = 'none';
-  btnPause.textContent = '⏸ Pause';
-  btnPause.style.background = '';
-  updateStoreUI();
-}
+		if (allPairs.length > 0) {
+			// Run deduplication
+			const beforeDedup = allPairs.length;
+			const { unique, duplicates } = deduplicatePairs(allPairs);
+			if (duplicates > 0) {
+			  allPairs = unique;
+			  log(`🔄 Dedup: removed ${duplicates} near-duplicate pairs (${beforeDedup} → ${allPairs.length})`, 'info');
+			  resultsList.innerHTML = '';
+			  allPairs.forEach((p, i) => addPairToUI(p, i + 1));
+			}
+
+			resultsDiv.style.display = 'block';
+			resultsCount.textContent = `${allPairs.length} total pairs generated`;
+			log(`\n✨ Complete! ${newPairsCount} new pairs this run, ${allPairs.length} total.`, 'ok');
+			$('btn-export').disabled = false;
+		  }
+		// Clear saved progress on completion
+		  localStorage.removeItem('know3_gen_progress');
+		  // Final save
+		  if (allPairs.length > 0) {
+			localStorage.setItem('know3_saved_pairs', JSON.stringify(allPairs));
+		  }
+		  btnPause.disabled = true;
+		  btnPause.style.display = 'none';
+		  btnPause.textContent = '⏸ Pause';
+		  btnPause.style.background = '';
+		  updateStoreUI();
+		}
 
 // ════════════════════════════════════════════════════════════════════════════
 // RAG QUERY: Search → Retrieve → Generate (like Weaviate Query Agent)
@@ -5651,8 +6036,17 @@ function addPairToUI(pair, idx) {
   resultsDiv.style.display = 'block';
   const card = document.createElement('div');
   card.className = 'pair-card';
+  
+  // Quality badge
+  let qualityBadge = '';
+  if (pair.qualityScore) {
+    const stars = '★'.repeat(pair.qualityScore) + '☆'.repeat(5 - pair.qualityScore);
+    const colors = { 5: 'var(--accent)', 4: 'var(--blue)', 3: 'var(--warn)', 2: 'var(--orange)', 1: 'var(--err)' };
+    qualityBadge = `<span style="color:${colors[pair.qualityScore] || 'var(--text3)'}; font-size:.72rem; margin-left:.5rem;">${stars}</span>`;
+  }
+  
   card.innerHTML = `
-    <div class="pair-num">#${idx} · ${pair.collection || ''} · ${pair.file || ''}</div>
+    <div class="pair-num">#${idx} · ${pair.collection || ''} · ${pair.file || ''}${qualityBadge}</div>
     <div class="pair-q">Q: ${escHtml(pair.instruction)}</div>
     <div class="pair-a">${escHtml(pair.output)}</div>
     ${pair.source ? `<div class="pair-source">📄 ${escHtml(pair.source)}</div>` : ''}
@@ -5903,7 +6297,8 @@ $('btn-clear-store').addEventListener('click', () => {
     vectorStore.clear();
     allPairs = [];
     documentsIngested = 0;
-    updateStoreUI();
+	clearDB(); // Clear IndexedDB too
+	updateStoreUI();
     resultsList.innerHTML = '';
     resultsDiv.style.display = 'none';
     if ($('rag-results')) $('rag-results').innerHTML = '';
@@ -5923,6 +6318,14 @@ $('chunk-size').addEventListener('change', () => {
 // ════════════════════════════════════════════════════════════════════════════
 // INIT
 // ════════════════════════════════════════════════════════════════════════════
+
+// Load persisted data from IndexedDB first
+loadFromDB().then(() => {
+  console.log('✅ IndexedDB restoration complete');
+}).catch(e => {
+  console.warn('IndexedDB load skipped:', e.message);
+});
+
 checkOllama();
 setInterval(() => {
   if (!statusDot.classList.contains('ok') && !running) checkOllama();
