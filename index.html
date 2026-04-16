@@ -3235,6 +3235,8 @@ Rules:
 - Avoid generic statements; be specific and concrete
 - Instruction: Clear, specific question (1-2 sentences)
 - Output: Complete, detailed answer (minimum 2-3 sentences)
+- If the text contains TABLES (marked with ---TABLE--- tags), create pairs that ask about specific data points, trends, comparisons, and totals from the table data. Use exact numbers from the table.
+- For financial tables: ask about revenue figures, growth rates, year-over-year changes, ratios, and rankings visible in the data.
 
 Format EXACTLY (repeat for each pair):
 INSTRUCTION: [question or task]
@@ -3706,20 +3708,356 @@ async function parseFile(file) {
   }
 }
 
-async function parsePDF(file) {
+	// ----------------//
+
+	async function parsePDF(file) {
   if (!pdfjsLib) throw new Error('PDF.js not loaded');
   const buf = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-  let text = '';
+  
+  let fullText = '';
+  let allTables = [];
+  let allCaptions = [];
+  let tableCounter = 0;
+
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    let pageText = content.items.map(item => item.str).join(' ');
-        pageText = normalizeMathInText(pageText);
-        text += pageText + '\n\n';
+    const viewport = page.getViewport({ scale: 1.0 });
+    
+    // Get positioned items
+    const items = content.items
+      .filter(item => item.str && item.str.trim())
+      .map(item => ({
+        text: item.str,
+        x: Math.round(item.transform[4] * 10) / 10,
+        y: Math.round((viewport.height - item.transform[5]) * 10) / 10, // flip Y
+        width: item.width || 0,
+        height: item.height || 0,
+        fontSize: Math.abs(item.transform[0]) || 12
+      }));
+
+    if (items.length === 0) continue;
+
+    // Detect tables on this page
+    const { tables, nonTableItems } = detectTablesFromPositions(items, i);
+    
+    // Extract captions from non-table items
+    const { captions, bodyItems } = extractCaptions(nonTableItems);
+    
+    // Build page text from non-table body items
+    const lines = reconstructLines(bodyItems);
+    let pageText = lines.join('\n');
+    pageText = normalizeMathInText(pageText);
+    
+    // Append detected tables as markdown
+    for (const table of tables) {
+      tableCounter++;
+      const tableId = `TABLE-P${i}-${tableCounter}`;
+      const caption = findTableCaption(captions, table, i);
+      const mdTable = tableToMarkdown(table, tableId, caption);
+      allTables.push({ id: tableId, caption, markdown: mdTable, page: i });
+      pageText += `\n\n${mdTable}\n`;
+    }
+    
+    // Append captions that reference figures/tables
+    for (const cap of captions) {
+      allCaptions.push({ text: cap.text, page: i });
+    }
+
+    fullText += pageText + '\n\n';
   }
-  log(`PDF: ${pdf.numPages} pages extracted`, 'ok');
-  return text;
+
+  const tableCount = allTables.length;
+  const captionCount = allCaptions.length;
+  log(`PDF: ${pdf.numPages} pages · ${tableCount} tables detected · ${captionCount} captions`, 'ok');
+  
+  if (tableCount > 0) {
+    log(`📊 Tables: ${allTables.map(t => t.id + (t.caption ? ' "' + t.caption.substring(0,40) + '..."' : '')).join(', ')}`, 'info');
+  }
+
+  return fullText;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TABLE DETECTION ENGINE — Position-based grid reconstruction
+// ════════════════════════════════════════════════════════════════════════════
+
+function detectTablesFromPositions(items, pageNum) {
+  // Step 1: Group items into rows by Y-coordinate (within tolerance)
+  const Y_TOLERANCE = 3; // pixels — items within this range are on the same row
+  const rows = [];
+  const sorted = [...items].sort((a, b) => a.y - b.y);
+  
+  let currentRow = [sorted[0]];
+  for (let i = 1; i < sorted.length; i++) {
+    if (Math.abs(sorted[i].y - currentRow[0].y) <= Y_TOLERANCE) {
+      currentRow.push(sorted[i]);
+    } else {
+      rows.push(currentRow);
+      currentRow = [sorted[i]];
+    }
+  }
+  if (currentRow.length > 0) rows.push(currentRow);
+
+  // Sort items within each row by X
+  rows.forEach(row => row.sort((a, b) => a.x - b.x));
+
+  // Step 2: Detect column structure — find X-positions that repeat across rows
+  const xPositions = [];
+  rows.forEach(row => {
+    row.forEach(item => xPositions.push(Math.round(item.x / 5) * 5)); // snap to 5px grid
+  });
+  
+  // Count frequency of each X-position
+  const xFreq = {};
+  xPositions.forEach(x => { xFreq[x] = (xFreq[x] || 0) + 1; });
+  
+  // Step 3: Find table regions — consecutive rows with consistent column count
+  const MIN_TABLE_COLS = 3;     // At least 3 columns to be a table
+  const MIN_TABLE_ROWS = 3;     // At least 3 rows
+  const MAX_ROW_GAP = 25;       // Max Y-gap between rows in same table
+  
+  const tables = [];
+  const tableRowIndices = new Set();
+  
+  let candidateStart = -1;
+  let candidateCols = 0;
+  
+  for (let r = 0; r < rows.length; r++) {
+    const row = rows[r];
+    const colCount = row.length;
+    
+    if (colCount >= MIN_TABLE_COLS) {
+      // Check if this continues a candidate
+      if (candidateStart >= 0) {
+        const gap = rows[r][0].y - rows[r-1][0].y;
+        const colDiff = Math.abs(colCount - candidateCols);
+        
+        // Allow column count to vary by ±2 (merged cells, subtotals)
+        if (gap < MAX_ROW_GAP && colDiff <= 2) {
+          // Continue table
+          candidateCols = Math.max(candidateCols, colCount); // track widest
+          continue;
+        }
+      }
+      
+      // Close previous candidate if valid
+      if (candidateStart >= 0 && (r - candidateStart) >= MIN_TABLE_ROWS) {
+        tables.push(buildTable(rows, candidateStart, r - 1));
+        for (let j = candidateStart; j < r; j++) tableRowIndices.add(j);
+      }
+      
+      // Start new candidate
+      candidateStart = r;
+      candidateCols = colCount;
+    } else {
+      // Not enough columns — close candidate if valid
+      if (candidateStart >= 0 && (r - candidateStart) >= MIN_TABLE_ROWS) {
+        tables.push(buildTable(rows, candidateStart, r - 1));
+        for (let j = candidateStart; j < r; j++) tableRowIndices.add(j);
+      }
+      candidateStart = -1;
+      candidateCols = 0;
+    }
+  }
+  
+  // Close last candidate
+  if (candidateStart >= 0 && (rows.length - candidateStart) >= MIN_TABLE_ROWS) {
+    tables.push(buildTable(rows, candidateStart, rows.length - 1));
+    for (let j = candidateStart; j < rows.length; j++) tableRowIndices.add(j);
+  }
+
+  // Collect non-table items
+  const nonTableItems = [];
+  rows.forEach((row, idx) => {
+    if (!tableRowIndices.has(idx)) {
+      nonTableItems.push(...row);
+    }
+  });
+
+  return { tables, nonTableItems };
+}
+
+function buildTable(rows, startIdx, endIdx) {
+  // Step 1: Collect all X-positions across all rows to define columns
+  const allX = [];
+  for (let r = startIdx; r <= endIdx; r++) {
+    rows[r].forEach(item => allX.push(Math.round(item.x / 3) * 3)); // 3px snap
+  }
+  
+  // Cluster X-positions into columns
+  const uniqueX = [...new Set(allX)].sort((a, b) => a - b);
+  const columnBoundaries = clusterPositions(uniqueX, 15); // 15px tolerance
+  
+  // Step 2: Build grid — assign each item to nearest column
+  const grid = [];
+  for (let r = startIdx; r <= endIdx; r++) {
+    const gridRow = new Array(columnBoundaries.length).fill('');
+    rows[r].forEach(item => {
+      const colIdx = findNearestColumn(item.x, columnBoundaries);
+      if (colIdx >= 0) {
+        // Append if column already has content (merged cells)
+        if (gridRow[colIdx]) gridRow[colIdx] += ' ' + item.text.trim();
+        else gridRow[colIdx] = item.text.trim();
+      }
+    });
+    grid.push(gridRow);
+  }
+  
+  // Step 3: Clean empty columns
+  const nonEmptyCols = [];
+  for (let c = 0; c < columnBoundaries.length; c++) {
+    const hasContent = grid.some(row => row[c] && row[c].trim());
+    if (hasContent) nonEmptyCols.push(c);
+  }
+  
+  const cleanGrid = grid.map(row => nonEmptyCols.map(c => row[c] || ''));
+  
+  // Step 4: Detect header row — often has different font size or is the first row
+  // For financial tables, first 1-2 rows are typically headers
+  let headerRows = 1;
+  if (cleanGrid.length > 2) {
+    // Check if second row looks like a sub-header (e.g., units row)
+    const row2 = cleanGrid[1];
+    const hasUnits = row2.some(cell => /^[\$€£¥%()kKmMbB\s\d,.\-\/]+$/.test(cell) && cell.length < 15);
+    const allShort = row2.every(cell => cell.length < 20);
+    if (hasUnits || allShort) headerRows = 2;
+  }
+  
+  return {
+    grid: cleanGrid,
+    headerRows,
+    startY: rows[startIdx][0].y,
+    endY: rows[endIdx][0].y,
+    rowCount: cleanGrid.length,
+    colCount: nonEmptyCols.length
+  };
+}
+
+function clusterPositions(sorted, tolerance) {
+  // Merge positions within tolerance into cluster centers
+  const clusters = [];
+  let clusterStart = sorted[0];
+  let clusterSum = sorted[0];
+  let clusterCount = 1;
+  
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i] - sorted[i-1] <= tolerance) {
+      clusterSum += sorted[i];
+      clusterCount++;
+    } else {
+      clusters.push(Math.round(clusterSum / clusterCount));
+      clusterStart = sorted[i];
+      clusterSum = sorted[i];
+      clusterCount = 1;
+    }
+  }
+  clusters.push(Math.round(clusterSum / clusterCount));
+  return clusters;
+}
+
+function findNearestColumn(x, boundaries) {
+  let best = -1, bestDist = Infinity;
+  for (let i = 0; i < boundaries.length; i++) {
+    const dist = Math.abs(x - boundaries[i]);
+    if (dist < bestDist) { bestDist = dist; best = i; }
+  }
+  return bestDist < 40 ? best : -1; // 40px max distance to a column
+}
+
+function tableToMarkdown(table, tableId, caption) {
+  const { grid, headerRows, rowCount, colCount } = table;
+  if (grid.length === 0 || colCount === 0) return '';
+  
+  let md = `\n---${tableId}---\n`;
+  if (caption) md += `**${caption}**\n\n`;
+  
+  // Header row(s)
+  for (let h = 0; h < headerRows && h < grid.length; h++) {
+    md += '| ' + grid[h].map(cell => cell || ' ').join(' | ') + ' |\n';
+  }
+  
+  // Separator
+  md += '| ' + grid[0].map(() => '---').join(' | ') + ' |\n';
+  
+  // Data rows
+  for (let r = headerRows; r < grid.length; r++) {
+    const row = grid[r];
+    // Skip completely empty rows
+    if (row.every(cell => !cell || !cell.trim())) continue;
+    md += '| ' + row.map(cell => cell || ' ').join(' | ') + ' |\n';
+  }
+  
+  md += `---END-${tableId}---\n`;
+  return md;
+}
+
+function extractCaptions(items) {
+  const captionPattern = /^(Table|Figure|Fig\.|Chart|Exhibit|Schedule|Note)\s*[\d.\-:]+/i;
+  const captions = [];
+  const bodyItems = [];
+  
+  for (const item of items) {
+    if (captionPattern.test(item.text.trim())) {
+      captions.push(item);
+    } else {
+      bodyItems.push(item);
+    }
+  }
+  return { captions, bodyItems };
+}
+
+function findTableCaption(captions, table, pageNum) {
+  // Find the caption closest ABOVE the table (smaller Y = above in flipped coords)
+  let bestCaption = null;
+  let bestDist = Infinity;
+  
+  for (const cap of captions) {
+    const dist = table.startY - cap.y;
+    // Caption should be above (or just at) the table, within 60px
+    if (dist >= -5 && dist < bestDist && dist < 60) {
+      bestDist = dist;
+      bestCaption = cap.text.trim();
+    }
+  }
+  return bestCaption;
+}
+
+function reconstructLines(items) {
+  if (items.length === 0) return [];
+  
+  // Group by Y, sort by X, join as lines
+  const Y_TOL = 3;
+  const sorted = [...items].sort((a, b) => a.y - b.y || a.x - b.x);
+  const lines = [];
+  let currentLine = [sorted[0]];
+  
+  for (let i = 1; i < sorted.length; i++) {
+    if (Math.abs(sorted[i].y - currentLine[0].y) <= Y_TOL) {
+      currentLine.push(sorted[i]);
+    } else {
+      currentLine.sort((a, b) => a.x - b.x);
+      lines.push(mergeLineItems(currentLine));
+      currentLine = [sorted[i]];
+    }
+  }
+  if (currentLine.length > 0) {
+    currentLine.sort((a, b) => a.x - b.x);
+    lines.push(mergeLineItems(currentLine));
+  }
+  return lines;
+}
+
+function mergeLineItems(items) {
+  // Join items with appropriate spacing based on X-gaps
+  if (items.length === 0) return '';
+  let result = items[0].text;
+  for (let i = 1; i < items.length; i++) {
+    const gap = items[i].x - (items[i-1].x + (items[i-1].width || 0));
+    result += (gap > 10 ? '  ' : gap > 3 ? ' ' : '') + items[i].text;
+  }
+  return result.trim();
 }
 
 async function parseDOCX(file) {
@@ -3751,38 +4089,158 @@ async function parseEPUB(file) {
 // ════════════════════════════════════════════════════════════════════════════
 function chunkText(text, maxLen) {
   const chunks = [];
-  let current = '';
-
-  const paragraphs = text.split(/\n\n+/);
-
-  for (const para of paragraphs) {
-    const cleaned = para.replace(/\s+/g, ' ').trim();
-    if (!cleaned || cleaned.length < 30) continue; // Skip tiny fragments
-
-    if (current.length + cleaned.length > maxLen && current.length > 100) {
-      chunks.push(current.trim());
-      current = '';
+  
+  // Step 1: Split into segments, preserving table blocks as atomic units
+  const TABLE_START = /^---TABLE-/m;
+  const TABLE_END = /^---END-TABLE-[^-]+-+---$/m;
+  
+  const segments = [];
+  let remaining = text;
+  
+  while (remaining.length > 0) {
+    const tableMatch = remaining.match(TABLE_START);
+    
+    if (!tableMatch) {
+      // No more tables — rest is plain text
+      segments.push({ type: 'text', content: remaining });
+      break;
     }
-    current += cleaned + '\n\n';
+    
+    const tableStartIdx = tableMatch.index;
+    
+    // Text before the table
+    if (tableStartIdx > 0) {
+      segments.push({ type: 'text', content: remaining.substring(0, tableStartIdx) });
+    }
+    
+    // Find the end of this table
+    const afterStart = remaining.substring(tableStartIdx);
+    const endMatch = afterStart.match(TABLE_END);
+    
+    if (endMatch) {
+      const tableEndIdx = tableStartIdx + endMatch.index + endMatch[0].length;
+      segments.push({ type: 'table', content: remaining.substring(tableStartIdx, tableEndIdx) });
+      remaining = remaining.substring(tableEndIdx);
+    } else {
+      // No end marker found — treat rest as text
+      segments.push({ type: 'text', content: remaining.substring(tableStartIdx) });
+      break;
+    }
   }
+  
+  // Step 2: Chunk text segments normally, keep tables as their own chunks
+  let current = '';
+  
+  for (const seg of segments) {
+    if (seg.type === 'table') {
+      // Flush current text chunk first
+      if (current.trim().length > 100) {
+        chunks.push(current.trim());
+        current = '';
+      }
+      
+      // Table becomes its own chunk (may exceed maxLen — that's OK for tables)
+      const tableContent = seg.content.trim();
+      if (tableContent.length > 50) {
+        // Attach preceding context paragraph if available
+        const lastChunk = chunks.length > 0 ? chunks[chunks.length - 1] : '';
+        const contextLines = lastChunk.split('\n').filter(l => l.trim());
+        const contextSnippet = contextLines.slice(-2).join(' ').substring(0, 200);
+        
+        if (contextSnippet && tableContent.length < maxLen * 3) {
+          // Small-medium table: attach context
+          chunks.push(`Context: ${contextSnippet}\n\n${tableContent}`);
+        } else {
+          // Large table: standalone chunk
+          chunks.push(tableContent);
+        }
+        
+        // If table is huge, also chunk it by rows
+        if (tableContent.length > maxLen * 4) {
+          const tableChunks = chunkLargeTable(tableContent, maxLen);
+          chunks.pop(); // remove the full table
+          chunks.push(...tableChunks);
+        }
+      }
+    } else {
+      // Normal text — chunk by paragraphs
+      const paragraphs = seg.content.split(/\n\n+/);
+      for (const para of paragraphs) {
+        const cleaned = para.replace(/\s+/g, ' ').trim();
+        if (!cleaned || cleaned.length < 30) continue;
+        
+        if (current.length + cleaned.length > maxLen && current.length > 100) {
+          chunks.push(current.trim());
+          current = '';
+        }
+        current += cleaned + '\n\n';
+      }
+    }
+  }
+  
   if (current.trim().length > 100) chunks.push(current.trim());
   return chunks;
 }
 
-// Smart content filter — skip junk before processing
-function isJunkChunk(text) {
-  const lower = text.toLowerCase();
-  // Table of contents patterns
-  if ((lower.match(/\.\.\./g) || []).length > 5) return true;
-  // Page numbers only
-  if (/^\d+\s*$/.test(text.trim())) return true;
-  // Copyright/legal boilerplate
-  if (lower.includes('all rights reserved') && text.length < 200) return true;
-  if (lower.includes('isbn') && text.length < 200) return true;
-  // Bibliography/references (heavy citation patterns)
-  if ((text.match(/\(\d{4}\)/g) || []).length > 5 && text.length < 500) return true;
-  return false;
+function chunkLargeTable(tableContent, maxLen) {
+  // Split a huge financial table into row-groups, preserving headers
+  const lines = tableContent.split('\n');
+  const chunks = [];
+  
+  // Find header and separator
+  let headerEnd = 0;
+  let headerBlock = '';
+  let tableId = '';
+  let caption = '';
+  
+  for (let i = 0; i < Math.min(lines.length, 6); i++) {
+    const line = lines[i];
+    if (line.match(/^---TABLE-/)) { tableId = line; headerBlock += line + '\n'; headerEnd = i + 1; continue; }
+    if (line.startsWith('**') && line.endsWith('**')) { caption = line; headerBlock += line + '\n'; headerEnd = i + 1; continue; }
+    if (line.includes('| ---')) { headerBlock += line + '\n'; headerEnd = i + 1; break; }
+    if (line.startsWith('|')) { headerBlock += line + '\n'; headerEnd = i + 1; }
+  }
+  
+  // Chunk remaining data rows
+  let currentChunk = headerBlock;
+  const endMarker = lines.find(l => l.match(/^---END-TABLE/)) || '';
+  
+  for (let i = headerEnd; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.match(/^---END-TABLE/)) continue; // skip end marker, we'll add it
+    
+    if (currentChunk.length + line.length > maxLen && currentChunk.length > headerBlock.length + 100) {
+      currentChunk += endMarker + '\n';
+      chunks.push(currentChunk.trim());
+      currentChunk = headerBlock + '*(continued)*\n'; // restart with headers
+    }
+    currentChunk += line + '\n';
+  }
+  
+  if (currentChunk.trim().length > headerBlock.length + 50) {
+    currentChunk += endMarker + '\n';
+    chunks.push(currentChunk.trim());
+  }
+  
+  return chunks;
 }
+// Smart content filter — skip junk before processing
+	function isJunkChunk(text) {
+	  // Never filter table chunks
+	  if (text.includes('---TABLE-') || text.includes('| --- |')) return false;
+	  
+	  const lower = text.toLowerCase();
+	  // Table of contents patterns
+	  if ((lower.match(/\.\.\./g) || []).length > 5) return true;
+	  // Page numbers only
+	  if (/^\d+\s*$/.test(text.trim())) return true;
+	  // Copyright/legal boilerplate
+	  if (lower.includes('all rights reserved') && text.length < 200) return true;
+	  if (lower.includes('isbn') && text.length < 200) return true;
+	  // Bibliography/references (heavy citation patterns)
+	  if ((text.match(/\(\d{4}\)/g) || []).length > 5 && text.length < 500) return true;
+	  return false;
+	}
 // Strip figure/table references that have no visual backing
     function sanitizeChunkForGeneration(text) {
       text = text.replace(
