@@ -3332,47 +3332,28 @@ async function loadDataFile() {
   }
 }
 
-let _datasetCache = null;
-
-async function fetchDatasets() {
+let _ghDatasetCache = null;
+async function fetchGitHubDatasets() {
   const sel = document.getElementById('s-github-dataset');
-  if (_datasetCache) {
-    sel.innerHTML = _datasetCache;
-    return;
-  }
-
-  sel.innerHTML = 'Loading list...';
+  if (_ghDatasetCache) { sel.innerHTML = _ghDatasetCache; return; }
+  sel.innerHTML = '<option value="">Loading...</option>';
   sel.disabled = true;
-
-  const shareUrl = "https://1drv.ms/u/c/28c09c5f358f6467/IQC7-JFQUP2GR5BNxY3npaGVAcBrbBu8ruVKKkTJ3eS5Swk?e=AdDBO1";
-
   try {
-    // 1. Encode the share link
-    const base64 = btoa(shareUrl).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    const encoded = `u!${base64}`;
-
-    // 2. Get file info (no children because it's a single file)
-    const res = await fetch(`https://api.onedrive.com/v1.0/shares/${encoded}/driveItem`);
-
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-    const data = await res.json();
-
-    const fileName = data.name || "oil.jsonl";
-    const sizeKB = data.size ? (data.size / 1024).toFixed(0) : '???';
-
-    const html = `<option value="${fileName}">${fileName} (${sizeKB} KB)</option>`;
-
+    const res = await fetch('https://api.github.com/repos/khalecl/know3/contents/prelude');
+    if (!res.ok) throw new Error(`GitHub API: ${res.status}`);
+    const files = (await res.json()).filter(f => f.name.endsWith('.json') || f.name.endsWith('.jsonl'));
+    if (!files.length) throw new Error('No datasets');
+    const html = files.map(f => `<option value="${f.download_url}">${f.name} (${(f.size/1024).toFixed(0)} KB)</option>`).join('');
     sel.innerHTML = html;
-    _datasetCache = sel.innerHTML;
-
-  } catch (err) {
-    console.error("OneDrive fetch failed:", err);
-    sel.innerHTML = '<option>oil.jsonl (fallback)</option>';
+    _ghDatasetCache = html;
+  } catch (e) {
+    console.warn('GitHub dataset fetch failed:', e);
+    sel.innerHTML = '<option value="https://khalecl.github.io/know3/prelude/oil.jsonl">oil.jsonl (fallback)</option>';
   } finally {
     sel.disabled = false;
   }
 }
+	
 async function loadGitHubDataset() {
   if (_isLoadingData) return;  // double-click guard
   const url = document.getElementById('s-github-dataset').value;
@@ -3398,16 +3379,17 @@ async function loadGitHubDataset() {
     statusEl.innerHTML = `<span style="color:var(--warn)">⏳ Indexing ${Array.isArray(data) ? data.length : '?'} chunks...</span>`;
     await new Promise(r => setTimeout(r, 0));
 
-    await vectorStore.addChunksFromJSON(data);
-    updateChunkCount();
-    alert(`✓ Loaded. Total: ${vectorStore.chunks.length} chunks`);
-  } catch (e) {
-    statusEl.innerHTML = origStatus;
-    alert('Error: ' + e.message);
-  } finally {
-    _isLoadingData = false;
-    setLoadBtn('load-github', false);
-  }
+	await vectorStore.addChunksFromJSON(data);
+	    updateChunkCount();
+	    alert(`✓ Loaded. Total: ${vectorStore.chunks.length} chunks`);
+	  } catch (e) {
+	    statusEl.innerHTML = origStatus;
+	    alert('Error: ' + e.message);
+	  } finally {
+	    _isLoadingData = false;
+	    setLoadBtn('load-github', false);
+	  }
+	}
 
 
 // ── OneDrive Pre-indexed Datasets ──
