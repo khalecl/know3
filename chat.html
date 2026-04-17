@@ -1467,15 +1467,7 @@ class VectorStore {
 	    }
 	    updateChunkCount();
 	  }
-    items.forEach((item, i) => {
-      const text = item.text || item.content || (typeof item === 'string' ? item : JSON.stringify(item));
-      if (text.trim()) {
-        this.chunks.push({
-          text,
-          metadata: { ...item.metadata, collection, source: item.metadata?.source || item.source || `chunk-${i}` }
-        });
-      }
-    });
+
 // Never block UI on embedding — always defer to background
     if (embeddingReady && this.chunks.length > 0) {
       const prevCount = this.embeddings.length;
