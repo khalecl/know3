@@ -1460,15 +1460,6 @@ class VectorStore {
 	      }
 	    });
 	
-	    if (embeddingReady && this.chunks.length > 0) {
-	      this._pendingEmbedStart = this.embeddings.length;
-	      setEmbedStatus('', `⚡ ${this.chunks.length.toLocaleString()} chunks — keyword ready`);
-	      setTimeout(() => startBackgroundEmbedding(), 500);
-	    }
-	    updateChunkCount();
-	  }
-
-// Never block UI on embedding — always defer to background
     if (embeddingReady && this.chunks.length > 0) {
       const prevCount = this.embeddings.length;
       this._pendingEmbedStart = prevCount;
