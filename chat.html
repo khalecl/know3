@@ -1115,7 +1115,8 @@ body {
           <label class="field-label">Load RAG Data</label>
           <select id="s-load-method" onchange="toggleLoadMethod()">
             <option value="manual">Upload JSON / JSONL</option>
-            <option value="github">From Personal Prelude</option>
+            <option value="github">From GitHub Prelude</option>
+			<option value="onedrive">OneDrive (Pre-indexed)</option>
           </select>
         </div>
         <div id="load-manual">
@@ -1131,6 +1132,16 @@ body {
           </div>
           <button class="btn-primary" onclick="loadGitHubDataset()" style="width:100%">Load Dataset</button>
         </div>
+		  <div id="load-onedrive" style="display:none">
+			  <label class="field-label">Pre-indexed Dataset</label>
+			  <select id="s-onedrive-dataset" style="width:100%;margin-bottom:0.5rem">
+			    <option value="">Select dataset...</option>
+			  </select>
+			  <div style="font-size:0.68rem;color:var(--text3);margin-bottom:0.5rem">
+			    ⚡ Pre-indexed — loads instantly with full semantic search. No embedding needed.
+			  </div>
+			  <button class="btn-primary" onclick="loadOneDriveDataset()">⚡ Load Pre-indexed</button>
+		  </div>
         <div style="margin-top:1rem; padding:0.7rem; background:var(--surface2); border:1px solid var(--border); border-radius:8px;">
           <div style="font-size:0.75rem; color:var(--accent); font-weight:600; margin-bottom:0.3rem;">Loaded Data</div>
           <div id="data-summary" style="font-size:0.72rem; color:var(--text3);">No data loaded</div>
@@ -1413,9 +1424,49 @@ function initMatrix() {
 class VectorStore {
   constructor() { this.chunks = []; this.embeddings = []; }
 
-  async addChunksFromJSON(data) {
-    const items = Array.isArray(data) ? data : (data.chunks || [data]);
-    const collection = data.collection || 'Default';
+	async addChunksFromJSON(data) {
+	    // ── Pre-indexed format: instant load, skip embedding entirely ──
+	    if (data.format === 'know3-indexed-v1' && data.embeddings) {
+	      const collection = data.chunks?.[0]?.metadata?.collection || 'Default';
+	      for (let i = 0; i < data.chunks.length; i++) {
+	        this.chunks.push({
+	          text: data.chunks[i].text,
+	          metadata: { ...data.chunks[i].metadata, collection }
+	        });
+	      }
+	      // Pad or init embeddings array to match
+	      while (this.embeddings.length < this.chunks.length - data.embeddings.length) {
+	        this.embeddings.push(null);
+	      }
+	      this.embeddings.push(...data.embeddings);
+	      await saveEmbeddings(this.chunks, this.embeddings);
+	      setEmbedStatus('ready', `✓ ${this.chunks.length.toLocaleString()} pre-indexed`);
+	      const modeEl = document.getElementById('toolbar-search-mode');
+	      if (modeEl) { modeEl.value = 'hybrid'; setSetting('search_mode', 'hybrid'); }
+	      updateChunkCount();
+	      return;
+	    }
+	
+	    // ── Standard format: store chunks, defer embedding to background ──
+	    const items = Array.isArray(data) ? data : (data.chunks || [data]);
+	    const collection = data.collection || 'Default';
+	    items.forEach((item, i) => {
+	      const text = item.text || item.content || (typeof item === 'string' ? item : JSON.stringify(item));
+	      if (text.trim()) {
+	        this.chunks.push({
+	          text,
+	          metadata: { ...item.metadata, collection, source: item.metadata?.source || item.source || `chunk-${i}` }
+	        });
+	      }
+	    });
+	
+	    if (embeddingReady && this.chunks.length > 0) {
+	      this._pendingEmbedStart = this.embeddings.length;
+	      setEmbedStatus('', `⚡ ${this.chunks.length.toLocaleString()} chunks — keyword ready`);
+	      setTimeout(() => startBackgroundEmbedding(), 500);
+	    }
+	    updateChunkCount();
+	  }
     items.forEach((item, i) => {
       const text = item.text || item.content || (typeof item === 'string' ? item : JSON.stringify(item));
       if (text.trim()) {
@@ -3225,7 +3276,9 @@ function toggleLoadMethod() {
   const m = document.getElementById('s-load-method').value;
   document.getElementById('load-manual').style.display = m === 'manual' ? 'block' : 'none';
   document.getElementById('load-github').style.display = m === 'github' ? 'block' : 'none';
+  document.getElementById('load-onedrive').style.display = m === 'onedrive' ? 'block' : 'none';
   if (m === 'github') fetchGitHubDatasets();
+  if (m === 'onedrive') fetchOneDriveDatasets();
 }
 
 function previewDataFile(e) {
@@ -3319,7 +3372,8 @@ async function fetchDatasets() {
   } finally {
     sel.disabled = false;
   }
-}async function loadGitHubDataset() {
+}
+async function loadGitHubDataset() {
   if (_isLoadingData) return;  // double-click guard
   const url = document.getElementById('s-github-dataset').value;
   if (!url) return;
@@ -3354,7 +3408,78 @@ async function fetchDatasets() {
     _isLoadingData = false;
     setLoadBtn('load-github', false);
   }
+
+
+// ── OneDrive Pre-indexed Datasets ──
+const ONEDRIVE_SHARE = 'u!aHR0cHM6Ly8xZHJ2Lm1zL2YvYy8yOGMwOWM1ZjM1OGY2NDY3L0lnQXNKOHI2bnFpUlM2N3Nid1BVRkpfLUFWY0EzT2tjZWFlbmVfbnhnRDZEeUpzP2U9bnltWGNH';
+let _odDatasetCache = null;
+
+async function fetchOneDriveDatasets() {
+  const sel = document.getElementById('s-onedrive-dataset');
+  if (_odDatasetCache) { sel.innerHTML = _odDatasetCache; return; }
+  sel.innerHTML = '<option value="">Loading...</option>';
+  sel.disabled = true;
+  try {
+    const res = await fetch(`https://api.onedrive.com/v1.0/shares/${ONEDRIVE_SHARE}/root/children?select=name,size,@microsoft.graph.downloadUrl`);
+    if (!res.ok) throw new Error(`OneDrive API: ${res.status}`);
+    const data = await res.json();
+    const files = (data.value || []).filter(f => f.name.endsWith('.json') || f.name.endsWith('.indexed.json'));
+    if (files.length === 0) throw new Error('No datasets found');
+    const html = '<option value="">Select dataset...</option>' + files.map(f => {
+      const sizeMB = (f.size / 1024 / 1024).toFixed(1);
+      const url = f['@microsoft.graph.downloadUrl'] || f['@content.downloadUrl'] || '';
+      const isIndexed = f.name.includes('.indexed.');
+      const label = isIndexed ? `⚡ ${f.name} (${sizeMB} MB — pre-indexed)` : `${f.name} (${sizeMB} MB)`;
+      return `<option value="${encodeURIComponent(url)}" data-indexed="${isIndexed}">${label}</option>`;
+    }).join('');
+    sel.innerHTML = html;
+    _odDatasetCache = html;
+  } catch (e) {
+    console.warn('OneDrive fetch error:', e);
+    sel.innerHTML = '<option value="">Failed to load list — check sharing settings</option>';
+  } finally {
+    sel.disabled = false;
+  }
 }
+
+async function loadOneDriveDataset() {
+  if (_isLoadingData) return;
+  const sel = document.getElementById('s-onedrive-dataset');
+  const url = decodeURIComponent(sel.value);
+  if (!url) { alert('Select a dataset first'); return; }
+
+  _isLoadingData = true;
+  const statusEl = document.getElementById('data-summary');
+  const origStatus = statusEl.innerHTML;
+
+  try {
+    statusEl.innerHTML = '<span style="color:var(--warn)">⏳ Downloading pre-indexed dataset...</span>';
+    await new Promise(r => setTimeout(r, 0));
+
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+    const text = await res.text();
+
+    statusEl.innerHTML = '<span style="color:var(--warn)">⏳ Parsing...</span>';
+    await new Promise(r => setTimeout(r, 0));
+
+    const data = JSON.parse(text);
+
+    if (data.format === 'know3-indexed-v1' && data.embeddings) {
+      statusEl.innerHTML = `<span style="color:var(--warn)">⚡ Loading ${data.count} pre-indexed chunks...</span>`;
+      await new Promise(r => setTimeout(r, 0));
+    }
+
+    await vectorStore.addChunksFromJSON(data);
+    updateChunkCount();
+    alert(`✓ Loaded ${vectorStore.chunks.length} chunks${data.format === 'know3-indexed-v1' ? ' (pre-indexed — semantic search ready!)' : ''}`);
+  } catch (e) {
+    statusEl.innerHTML = origStatus;
+    alert('Error: ' + e.message);
+  } finally {
+    _isLoadingData = false;
+  }
+}	
 // ═══════════════════════════════════════════════
 // BACKGROUND EMBEDDING (for large datasets)
 // ═══════════════════════════════════════════════
