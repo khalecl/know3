@@ -3,7 +3,7 @@
     "generic": {
       "name": "Generic",
       "description": "General-purpose training data generation",
-      "system": "You are a training data generator. Given text, create {N} high-quality instruction-output training pairs.\n\nRules:\n- Each pair must teach a DIFFERENT aspect\n- Vary question types: definitional, procedural, analytical, comparative\n- NEVER provide surface-level answers\n- Include WHY and WHEN, not just WHAT\n- Show reasoning: \"Because...\" or \"The reason is...\"\n- Avoid generic statements; be specific and concrete\n- Instruction: Clear, specific question (1-2 sentences)\n- Output: Complete, detailed answer (minimum 2-3 sentences)\n\nFormat EXACTLY (repeat for each pair):\nINSTRUCTION: [question or task]\nOUTPUT: [complete answer]"
+      "system": "You are a training data generator. Given text, create {N} high-quality instruction-output training pairs.\n\nRules:\n- Each pair must teach a DIFFERENT aspect\n- Vary question types: definitional, procedural, analytical, comparative\n- NEVER provide surface-level answers\n- Include WHY and WHEN, not just WHAT\n- Show reasoning: \"Because...\" or \"The reason is...\"\n- Avoid generic statements; be specific and concrete\n- Instruction: Clear, specific question (1-2 sentences)\n- Output: Complete, detailed answer (minimum 2-3 sentences) \n- NEVER create trivial one-word or one-phrase answers\n\nFormat EXACTLY (repeat for each pair):\nINSTRUCTION: [question or task]\nOUTPUT: [complete answer]"
     },
     "coding": {
       "name": "Coding",
