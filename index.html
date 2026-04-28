@@ -2569,8 +2569,13 @@ function syncSettingsFromDOM() {
   if (settingsSources) settingsSources.value = ragSettings.includeSources !== false ? 'yes' : 'no';
 
   // Ollama connection status
-  initOllamaSettings();
-  initCloudSettings(); // ← add this line
+	initOllamaSettings();
+	  initCloudSettings();
+	  
+	  // Ensure provider dropdown reflects actual state
+	  const providerSel = document.getElementById('settings-cloud-provider');
+	  if (providerSel) providerSel.value = CLOUD_PROVIDER || localStorage.getItem('know3_cloud_provider') || 'ollama';
+	  onCloudProviderChange();
   console.log('✅ Settings synced from DOM');
 }
 
@@ -3277,6 +3282,15 @@ try {
 let CLOUD_PROVIDER = localStorage.getItem('know3_cloud_provider') || 'ollama';
 let CLOUD_API_KEY = localStorage.getItem('know3_cloud_apikey') || '';
 let CLOUD_MODEL = localStorage.getItem('know3_cloud_model') || '';
+let OLLAMA = localStorage.getItem('know3_ollama_host') || 'http://localhost:11434';
+
+	// Listen for host changes from settings drawer
+	window.addEventListener('ollama-host-changed', (e) => {
+	  if (e.detail?.host && e.detail.host !== 'cloud') {
+	    OLLAMA = e.detail.host;
+	  }
+	  checkOllama();
+	});
 
 function isCloudProvider() { return CLOUD_PROVIDER !== 'ollama'; }
 
@@ -3851,39 +3865,48 @@ function cosineSim(a, b) {
 // ════════════════════════════════════════════════════════════════════════════
 // OLLAMA CONNECTION
 // ════════════════════════════════════════════════════════════════════════════
-async function checkOllama() {
-  try {
-    let models = [];
+		async function checkOllama() {
+		  try {
+		    let models = [];
+		    let providerLabel = 'Ollama';
+		
+		    if (isCloudProvider()) {
+		      providerLabel = CLOUD_PROVIDER.toUpperCase();
+		      const base = getCloudBaseUrl();
+		      if (!CLOUD_API_KEY) throw new Error('No API key set for ' + providerLabel);
+		      const r = await fetch(`${base}/models`, {
+		        headers: { 'Authorization': `Bearer ${CLOUD_API_KEY}` },
+		        signal: AbortSignal.timeout(5000)
+		      });
+		      if (!r.ok) throw new Error('Cloud API: ' + r.status);
+		      const data = await r.json();
+		      models = (data.data || []).map(m => ({ name: m.id || m.name || '' })).filter(m => m.name);
+		    } else {
+		      // Always try local Ollama
+		      const host = OLLAMA;
+		      const r = await fetch(`${host}/api/tags`, { signal: AbortSignal.timeout(3000) });
+		      if (!r.ok) throw new Error('Not OK');
+		      const data = await r.json();
+		      models = (data.models || []).map(m => ({ name: m.name || m.model || '' })).filter(m => m.name);
+		    }
 
-    if (isCloudProvider()) {
-      // Fetch models from cloud API
-      const base = getCloudBaseUrl();
-      const r = await fetch(`${base}/models`, {
-        headers: { 'Authorization': `Bearer ${CLOUD_API_KEY}` },
-        signal: AbortSignal.timeout(5000)
-      });
-      if (!r.ok) throw new Error('Cloud API: ' + r.status);
-      const data = await r.json();
-      models = (data.data || []).map(m => ({ name: m.id }));
-    } else {
-      const r = await fetch(`${OLLAMA}/api/tags`, { signal: AbortSignal.timeout(3000) });
-      if (!r.ok) throw new Error('Not OK');
-      const data = await r.json();
-      models = data.models || [];
-    }
-
-    // Separate LLM models and embedding models
-    const llmModels = [];
-    const embedModels = [];
-    
-    for (const m of models) {
-      const name = m.name || m.model;
-      // Heuristic: embedding models usually have "embed" in name
-      if (name.includes('embed') || name.includes('bge') || name.includes('minilm') || name.includes('gte')) {
-        embedModels.push(name);
-      }
-      llmModels.push(name); // All models can be LLMs
-    }
+		// Separate LLM models and embedding models
+		    const llmModels = [];
+		    const embedModels = [];
+		    
+		    for (const m of models) {
+		      const name = m.name || m.model || m.id || '';
+		      if (!name) continue; // Skip entries with no name
+		      // Heuristic: embedding models usually have "embed" in name
+		      if (name.includes('embed') || name.includes('bge') || name.includes('minilm') || name.includes('gte')) {
+		        embedModels.push(name);
+		      }
+		      llmModels.push(name); // All models can be LLMs
+		    }
+		
+		    if (llmModels.length === 0) {
+		      throw new Error('No models found');
+		    }
 
     // Populate LLM select
     modelSelect.innerHTML = llmModels.map(m =>
@@ -3901,10 +3924,12 @@ async function checkOllama() {
       embedSelect.innerHTML += `<option value="__none__">⚠ No embed model — pull nomic-embed-text</option>`;
     }
 
-    setStatus('ok', `${isCloudProvider() ? CLOUD_PROVIDER.toUpperCase() : 'Ollama'} connected · ${models.length} model${models.length !== 1 ? 's' : ''}`);
-    $('model-info').textContent = models.length + ' models loaded';
-    setupGuide.style.display = 'none';
-    btnStart.disabled = !currentFileName;
+	setStatus('ok', `${providerLabel} connected · ${models.length} model${models.length !== 1 ? 's' : ''}`);
+	    $('model-info').textContent = `${providerLabel} · ${models.length} models`;
+	setupGuide.style.display = 'none';
+    // Enable generate if we have chunks, not just a current file
+    const hasChunks = vectorStore.getStats().chunks > 0;
+    btnStart.disabled = !currentFileName && !hasChunks;
     $('btn-clear-store').disabled = false;
     // Dismiss splash
     const splash = document.getElementById('splash-screen');
