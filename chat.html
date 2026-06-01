@@ -3084,14 +3084,46 @@ async function queryInference(query, context, attachedImages = []) {
     mistral:    { url: 'https://api.mistral.ai/v1/chat/completions',               keyField: 'mistral_key',    modelField: 'mistral_model' },
     deepseek:   { url: 'https://api.deepseek.com/v1/chat/completions',             keyField: 'deepseek_key',   modelField: 'deepseek_model' },
     openai:     { url: 'https://api.openai.com/v1/chat/completions',               keyField: 'openai_key',     modelField: 'openai_model' },
-    custom:     { url: getSetting('custom_url', ''),                             keyField: 'custom_key',     modelField: 'custom_model' },
   };
+
+  // ── Custom provider (OpenAI-compatible) ──
+  if (provider === 'custom') {
+    const baseUrl = getSetting('custom_url', '').replace(/\/$/, '');
+    if (!baseUrl) throw new Error('Set Custom Base URL in Settings → Provider');
+    const key = getSetting('custom_key', '');
+    const model = getSetting('custom_model', '');
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (key) headers['Authorization'] = `Bearer ${key}`;
+
+    const userMsgContent = hasImages ? buildImageContent(userText, images) : userText;
+    const body = {
+      model,
+      messages: [
+        { role: 'system', content: system },
+        ...history,
+        { role: 'user', content: userMsgContent }
+      ],
+      temperature: temp,
+      stream: doStream
+    };
+
+    const res = await fetch(`${baseUrl}/chat/completions`, { method: 'POST', headers, body: JSON.stringify(body) });
+    if (!res.ok) throw new Error(`Custom: ${res.status}`);
+
+    if (doStream) {
+      return await readSSEStream(res);
+    } else {
+      const data = await res.json();
+      return data.choices?.[0]?.message?.content || 'No response';
+    }
+  }
 
   const cfg = openaiProviders[provider];
   if (!cfg) throw new Error('Provider not configured');
 
   const key = getSetting(cfg.keyField, '');
-  if (!key && provider !== 'custom') throw new Error('Add API key in Settings → Provider');
+  if (!key) throw new Error('Add API key in Settings → Provider');
   const model = getSetting(cfg.modelField, '');
 
   const headers = { 'Content-Type': 'application/json' };
