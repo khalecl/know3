@@ -926,6 +926,7 @@ body {
           <div class="embed-progress" id="embed-progress"><div class="embed-progress-fill" id="embed-progress-fill"></div></div>
           <div class="embed-progress-text" id="embed-progress-text"></div>
         </div>
+      <select id="header-model-select" class="toolbar-select" onchange="onHeaderModelChange(this)" title="Switch model" style="max-width:180px;font-size:0.72rem;padding:0.25rem 0.4rem"></select>
       <button class="btn-icon" onclick="startNewConversation()" title="New Chat">✚</button>
       <button class="btn-icon" id="btn-sidebar" onclick="toggleSidebar()" title="Toggle History">☰</button>
       <button class="btn-icon" onclick="openSettings()" title="Settings">⚙</button>
@@ -3164,6 +3165,231 @@ function saveSettings() {
   updateProviderLabel();
   closeSettings();
 }
+
+// Cache for fetched models: provider -> { models: [], fetchedAt: number }
+const _providerModelCache = {};
+
+function getProviderModels(provider) {
+  const cached = _providerModelCache[provider];
+  if (cached && cached.models.length > 0) {
+    return cached.models;
+  }
+  // Fallback static lists while fetching
+  const staticMap = {
+    ollama: [],
+    google: ['gemini-2.5-flash','gemini-2.5-pro','gemini-2.0-flash','gemini-1.5-flash','gemini-1.5-pro'],
+    groq: ['llama-3.3-70b-versatile','llama-3.1-8b-instant','llama-3.1-70b-versatile','mixtral-8x7b-32768','gemma2-9b-it'],
+    together: ['meta-llama/Llama-3.3-70B-Instruct-Turbo','meta-llama/Llama-3.1-8B-Instruct-Turbo','mistralai/Mixtral-8x7B-Instruct-v0.1'],
+    github: ['gpt-4o','gpt-4o-mini','Phi-3-medium-128k-instruct','Llama-3.2-11B-Vision-Instruct'],
+    openrouter: ['openrouter/auto','anthropic/claude-3.5-sonnet','meta-llama/llama-3.3-70b-instruct','google/gemini-2.0-flash-001'],
+    mistral: ['mistral-small-latest','mistral-medium-latest','mistral-large-latest','pixtral-large-latest'],
+    deepseek: ['deepseek-chat','deepseek-reasoner'],
+    openai: ['gpt-4o-mini','gpt-4o','gpt-4-turbo','o1-mini','o3-mini'],
+    anthropic: ['claude-3-5-haiku-latest','claude-3-5-sonnet-latest','claude-3-opus-latest']
+  };
+  return staticMap[provider] || [];
+}
+
+// Fetch models from provider APIs
+async function fetchProviderModels(provider) {
+  const now = Date.now();
+  const cached = _providerModelCache[provider];
+  if (cached && now - cached.fetchedAt < 600000) { // 10 min cache
+    return cached.models;
+  }
+
+  const key = getSetting(`${provider}_key`, '');
+  let models = [];
+
+  try {
+    switch (provider) {
+      case 'ollama':
+        // Handled separately by fetchOllamaModels
+        return getProviderModels('ollama');
+
+      case 'openai': {
+        if (!key) break;
+        const res = await fetch('https://api.openai.com/v1/models', {
+          headers: { 'Authorization': `Bearer ${key}` }
+        });
+        if (!res.ok) break;
+        const data = await res.json();
+        models = data.data
+          .filter(m => m.id.includes('gpt') || m.id.includes('o1') || m.id.includes('o3') || m.id.includes('o4'))
+          .map(m => m.id)
+          .sort();
+        break;
+      }
+
+      case 'anthropic': {
+        // Anthropic doesn't have a models endpoint, use static
+        models = ['claude-3-5-haiku-latest','claude-3-5-sonnet-latest','claude-3-opus-latest','claude-3-7-sonnet-latest'];
+        break;
+      }
+
+      case 'google': {
+        if (!key) break;
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
+        if (!res.ok) break;
+        const data = await res.json();
+        models = (data.models || [])
+          .filter(m => m.name.includes('gemini'))
+          .map(m => m.name.replace('models/', ''))
+          .sort();
+        break;
+      }
+
+      case 'groq': {
+        if (!key) break;
+        const res = await fetch('https://api.groq.com/openai/v1/models', {
+          headers: { 'Authorization': `Bearer ${key}` }
+        });
+        if (!res.ok) break;
+        const data = await res.json();
+        models = (data.data || [])
+          .filter(m => m.id && !m.id.includes('whisper'))
+          .map(m => m.id)
+          .sort();
+        break;
+      }
+
+      case 'mistral': {
+        if (!key) break;
+        const res = await fetch('https://api.mistral.ai/v1/models', {
+          headers: { 'Authorization': `Bearer ${key}` }
+        });
+        if (!res.ok) break;
+        const data = await res.json();
+        models = (data.data || [])
+          .map(m => m.id)
+          .sort();
+        break;
+      }
+
+      case 'deepseek': {
+        // DeepSeek doesn't have a public models endpoint
+        models = ['deepseek-chat','deepseek-reasoner'];
+        break;
+      }
+
+      case 'together': {
+        if (!key) break;
+        const res = await fetch('https://api.together.xyz/v1/models', {
+          headers: { 'Authorization': `Bearer ${key}` }
+        });
+        if (!res.ok) break;
+        const data = await res.json();
+        models = (data.data || [])
+          .filter(m => m.id && m.id.includes('Instruct'))
+          .map(m => m.id)
+          .sort();
+        break;
+      }
+
+      case 'github': {
+        if (!key) break;
+        const res = await fetch('https://models.inference.ai.azure.com/models', {
+          headers: { 'Authorization': `Bearer ${key}` }
+        });
+        if (!res.ok) break;
+        const data = await res.json();
+        models = (data.data || data || [])
+          .filter(m => m.id && !m.id.includes('embedding'))
+          .map(m => m.id)
+          .sort();
+        break;
+      }
+
+      case 'openrouter': {
+        const res = await fetch('https://openrouter.ai/api/v1/models');
+        if (!res.ok) break;
+        const data = await res.json();
+        models = (data.data || [])
+          .map(m => m.id)
+          .sort();
+        break;
+      }
+    }
+  } catch (e) {
+    console.warn(`Failed to fetch models for ${provider}:`, e.message);
+  }
+
+  // Cache result (even empty, to avoid hammering)
+  _providerModelCache[provider] = { models, fetchedAt: now };
+  return models;
+}
+
+// Auto-fetch models for current provider on load
+async function autoFetchModels() {
+  const provider = getProvider();
+  if (provider === 'ollama') {
+    // Ollama handled separately
+    return;
+  }
+  // Only fetch if we have a key or it's openrouter (no key needed)
+  const key = getSetting(`${provider}_key`, '');
+  if (!key && provider !== 'openrouter') return;
+
+  await fetchProviderModels(provider);
+}
+
+async function populateHeaderModelSelect() {
+  const sel = document.getElementById('header-model-select');
+  if (!sel) return;
+  const provider = getProvider();
+  const currentModel = getSetting(`${provider}_model`, '') || getSetting('ollama_model', '');
+  
+  // Show loading state
+  sel.innerHTML = '<option>Loading models...</option>';
+  sel.disabled = true;
+  
+  // Fetch fresh models if possible
+  let models = [];
+  if (provider !== 'ollama') {
+    models = await fetchProviderModels(provider);
+  }
+  
+  // Fall back to static if fetch failed or returned empty
+  if (!models || models.length === 0) {
+    models = getProviderModels(provider);
+  }
+  
+  sel.innerHTML = '';
+  
+  if (provider === 'ollama') {
+    sel.innerHTML = `<option value="${currentModel}">${currentModel || 'ollama model'}</option>`;
+    sel.disabled = true;
+    return;
+  }
+  
+  sel.disabled = false;
+  if (models.length === 0) {
+    sel.innerHTML = `<option value="${currentModel}">${currentModel || 'custom'}</option>`;
+    return;
+  }
+  
+  models.forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m;
+    opt.textContent = m;
+    if (m === currentModel) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  
+  // If current model not in list, add it
+  if (currentModel && !models.includes(currentModel)) {
+    const opt = document.createElement('option');
+    opt.value = currentModel;
+    opt.textContent = currentModel;
+    opt.selected = true;
+    sel.insertBefore(opt, sel.firstChild);
+  }
+}
+function onHeaderModelChange(sel) {
+  const provider = getProvider();
+  setSetting(`${provider}_model`, sel.value);
+  updateProviderLabel();
+}
    function updateMemoryLabel() {
 		  const el = document.getElementById('memory-label');
 		  if (!el) return;
@@ -3184,7 +3410,7 @@ function saveSettings() {
 			el.textContent = `Memory: ${Math.floor(historyUsed/2)}/${pairs} pairs (~${tokenEst} tokens)`;
 		  }
 		}
-    function updateProviderLabel() {
+  function updateProviderLabel() {
       const p = getProvider();
       const model = getSetting(`${p}_model`, getSetting('ollama_model', 'mistral'));
       document.getElementById('provider-label').textContent = `${PROVIDERS[p]?.name || p} / ${model}`;
@@ -3201,6 +3427,11 @@ function saveSettings() {
           imgBtn.title = check.reason;
         }
       }
+    
+     // Refresh model selector when provider changes
+      populateHeaderModelSelect();
+      // Also fetch fresh models in background
+      autoFetchModels().then(() => populateHeaderModelSelect());
     }
 
 function resetSystemPrompt() {
@@ -4382,12 +4613,16 @@ async function speakKokoroVoicePanel(text, speed) {
 	  }
 	  document.addEventListener('touchstart', unlockAudio, { once: true });
 	  document.addEventListener('click', unlockAudio, { once: true });
-  initMatrix();
+ initMatrix();
   initInput();
   loadConversations();
   updateProviderLabel();
   updateChunkCount();
   initEmbeddings();
+ // Auto-fetch models for current provider on startup
+  autoFetchModels().then(() => {
+    populateHeaderModelSelect();
+  });
 
   // Restore toolbar state
   document.getElementById('toolbar-search-mode').value = getSetting('search_mode', 'hybrid');
