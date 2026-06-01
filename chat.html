@@ -1047,6 +1047,7 @@ body {
             <option value="deepseek">DeepSeek</option>
             <option value="openai">OpenAI</option>
             <option value="anthropic">Anthropic</option>
+            <option value="custom">Custom (OpenAI-compatible)</option>
           </select>
         </div>
 
@@ -1106,7 +1107,27 @@ body {
           <div class="field"><label class="field-label">API Key</label><input type="password" id="s-anthropic-key" placeholder="sk-ant-..."></div>
           <div class="field"><label class="field-label">Model</label><input type="text" id="s-anthropic-model" placeholder="claude-3-5-haiku-latest" value="claude-3-5-haiku-latest"></div>
         </div>
-
+        <!-- Custom provider -->
+                <div class="provider-config" id="cfg-custom">
+                  <div class="field">
+                    <label class="field-label">Base URL</label>
+                    <input type="text" id="s-custom-url" placeholder="https://api.example.com/v1">
+                    <div class="field-hint">Must support OpenAI-compatible /chat/completions and /models endpoints</div>
+                  </div>
+                  <div class="field">
+                    <label class="field-label">API Key</label>
+                    <input type="password" id="s-custom-key" placeholder="sk-... or leave empty">
+                  </div>
+                  <div class="field">
+                    <label class="field-label">Model</label>
+                    <div style="display:flex;gap:0.3rem">
+                      <select id="s-custom-model" style="flex:1"><option value="">— enter URL & key, then click Refresh —</option></select>
+                      <button class="btn-secondary" onclick="fetchCustomModels()" style="width:auto;padding:0.4rem 0.6rem;white-space:nowrap" title="Refresh models">↻</button>
+                    </div>
+                  </div>
+                  <button class="btn-secondary" onclick="testCustomConnection()" style="width:100%">Test Connection</button>
+                  <div class="field-hint" id="custom-test-result"></div>
+                </div>
         <div class="field" style="margin-top:1rem">
           <label class="field-label">Temperature</label>
           <input type="range" id="s-temperature" min="0" max="100" value="70" oninput="document.getElementById('temp-val').textContent=(this.value/100).toFixed(2)">
@@ -1278,8 +1299,8 @@ const PROVIDERS = {
   deepseek:   { name: 'DeepSeek',    stream: true,  fields: ['key','model'] },
   openai:     { name: 'OpenAI',      stream: true,  fields: ['key','model'] },
   anthropic:  { name: 'Anthropic',   stream: true,  fields: ['key','model'] },
+  custom:     { name: 'Custom',      stream: true,  fields: ['url','key','model'] },
 };
-
 // ═══════════════════════════════════════════════
 // UTILS
 // ═══════════════════════════════════════════════
@@ -3054,7 +3075,7 @@ async function queryInference(query, context, attachedImages = []) {
     }
   }
 
-  // ── All OpenAI-compatible providers ──
+// ── All OpenAI-compatible providers ──
   const openaiProviders = {
     groq:       { url: 'https://api.groq.com/openai/v1/chat/completions',         keyField: 'groq_key',       modelField: 'groq_model' },
     together:   { url: 'https://api.together.xyz/v1/chat/completions',             keyField: 'together_key',   modelField: 'together_model' },
@@ -3063,16 +3084,18 @@ async function queryInference(query, context, attachedImages = []) {
     mistral:    { url: 'https://api.mistral.ai/v1/chat/completions',               keyField: 'mistral_key',    modelField: 'mistral_model' },
     deepseek:   { url: 'https://api.deepseek.com/v1/chat/completions',             keyField: 'deepseek_key',   modelField: 'deepseek_model' },
     openai:     { url: 'https://api.openai.com/v1/chat/completions',               keyField: 'openai_key',     modelField: 'openai_model' },
+    custom:     { url: getSetting('custom_url', ''),                             keyField: 'custom_key',     modelField: 'custom_model' },
   };
 
   const cfg = openaiProviders[provider];
   if (!cfg) throw new Error('Provider not configured');
 
   const key = getSetting(cfg.keyField, '');
-  if (!key) throw new Error('Add API key in Settings → Provider');
+  if (!key && provider !== 'custom') throw new Error('Add API key in Settings → Provider');
   const model = getSetting(cfg.modelField, '');
 
-  const headers = { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' };
+  const headers = { 'Content-Type': 'application/json' };
+  if (key) headers['Authorization'] = `Bearer ${key}`;
   if (provider === 'openrouter') headers['HTTP-Referer'] = 'https://khalecl.github.io/know3';
 
 	const userMsgContent = hasImages ? buildImageContent(userText, images) : userText;
@@ -3108,17 +3131,21 @@ function openSettings() {
   document.getElementById('s-temperature').value = getSetting('temperature', '70');
   document.getElementById('temp-val').textContent = (parseInt(getSetting('temperature','70'))/100).toFixed(2);
   document.getElementById('s-system-prompt').value = getSetting('system_prompt', DEFAULT_SYSTEM_PROMPT);
-	document.getElementById('s-chat-memory').value = getSetting('chat_memory', '5');
-	document.getElementById('s-streaming').value = getSetting('streaming', 'true');
+  document.getElementById('s-chat-memory').value = getSetting('chat_memory', '5');
+  document.getElementById('s-streaming').value = getSetting('streaming', 'true');
 
-  // Provider keys & models (skip ollama model — it's a select populated by fetchOllamaModels)
+  // Provider keys & models (skip ollama/custom model selects — populated by fetch)
   for (const p of Object.keys(PROVIDERS)) {
     const keyEl = document.getElementById(`s-${p}-key`);
     if (keyEl) keyEl.value = getSetting(`${p}_key`, '');
-    if (p === 'ollama') continue; // handled separately
+    if (p === 'ollama' || p === 'custom') continue; // handled separately
     const modelEl = document.getElementById(`s-${p}-model`);
     if (modelEl) modelEl.value = getSetting(`${p}_model`, '') || modelEl.placeholder || '';
   }
+
+  // Custom provider fields
+  const customUrl = document.getElementById('s-custom-url');
+  if (customUrl) customUrl.value = getSetting('custom_url', '');
 
   onProviderChange();
   document.getElementById('settings-overlay').classList.add('active');
@@ -3159,6 +3186,10 @@ function saveSettings() {
   setSetting('el_key', document.getElementById('voice-el-key')?.value || getSetting('el_key', ''));
   setSetting('ollama_model', document.getElementById('s-ollama-model').value);
 
+  // Save custom provider fields
+  const customUrl = document.getElementById('s-custom-url');
+  if (customUrl) setSetting('custom_url', customUrl.value);
+
   for (const prov of Object.keys(PROVIDERS)) {
     const keyEl = document.getElementById(`s-${prov}-key`);
     if (keyEl) setSetting(`${prov}_key`, keyEl.value);
@@ -3178,7 +3209,7 @@ function getProviderModels(provider) {
   if (cached && cached.models.length > 0) {
     return cached.models;
   }
-  // Fallback static lists while fetching
+// Fallback static lists while fetching
   const staticMap = {
     ollama: [],
     google: ['gemini-2.5-flash','gemini-2.5-pro','gemini-2.0-flash','gemini-1.5-flash','gemini-1.5-pro'],
@@ -3189,7 +3220,8 @@ function getProviderModels(provider) {
     mistral: ['mistral-small-latest','mistral-medium-latest','mistral-large-latest','pixtral-large-latest'],
     deepseek: ['deepseek-chat','deepseek-reasoner'],
     openai: ['gpt-4o-mini','gpt-4o','gpt-4-turbo','o1-mini','o3-mini'],
-    anthropic: ['claude-3-5-haiku-latest','claude-3-5-sonnet-latest','claude-3-opus-latest']
+    anthropic: ['claude-3-5-haiku-latest','claude-3-5-sonnet-latest','claude-3-opus-latest'],
+    custom: []
   };
   return staticMap[provider] || [];
 }
@@ -3463,7 +3495,56 @@ async function fetchOllamaModels() {
     sel.disabled = false;
   }
 }
+async function fetchCustomModels() {
+  const url = document.getElementById('s-custom-url')?.value?.trim();
+  const key = document.getElementById('s-custom-key')?.value?.trim() || '';
+  const sel = document.getElementById('s-custom-model');
+  if (!url) { sel.innerHTML = '<option value="">Enter URL first</option>'; return; }
+  sel.innerHTML = '<option value="">Loading...</option>';
+  sel.disabled = true;
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (key) headers['Authorization'] = `Bearer ${key}`;
+    const res = await fetch(`${url.replace(/\/$/, '')}/models`, { headers });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const models = (data.data || data.models || [])
+      .map(m => typeof m === 'string' ? m : (m.id || m.name))
+      .filter(Boolean)
+      .sort();
+    if (!models.length) throw new Error('No models found');
+    const saved = getSetting('custom_model', '');
+    sel.innerHTML = models.map(m => `<option value="${m}" ${m === saved ? 'selected' : ''}>${m}</option>`).join('');
+    if (!saved || !models.includes(saved)) sel.selectedIndex = 0;
+  } catch (e) {
+    sel.innerHTML = `<option value="">Failed: ${e.message}</option>`;
+  } finally {
+    sel.disabled = false;
+  }
+}
 
+async function testCustomConnection() {
+  const url = document.getElementById('s-custom-url')?.value?.trim();
+  const key = document.getElementById('s-custom-key')?.value?.trim() || '';
+  const el = document.getElementById('custom-test-result');
+  if (!url) { el.textContent = 'Enter a URL first'; el.style.color = 'var(--danger)'; return; }
+  el.textContent = 'Testing...';
+  el.style.color = 'var(--warn)';
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (key) headers['Authorization'] = `Bearer ${key}`;
+    const res = await fetch(`${url.replace(/\/$/, '')}/models`, { headers });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const count = (data.data || data.models || []).length;
+    el.textContent = `✓ Connected. ${count} model${count !== 1 ? 's' : ''} available.`;
+    el.style.color = 'var(--accent)';
+    await fetchCustomModels();
+  } catch (e) {
+    el.textContent = `✕ Failed: ${e.message}`;
+    el.style.color = 'var(--danger)';
+  }
+}
 async function testOllama() {
   const url = document.getElementById('s-ollama-url').value || 'http://localhost:11434';
   const el = document.getElementById('ollama-test-result');
