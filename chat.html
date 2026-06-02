@@ -2001,6 +2001,7 @@ function updateStreamBubble(text) {
   const conv = conversations[currentConversationId];
   if (!conv || currentStreamingIndex < 0) return;
   conv.messages[currentStreamingIndex].content = text;
+  saveConversations(); // Persist streaming progress
 
   const msgs = document.getElementById('chat-messages');
   const allBubbles = msgs.querySelectorAll('.msg.assistant .msg-bubble');
@@ -2009,6 +2010,23 @@ function updateStreamBubble(text) {
     last.innerHTML = renderMarkdown(text);
     msgs.scrollTop = msgs.scrollHeight;
   }
+}
+
+// AbortController for stopping generation
+let _abortController = null;
+
+function stopGeneration() {
+  if (_abortController) {
+    _abortController.abort();
+    _abortController = null;
+  }
+  isGenerating = false;
+  currentStreamingIndex = -1;
+  document.getElementById('btn-send').disabled = false;
+  document.getElementById('btn-send').textContent = 'Send';
+  const stopBtn = document.getElementById('btn-stop');
+  if (stopBtn) stopBtn.remove();
+  removeThinking();
 }
 
 // ═══════════════════════════════════════════════
@@ -2030,8 +2048,19 @@ async function sendMessage() {
   document.getElementById('welcome-state')?.remove();
   addMessage('user', q, null, imageHtml);
   isGenerating = true;
-    document.getElementById('btn-send').disabled = true;
-    clearFollowUpChips();
+  const sendBtn = document.getElementById('btn-send');
+  sendBtn.disabled = true;
+  sendBtn.textContent = '...';
+  clearFollowUpChips();
+
+  // Add stop button next to send
+  const stopBtn = document.createElement('button');
+  stopBtn.id = 'btn-stop';
+  stopBtn.className = 'btn-danger';
+  stopBtn.textContent = '⏹ Stop';
+  stopBtn.style.marginLeft = '0.5rem';
+  stopBtn.onclick = stopGeneration;
+  sendBtn.parentNode.insertBefore(stopBtn, sendBtn.nextSibling);
 
   const ragEnabled = document.getElementById('toolbar-rag-toggle').checked;
   const topK = parseInt(document.getElementById('toolbar-topk').value) || 3;
@@ -2050,50 +2079,66 @@ async function sendMessage() {
 
   showThinking();
 
-    let finalAnswer = '';
-      try {
-        const answer = await queryInference(q, context, images);
-        finalAnswer = answer || '';
-        removeThinking();
-        if (currentStreamingIndex >= 0) {
-          // Already streamed — just save final
-          const conv = conversations[currentConversationId];
-          conv.messages[currentStreamingIndex].sources = sources.length ? sources : null;
-          finalAnswer = conv.messages[currentStreamingIndex].content || finalAnswer;
-          saveConversations();
-          renderChat();
-        } else {
-          addMessage('assistant', answer, sources.length ? sources : null);
-        }
-		// Show contextual follow-up suggestions
-			if (finalAnswer && finalAnswer.length > 20) {
-			  renderFollowUpChips(q, finalAnswer);
-			// Auto-speak reply if enabled (and not already spoken via voice mode)
-			  if (!window._voiceModeActive && !_isSpeaking && _playingMsgIdx === -1 && getSetting('voice_auto_speak', 'false') === 'true') {
-				const conv = conversations[currentConversationId];
-				const lastIdx = conv ? conv.messages.length - 1 : -1;
-				if (lastIdx >= 0) playMessageAudio(lastIdx);
-			  }
-		// Auto-detect chartable data and offer visualization
-		      const chartData = detectChartableData(finalAnswer);
-		      const userWantedChart = /\bchart\b|\/chart|visuali[sz]e|compare.*chart|graph/i.test(q);
-		      if (chartData && (chartData.labels.length >= 3 || userWantedChart)) {
-		        if (userWantedChart && !finalAnswer.includes('```chart')) {
-		          // User asked for chart but LLM didn't produce a chart block — auto-inject
-		          injectChartDirect('bar', chartData);
-		        } else {
-		          offerVisualization(chartData);
-		        }
-		      }
-			}
-      } catch (e) {
-        removeThinking();
-        addMessage('assistant', `❌ Error: ${e.message}`);
+  let finalAnswer = '';
+  _abortController = new AbortController();
+  try {
+    const answer = await queryInference(q, context, images);
+    finalAnswer = answer || '';
+    removeThinking();
+    if (currentStreamingIndex >= 0) {
+      // Already streamed — just save final
+      const conv = conversations[currentConversationId];
+      conv.messages[currentStreamingIndex].sources = sources.length ? sources : null;
+      finalAnswer = conv.messages[currentStreamingIndex].content || finalAnswer;
+      saveConversations();
+      renderChat();
+    } else {
+      addMessage('assistant', answer, sources.length ? sources : null);
+    }
+    // Show contextual follow-up suggestions
+    if (finalAnswer && finalAnswer.length > 20) {
+      renderFollowUpChips(q, finalAnswer);
+      // Auto-speak reply if enabled (and not already spoken via voice mode)
+      if (!window._voiceModeActive && !_isSpeaking && _playingMsgIdx === -1 && getSetting('voice_auto_speak', 'false') === 'true') {
+        const conv = conversations[currentConversationId];
+        const lastIdx = conv ? conv.messages.length - 1 : -1;
+        if (lastIdx >= 0) playMessageAudio(lastIdx);
       }
+      // Auto-detect chartable data and offer visualization
+      const chartData = detectChartableData(finalAnswer);
+      const userWantedChart = /\bchart\b|\/chart|visuali[sz]e|compare.*chart|graph/i.test(q);
+      if (chartData && (chartData.labels.length >= 3 || userWantedChart)) {
+        if (userWantedChart && !finalAnswer.includes('```chart')) {
+          // User asked for chart but LLM didn't produce a chart block — auto-inject
+          injectChartDirect('bar', chartData);
+        } else {
+          offerVisualization(chartData);
+        }
+      }
+    }
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      // User stopped — keep partial response
+      const conv = conversations[currentConversationId];
+      if (currentStreamingIndex >= 0 && conv) {
+        conv.messages[currentStreamingIndex].sources = sources.length ? sources : null;
+        saveConversations();
+        renderChat();
+      }
+      addMessage('assistant', '⏹ Stopped by user.');
+    } else {
+      removeThinking();
+      addMessage('assistant', `❌ Error: ${e.message}`);
+    }
+  }
 
   currentStreamingIndex = -1;
   isGenerating = false;
-  document.getElementById('btn-send').disabled = false;
+  _abortController = null;
+  sendBtn.disabled = false;
+  sendBtn.textContent = 'Send';
+  const stopBtnEl = document.getElementById('btn-stop');
+  if (stopBtnEl) stopBtnEl.remove();
 }
 
 function quickPrompt(text) {
@@ -2806,28 +2851,36 @@ async function readSSEStream(response) {
   let full = '';
   let buffer = '';
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
 
-    const lines = buffer.split('\n');
-    buffer = lines.pop(); // keep incomplete line in buffer
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // keep incomplete line in buffer
 
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || !trimmed.startsWith('data: ')) continue;
-      const payload = trimmed.slice(6);
-      if (payload === '[DONE]') continue;
-      try {
-        const json = JSON.parse(payload);
-        const token = json.choices?.[0]?.delta?.content || '';
-        if (token) { full += token; updateStreamBubble(full); }
-      } catch {}
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith('data: ')) continue;
+          const payload = trimmed.slice(6);
+          if (payload === '[DONE]') continue;
+          try {
+            const json = JSON.parse(payload);
+            const token = json.choices?.[0]?.delta?.content || '';
+            if (token) { full += token; updateStreamBubble(full); }
+          } catch {}
+        }
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') {
+        // Return partial response on abort
+        return full;
+      }
+      throw e;
     }
+    return full;
   }
-  return full;
-}
 
 // Gemini SSE reader (different format)
 async function readGeminiStream(response) {
@@ -2837,25 +2890,32 @@ async function readGeminiStream(response) {
   let full = '';
   let buffer = '';
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
 
-    const lines = buffer.split('\n');
-    buffer = lines.pop();
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
 
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || !trimmed.startsWith('data: ')) continue;
-      const payload = trimmed.slice(6);
-      if (payload === '[DONE]') continue;
-      try {
-        const json = JSON.parse(payload);
-        const text = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        if (text) { full += text; updateStreamBubble(full); }
-      } catch {}
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data: ')) continue;
+        const payload = trimmed.slice(6);
+        if (payload === '[DONE]') continue;
+        try {
+          const json = JSON.parse(payload);
+          const text = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          if (text) { full += text; updateStreamBubble(full); }
+        } catch {}
+      }
     }
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      return full;
+    }
+    throw e;
   }
   return full;
 }
@@ -2868,25 +2928,32 @@ async function readAnthropicStream(response) {
   let full = '';
   let buffer = '';
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
 
-    const lines = buffer.split('\n');
-    buffer = lines.pop();
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
 
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('data: ')) continue;
-      try {
-        const json = JSON.parse(trimmed.slice(6));
-        if (json.type === 'content_block_delta' && json.delta?.text) {
-          full += json.delta.text;
-          updateStreamBubble(full);
-        }
-      } catch {}
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data: ')) continue;
+        try {
+          const json = JSON.parse(trimmed.slice(6));
+          if (json.type === 'content_block_delta' && json.delta?.text) {
+            full += json.delta.text;
+            updateStreamBubble(full);
+          }
+        } catch {}
+      }
     }
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      return full;
+    }
+    throw e;
   }
   return full;
 }
@@ -2964,7 +3031,7 @@ function getTemp() { return (parseInt(getSetting('temperature', '70')) / 100); }
 async function queryInference(query, context, attachedImages = []) {
   const provider = getProvider();
   const temp = getTemp();
-	const { system, userText, images, history } = buildMessages(query, context, attachedImages);
+  const { system, userText, images, history } = buildMessages(query, context, attachedImages);
   const hasImages = images.length > 0;
   const doStream = getSetting('streaming', 'true') === 'true';
 
@@ -2989,7 +3056,8 @@ async function queryInference(query, context, attachedImages = []) {
 
     const res = await fetch(`${url}/api/generate`, {
       method: 'POST',
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      signal: _abortController?.signal
     });
     
     if (!res.ok) throw new Error(`Ollama: ${res.status}`);
@@ -3009,33 +3077,34 @@ async function queryInference(query, context, attachedImages = []) {
 
     if (doStream) {
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${key}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: system }] },
-          contents: [
-          ...history.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
-          { role: 'user', parts: hasImages ? buildGeminiImageParts(userText, images) : [{ text: userText }] }
-        ],
-			
-          generationConfig: { temperature: temp }
-        })
-      });
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: system }] },
+            contents: [
+              ...history.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
+              { role: 'user', parts: hasImages ? buildGeminiImageParts(userText, images) : [{ text: userText }] }
+            ],
+            generationConfig: { temperature: temp }
+          }),
+          signal: _abortController?.signal
+        });
       if (!res.ok) throw new Error(`Gemini: ${res.status}`);
       return await readGeminiStream(res);
     } else {
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: system }] },
-		  contents: [
-		          ...history.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
-		          { role: 'user', parts: hasImages ? buildGeminiImageParts(userText, images) : [{ text: userText }] }
-		        ],
-		  generationConfig: { temperature: temp }
-        })
-      });
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: system }] },
+            contents: [
+              ...history.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
+              { role: 'user', parts: hasImages ? buildGeminiImageParts(userText, images) : [{ text: userText }] }
+            ],
+            generationConfig: { temperature: temp }
+          }),
+          signal: _abortController?.signal
+        });
       if (!res.ok) throw new Error(`Gemini: ${res.status}`);
       return (await res.json()).candidates?.[0]?.content?.parts?.[0]?.text || 'No response';
     }
@@ -3062,13 +3131,13 @@ async function queryInference(query, context, attachedImages = []) {
     if (doStream) {
       body.stream = true;
       const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST', headers, body: JSON.stringify(body)
+        method: 'POST', headers, body: JSON.stringify(body), signal: _abortController?.signal
       });
       if (!res.ok) throw new Error(`Anthropic: ${res.status}`);
       return await readAnthropicStream(res);
     } else {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST', headers, body: JSON.stringify(body)
+        method: 'POST', headers, body: JSON.stringify(body), signal: _abortController?.signal
       });
       if (!res.ok) throw new Error(`Anthropic: ${res.status}`);
       return (await res.json()).content?.[0]?.text || 'No response';
@@ -3076,27 +3145,28 @@ async function queryInference(query, context, attachedImages = []) {
   }
 
 // ── All OpenAI-compatible providers ──
-  const openaiProviders = {
-    groq:       { url: 'https://api.groq.com/openai/v1/chat/completions',         keyField: 'groq_key',       modelField: 'groq_model' },
-    together:   { url: 'https://api.together.xyz/v1/chat/completions',             keyField: 'together_key',   modelField: 'together_model' },
-    github:     { url: 'https://models.inference.ai.azure.com/chat/completions',   keyField: 'github_key',     modelField: 'github_model' },
-    openrouter: { url: 'https://openrouter.ai/api/v1/chat/completions',            keyField: 'openrouter_key', modelField: 'openrouter_model' },
-    mistral:    { url: 'https://api.mistral.ai/v1/chat/completions',               keyField: 'mistral_key',    modelField: 'mistral_model' },
-    deepseek:   { url: 'https://api.deepseek.com/v1/chat/completions',             keyField: 'deepseek_key',   modelField: 'deepseek_model' },
-    openai:     { url: 'https://api.openai.com/v1/chat/completions',               keyField: 'openai_key',     modelField: 'openai_model' },
-  };
+	  const openaiProviders = {
+	    groq:       { url: 'https://api.groq.com/openai/v1/chat/completions',         keyField: 'groq_key',       modelField: 'groq_model' },
+	    together:   { url: 'https://api.together.xyz/v1/chat/completions',             keyField: 'together_key',   modelField: 'together_model' },
+	    github:     { url: 'https://models.inference.ai.azure.com/chat/completions',   keyField: 'github_key',     modelField: 'github_model' },
+	    openrouter: { url: 'https://openrouter.ai/api/v1/chat/completions',            keyField: 'openrouter_key', modelField: 'openrouter_model' },
+	    mistral:    { url: 'https://api.mistral.ai/v1/chat/completions',               keyField: 'mistral_key',    modelField: 'mistral_model' },
+	    deepseek:   { url: 'https://api.deepseek.com/v1/chat/completions',             keyField: 'deepseek_key',   modelField: 'deepseek_model' },
+	    openai:     { url: 'https://api.openai.com/v1/chat/completions',               keyField: 'openai_key',     modelField: 'openai_model' },
+	  };
 
   // ── Custom provider (OpenAI-compatible) ──
-  if (provider === 'custom') {
-    const baseUrl = getSetting('custom_url', '').replace(/\/$/, '');
-    if (!baseUrl) throw new Error('Set Custom Base URL in Settings → Provider');
-    const key = getSetting('custom_key', '');
-    const model = getSetting('custom_model', '');
+	  if (provider === 'custom') {
+	    const baseUrl = getSetting('custom_url', '').replace(/\/$/, '');
+	    if (!baseUrl) throw new Error('Set Custom Base URL in Settings → Provider');
+	    const key = getSetting('custom_key', '');
+	    const model = getSetting('custom_model', '');
 
     const headers = { 'Content-Type': 'application/json' };
     if (key) headers['Authorization'] = `Bearer ${key}`;
 
-    const userMsgContent = hasImages ? buildImageContent(userText, images) : userText;
+
+     const userMsgContent = hasImages ? buildImageContent(userText, images) : userText;
     const body = {
       model,
       messages: [
@@ -3108,8 +3178,8 @@ async function queryInference(query, context, attachedImages = []) {
       stream: doStream
     };
 
-    const res = await fetch(`${baseUrl}/chat/completions`, { method: 'POST', headers, body: JSON.stringify(body) });
-    if (!res.ok) throw new Error(`Custom: ${res.status}`);
+   const res = await fetchWithRetry(`${baseUrl}/chat/completions`, { method: 'POST', headers, body: JSON.stringify(body), signal: _abortController?.signal });
+       if (!res.ok) throw new Error(`Custom: ${res.status}`);
 
     if (doStream) {
       return await readSSEStream(res);
@@ -3142,7 +3212,8 @@ async function queryInference(query, context, attachedImages = []) {
 	    stream: doStream
 	  };
 
-  const res = await fetch(cfg.url, { method: 'POST', headers, body: JSON.stringify(body) });
+  const res = await fetchWithRetry(cfg.url, { method: 'POST', headers, body: JSON.stringify(body), signal: _abortController?.signal }, provider);
+
   if (!res.ok) throw new Error(`${PROVIDERS[provider].name}: ${res.status}`);
 
   if (doStream) {
@@ -3152,7 +3223,34 @@ async function queryInference(query, context, attachedImages = []) {
     return data.choices?.[0]?.message?.content || 'No response';
   }
 }
+// ── Rate-limited fetch with exponential backoff ──
+async function fetchWithRetry(url, options, provider = '', maxRetries = 3) {
+  let attempt = 0;
+  while (attempt <= maxRetries) {
+    const res = await fetch(url, options);
+    if (res.ok || res.status !== 429) return res;
 
+    // Rate limited — check Retry-After header
+    const retryAfter = res.headers.get('Retry-After');
+    let delayMs = Math.min(1000 * Math.pow(2, attempt), 30000); // 1s, 2s, 4s, max 30s
+    if (retryAfter) {
+      const seconds = parseInt(retryAfter, 10);
+      if (!isNaN(seconds)) delayMs = seconds * 1000;
+    }
+
+    attempt++;
+    if (attempt > maxRetries) {
+      // Return the 429 response so caller can throw
+      return res;
+    }
+
+    // Show retry status to user
+    setEmbedStatus('loading', `⏳ ${PROVIDERS[provider]?.name || provider} rate limited. Retrying in ${Math.round(delayMs/1000)}s...`);
+    await new Promise(r => setTimeout(r, delayMs));
+  }
+  // Should not reach here, but fallback
+  return fetch(url, options);
+}
 // ═══════════════════════════════════════════════
 // SETTINGS
 // ═══════════════════════════════════════════════
