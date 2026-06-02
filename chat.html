@@ -3226,7 +3226,7 @@ async function queryInference(query, context, attachedImages = []) {
 // ── Rate-limited fetch with exponential backoff ──
 async function fetchWithRetry(url, options, provider = '', maxRetries = 3) {
   let attempt = 0;
-  while (attempt <= maxRetries) {
+  while (true) {
     const res = await fetch(url, options);
     if (res.ok || res.status !== 429) return res;
 
@@ -3248,8 +3248,6 @@ async function fetchWithRetry(url, options, provider = '', maxRetries = 3) {
     setEmbedStatus('loading', `⏳ ${PROVIDERS[provider]?.name || provider} rate limited. Retrying in ${Math.round(delayMs/1000)}s...`);
     await new Promise(r => setTimeout(r, delayMs));
   }
-  // Should not reach here, but fallback
-  return fetch(url, options);
 }
 // ═══════════════════════════════════════════════
 // SETTINGS
