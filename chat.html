@@ -18,6 +18,7 @@
 <link rel="shortcut icon" href="https://khalecl.github.io/know3/favicon.ico" />
 <link rel="apple-touch-icon" sizes="180x180" href="https://khalecl.github.io/know3/apple-touch-icon.png" />
 <link rel="manifest" href="https://khalecl.github.io/know3/site.webmanifest" />
+
 <style>
 /* ── RESET & VARIABLES ── */
 :root {
@@ -1212,7 +1213,6 @@ body {
     </div>
   </div>
 </div>
-
 <script>
 
   // ═══════════════════════════════════════════════
@@ -1724,6 +1724,54 @@ async function loadEmbeddings() {
     });
   } catch { return null; }
 }
+async function loadConversationsFromDB() {
+  try {
+    const db = await initConversationsDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction('conversations', 'readonly');
+      const convStore = tx.objectStore('conversations');
+      const convReq = convStore.get('conversations');
+      const idReq = convStore.get('currentId');
+      
+      convReq.onsuccess = () => {
+        idReq.onsuccess = () => {
+          resolve({
+            conversations: convReq.result?.data,
+            currentId: idReq.result?.data
+          });
+        };
+      };
+    });
+  } catch {
+    return {};
+  }
+}
+
+async function saveConversationsToDB() {
+  try {
+    const db = await initConversationsDB();
+    const tx = db.transaction('conversations', 'readwrite');
+    const store = tx.objectStore('conversations');
+    store.put({ id: 'conversations', data: conversations });
+    store.put({ id: 'currentId', data: currentConversationId });
+  } catch (e) {
+    console.error('Failed to save conversations:', e);
+  }
+}
+
+async function initConversationsDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('know3-conversations', 1);
+    req.onerror = () => reject('IDB failed');
+    req.onsuccess = () => resolve(req.result);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('conversations')) {
+        db.createObjectStore('conversations', { keyPath: 'id' });
+      }
+    };
+  });
+}
 
 // ═══════════════════════════════════════════════
 // EMBEDDING INIT
@@ -1819,20 +1867,82 @@ function removeCollection(name) {
   const removed = before - vectorStore.chunks.length;
   console.log(`Removed ${removed} chunks from "${name}"`);
 }
+
+
+
+function getStorageUsage() {
+  let total = 0;
+  for (let key in localStorage) {
+    if (localStorage.hasOwnProperty(key)) {
+      total += localStorage[key].length * 2; // UTF-16 = 2 bytes per char
+    }
+  }
+  return total;
+}
+
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+
 // ═══════════════════════════════════════════════
 // CONVERSATIONS
 // ═══════════════════════════════════════════════
-function loadConversations() {
-  try { conversations = JSON.parse(localStorage.getItem('k3_conversations')) || {}; } catch { conversations = {}; }
-  const id = localStorage.getItem('k3_current_id');
-  if (id && conversations[id]) currentConversationId = id;
-  else startNewConversation();
+async function loadConversations() {
+  try {
+    const stored = await loadConversationsFromDB();
+    conversations = stored.conversations || {};
+    currentConversationId = stored.currentId || null;
+  } catch {
+    conversations = {};
+    currentConversationId = null;
+  }
+  if (!currentConversationId || !conversations[currentConversationId]) {
+    startNewConversation();
+  }
   renderHistoryList();
 }
 
-function saveConversations() {
-  localStorage.setItem('k3_conversations', JSON.stringify(conversations));
-  localStorage.setItem('k3_current_id', currentConversationId);
+async function saveConversations() {
+  try {
+    await saveConversationsToDB();
+  } catch (e) {
+    console.error('Failed to save conversations:', e);
+    pruneConversations();
+    try {
+      await saveConversationsToDB();
+    } catch (e2) {
+      console.error('Storage full even after pruning:', e2);
+      alert('Storage full. Please export or delete old chats to free space.');
+    }
+  }
+}
+
+function pruneConversations() {
+  const ids = Object.values(conversations).sort((a, b) => b.created - a.created);
+  // Keep current + 10 most recent, delete rest
+  const keepIds = new Set([currentConversationId]);
+  for (const c of ids) {
+    if (keepIds.size >= 10) break;
+    keepIds.add(c.id);
+  }
+  for (const id in conversations) {
+    if (!keepIds.has(id)) delete conversations[id];
+  }
+  // Also trim long messages in kept conversations
+  for (const id of keepIds) {
+    const conv = conversations[id];
+    if (!conv) continue;
+    for (const m of conv.messages) {
+      if (m.content && m.content.length > 10000) {
+        m.content = m.content.substring(0, 10000) + '\n\n[...truncated]';
+      }
+    }
+  }
 }
 
 function startNewConversation() {
@@ -1884,23 +1994,23 @@ function renderChat() {
   const container = document.getElementById('chat-messages');
   const welcome = document.getElementById('welcome-state');
 
-		if (!conv.messages.length) {
-				container.innerHTML = `<div class="welcome-state" id="welcome-state">
-				  <div class="welcome-logo"><span class="k">k</span>now3</div>
-				  <div class="welcome-sub">Local-first semantic RAG chat. Load your data, pick a provider, and ask away — or toggle RAG off for free-form chat.</div>
-				  <div class="welcome-chips">
-					<span class="welcome-chip" onclick="quickPrompt('Summarize the key concepts')">Summarize key concepts</span>
-					<span class="welcome-chip" onclick="quickPrompt('What are the main topics covered?')">Main topics covered?</span>
-					<span class="welcome-chip" onclick="quickPrompt('Explain this in simple terms')">Explain simply</span>
-				  </div>
-				</div>`;
-				// Auto-fade welcome after 3s
-				setTimeout(() => {
-				  const w = document.getElementById('welcome-state');
-				  if (w) w.classList.add('fading');
-				}, 3000);
-				return;
-			  }
+			if (!conv.messages.length) {
+					container.innerHTML = `<div class="welcome-state" id="welcome-state">
+					  <div class="welcome-logo"><span class="k">k</span>now3</div>
+					  <div class="welcome-sub">Local-first semantic RAG chat. Load your data, pick a provider, and ask away — or toggle RAG off for free-form chat.</div>
+					  <div class="welcome-chips">
+						<span class="welcome-chip" onclick="quickPrompt('Summarize the key concepts')">Summarize key concepts</span>
+						<span class="welcome-chip" onclick="quickPrompt('What are the main topics covered?')">Main topics covered?</span>
+						<span class="welcome-chip" onclick="quickPrompt('Explain this in simple terms')">Explain simply</span>
+					  </div>
+					</div>`;
+					// Auto-fade welcome after 3s
+					setTimeout(() => {
+					  const w = document.getElementById('welcome-state');
+					  if (w) w.classList.add('fading');
+					}, 3000);
+					return;
+				  }
 
   container.innerHTML = conv.messages.map((m, i) => {
     const time = new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -1926,15 +2036,15 @@ function renderChat() {
               <button class="msg-action-btn" onclick="editMessage(${i})" title="Edit and resend">✎ Edit</button>
             </div>` : '';
       
-		const playBtn = m.role === 'assistant' && m.content?.length > 5 ? `
-				<button class="msg-play-btn" id="play-btn-${i}" onclick="playMessageAudio(${i})" title="Listen to this message">▶ Play</button>` : '';
+			const playBtn = m.role === 'assistant' && m.content?.length > 5 ? `
+					<button class="msg-play-btn" id="play-btn-${i}" onclick="playMessageAudio(${i})" title="Listen to this message">▶ Play</button>` : '';
 
-		const assistantActions = m.role === 'assistant' ? `
-		  <div class="msg-actions">
-			${playBtn}
-			<button class="msg-action-btn" onclick="copyMessage(${i})" title="Copy to clipboard">⧉ Copy</button>
-			<button class="msg-action-btn" onclick="regenerateMessage(${i})" title="Regenerate response">↻ Redo</button>
-		  </div>` : '';
+			const assistantActions = m.role === 'assistant' ? `
+			  <div class="msg-actions">
+				${playBtn}
+				<button class="msg-action-btn" onclick="copyMessage(${i})" title="Copy to clipboard">⧉ Copy</button>
+				<button class="msg-action-btn" onclick="regenerateMessage(${i})" title="Regenerate response">↻ Redo</button>
+			  </div>` : '';
       
           const actions = userActions + assistantActions;
       
@@ -1947,25 +2057,25 @@ function renderChat() {
           </div>`;
   }).join('');
 
-		container.scrollTop = container.scrollHeight;
+			container.scrollTop = container.scrollHeight;
 
-	// Initialize any chart canvases that were just rendered
-		  requestAnimationFrame(() => {
-			container.querySelectorAll('.msg-chart-container').forEach(chartContainer => {
-			  const canvas = chartContainer.querySelector('canvas');
-			  if (!canvas || !canvas.id || _chartInstances[canvas.id]) return;
-			  const dataEl = chartContainer.querySelector('[data-chart-json]');
-			  if (dataEl) {
-				try {
-				  const data = JSON.parse(decodeURIComponent(dataEl.dataset.chartJson));
-				  const type = chartContainer.querySelector('.chart-type-btn.active')?.dataset.type || 'bar';
-				  renderChartInMessage(canvas.id, data, type);
-				} catch {}
-			  }
-			});
-		  });
-		  updateMemoryLabel();
-		}
+		// Initialize any chart canvases that were just rendered
+			  requestAnimationFrame(() => {
+				container.querySelectorAll('.msg-chart-container').forEach(chartContainer => {
+				  const canvas = chartContainer.querySelector('canvas');
+				  if (!canvas || !canvas.id || _chartInstances[canvas.id]) return;
+				  const dataEl = chartContainer.querySelector('[data-chart-json]');
+				  if (dataEl) {
+					try {
+					  const data = JSON.parse(decodeURIComponent(dataEl.dataset.chartJson));
+					  const type = chartContainer.querySelector('.chart-type-btn.active')?.dataset.type || 'bar';
+					  renderChartInMessage(canvas.id, data, type);
+					} catch {}
+				  }
+				});
+			  });
+			  updateMemoryLabel();
+			}
     function addMessage(role, content, sources = null, imageHtml = null) {
       const conv = conversations[currentConversationId];
       if (!conv) return;
@@ -2850,12 +2960,19 @@ async function readSSEStream(response) {
   const decoder = new TextDecoder();
   let full = '';
   let buffer = '';
+  let receivedFirstToken = false;
 
     try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
+
+        // Clear rate-limit status once streaming begins
+        if (!receivedFirstToken && buffer.includes('data:')) {
+          receivedFirstToken = true;
+          setEmbedStatus('', '');
+        }
 
         const lines = buffer.split('\n');
         buffer = lines.pop(); // keep incomplete line in buffer
@@ -2889,12 +3006,19 @@ async function readGeminiStream(response) {
   const decoder = new TextDecoder();
   let full = '';
   let buffer = '';
+  let receivedFirstToken = false;
 
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
+
+      // Clear rate-limit status once streaming begins
+      if (!receivedFirstToken && buffer.includes('data:')) {
+        receivedFirstToken = true;
+        setEmbedStatus('', '');
+      }
 
       const lines = buffer.split('\n');
       buffer = lines.pop();
@@ -2927,12 +3051,19 @@ async function readAnthropicStream(response) {
   const decoder = new TextDecoder();
   let full = '';
   let buffer = '';
+  let receivedFirstToken = false;
 
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
+
+      // Clear rate-limit status once streaming begins
+      if (!receivedFirstToken && buffer.includes('data:')) {
+        receivedFirstToken = true;
+        setEmbedStatus('', '');
+      }
 
       const lines = buffer.split('\n');
       buffer = lines.pop();
@@ -2965,11 +3096,18 @@ async function readOllamaStream(response) {
   const decoder = new TextDecoder();
   let full = '';
   let buffer = '';
+  let receivedFirstToken = false;
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
+
+    // Clear rate-limit status once streaming begins
+    if (!receivedFirstToken && buffer.includes('{')) {
+      receivedFirstToken = true;
+      setEmbedStatus('', '');
+    }
 
     const lines = buffer.split('\n');
     buffer = lines.pop();
