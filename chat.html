@@ -976,9 +976,12 @@ body {
           </select>
         </div>
         <div class="toolbar-divider"></div>
-        <div class="toolbar-group">
-          <span class="toolbar-label" id="toolbar-chunks-label">0 chunks</span>
-        </div>
+	        <div class="toolbar-group">
+	          <span class="toolbar-label" id="toolbar-chunks-label">0 chunks</span>
+	        </div>
+	        <div class="toolbar-group">
+	          <span class="toolbar-label" id="toolbar-adaptive-k" style="color:var(--accent);font-size:0.65rem;display:none">adaptive-k</span>
+	        </div>
         <div style="flex:1"></div>
         <button class="btn-secondary" id="btn-bg-embed" onclick="startBackgroundEmbedding()" style="padding:0.25rem 0.6rem;font-size:0.7rem;display:none" title="Embed chunks in background for semantic search">▶ Embed</button>
         <button class="btn-secondary" onclick="exportCurrentChat()" style="padding:0.25rem 0.6rem;font-size:0.7rem;">Export</button>
@@ -1265,17 +1268,23 @@ let currentConversationId = null;
 let currentStreamingIndex = -1;
 let isGenerating = false;
 
-const DEFAULT_SYSTEM_PROMPT = `You are a helpful assistant. When context is provided, answer based on that context. If unsure, say so. Be concise and accurate.
+const DEFAULT_SYSTEM_PROMPT = `You are a helpful assistant. When context is provided, answer based on that context. The context will contain multiple Q&A pairs separated by "---". Each Q&A pair consists of a question (prefixed with "Q:") followed by an answer (prefixed with "A:"). Focus on the most relevant information and provide concise, accurate answers.
 
-CHART RENDERING: When the user asks for a chart, comparison chart, visualization, or uses /chart, you MUST include a chart block. Format:
+CONTEXT FORMAT:
+- Multiple Q&A pairs separated by "---"
+- Each pair: Question (Q:) followed by Answer (A:)
+- Questions are distinct and non-duplicate
+- Answers may contain multiple paragraphs or details
+
+CHART RENDERING: When asked for a chart, comparison, visualization, or using /chart, include a chart block. Format:
 \`\`\`chart
-{"labels":["Label1","Label2","Label3"],"values":[10,20,30],"title":"Title"}
+{"labels":["Label1","Label2"],"values":[10,20],"title":"Title"}
 \`\`\`
-For comparing multiple attributes:
+For multiple attributes:
 \`\`\`chart
-{"labels":["Item1","Item2","Item3"],"datasets":[{"label":"Attr A","values":[10,20,30]},{"label":"Attr B","values":[5,15,25]}],"title":"Comparison"}
+{"labels":["Item1","Item2"],"datasets":[{"label":"Attr A","values":[10,20]},{"label":"Attr B","values":[5,15]}],"title":"Comparison"}
 \`\`\`
-IMPORTANT: When asked for a chart, always include a \`\`\`chart block with numeric JSON data. You may also include text explanation before or after the chart block. If exact numbers are not available, use reasonable estimated scores (1-10 scale or percentages) to represent qualitative comparisons.`;
+IMPORTANT: When context contains numeric data or comparisons, consider creating relevant charts to visualize the information. Always include proper chart JSON format with numeric data.`;
 	
 const VOICE_COMPANION_PROMPT = `You are a warm, emotionally present voice companion. Your responses will be spoken aloud, so follow these rules:
 
@@ -1623,70 +1632,209 @@ class VectorStore {
         return score;
       }
 
-      async search(query, topK = 3, mode = 'hybrid') {
-          if (!this.chunks.length) return [];
-      
-          const hasEmbeddings = embeddingReady && this.embeddings.length === this.chunks.length;
-      
-          // Force keyword mode if no embeddings available
-          if ((mode === 'semantic' || mode === 'hybrid') && !hasEmbeddings) {
-            mode = 'keyword';
+      // ── Adaptive-k: dynamic retrieval based on score distribution ──
+        _adaptiveKCutoff(scores, options = {}) {
+          // scores: array of {idx, score} sorted descending by score
+          // Returns: cutoff index (exclusive) — how many to keep
+          
+          if (scores.length === 0) return 0;
+          if (scores.length === 1) return 1;
+
+          // Hard boundaries from user settings
+          const userMinK = parseInt(getSetting('adaptive_min_k', '2')) || 2;
+          const userMaxK = parseInt(getSetting('adaptive_max_k', '20')) || 20;
+          const userCliff = parseFloat(getSetting('adaptive_cliff', '0.15')) || 0.15;
+          const userVariance = parseFloat(getSetting('adaptive_variance', '2.5')) || 2.5;
+          const userEntropy = parseFloat(getSetting('adaptive_entropy', '0.3')) || 0.3;
+
+          const { minK = userMinK, maxK = userMaxK, cliffRatio = userCliff, varianceSpike = userVariance, entropyThreshold = userEntropy } = options;
+          const n = scores.length;
+          const scoreValues = scores.map(s => s.score);
+
+          // 1. Normalize scores to [0,1] for analysis
+          const maxScore = scoreValues[0];
+          const minScore = scoreValues[n - 1];
+          const range = maxScore - minScore || 1;
+          const normalized = scoreValues.map(s => (s - minScore) / range);
+
+          // 2. Find "cliff" — where score drops sharply relative to the curve
+          let cliffIdx = n;
+          for (let i = 1; i < n; i++) {
+            const drop = normalized[i - 1] - normalized[i];
+            const relativeDrop = drop / (normalized[i - 1] + 0.001); // avoid div by zero
+            if (relativeDrop > cliffRatio && normalized[i] < 0.5) {
+              cliffIdx = i;
+              break;
+            }
           }
-      
-          // Build BM25 index once (fast — only tokenization)
-          if (mode === 'keyword' || mode === 'hybrid') {
-            this._buildBM25Index();
+
+          // 3. Find variance spike — where gap between consecutive scores spikes
+          let varianceIdx = n;
+          const gaps = [];
+          for (let i = 1; i < n; i++) {
+            gaps.push(normalized[i - 1] - normalized[i]);
           }
-      
-          // For large datasets with keyword mode: use BM25 pre-filter
-          // Score all docs with BM25 first, then only compute embeddings on top candidates
-          const LARGE_THRESHOLD = 5000;
-          const isLarge = this.chunks.length > LARGE_THRESHOLD;
-      
-          let results;
-      
-          if (isLarge && mode === 'hybrid' && hasEmbeddings) {
-            // Two-phase: BM25 narrows to top 50, then re-rank with semantic
-            this._buildBM25Index();
-            let candidates = this.chunks.map((chunk, idx) => ({
-              chunk, idx, kw: this.keywordScore(query, chunk.text, idx), sem: 0
-            }));
+          if (gaps.length > 2) {
+            const meanGap = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+            const gapVariance = gaps.reduce((sum, g) => sum + Math.pow(g - meanGap, 2), 0) / gaps.length;
+            const stdGap = Math.sqrt(gapVariance) || 0.001;
+            
+            for (let i = 0; i < gaps.length; i++) {
+              const zScore = (gaps[i] - meanGap) / stdGap;
+              if (zScore > varianceSpike && i >= minK - 1) {
+                varianceIdx = i + 1;
+                break;
+              }
+            }
+          }
+
+          // 4. Entropy-based: if top scores are too similar, we need more context
+          let entropyIdx = n;
+          const topN = Math.min(n, 20);
+          const topScores = normalized.slice(0, topN);
+          const sumScores = topScores.reduce((a, b) => a + b, 0);
+          if (sumScores > 0) {
+            const probs = topScores.map(s => s / sumScores);
+            const entropy = -probs.reduce((sum, p) => p > 0 ? sum + p * Math.log(p) : sum, 0);
+            const maxEntropy = Math.log(topN);
+            const normalizedEntropy = maxEntropy > 0 ? entropy / maxEntropy : 0;
+            // Low entropy = scores are similar = need more context
+            if (normalizedEntropy < entropyThreshold) {
+              entropyIdx = Math.min(n, Math.floor(maxK * 0.6));
+            }
+          }
+
+          // 5. Combine signals: use the most conservative (smallest) cutoff
+          // that still respects minK, but allow entropy to expand if needed
+          let cutoff = Math.min(cliffIdx, varianceIdx);
+          
+          // If entropy suggests we need more, use that instead
+          if (entropyIdx < n && cutoff < entropyIdx) {
+            cutoff = entropyIdx;
+          }
+
+          // Enforce hard boundaries
+          cutoff = Math.max(minK, Math.min(maxK, cutoff));
+          
+          return cutoff;
+        }
+      _reconstructContext(chunks) {
+              // Pair Q&A chunks if they belong to same source/sequence
+              const seenTexts = new Set();
+              const uniqueResults = [];
+              for (const r of chunks) {
+                const text = r.text?.trim();
+                if (!text || seenTexts.has(text)) continue;
+                seenTexts.add(text);
+                uniqueResults.push(r);
+              }
+              // Pair Q&A chunks if they belong to same source/sequence
+              const pairedResults = [];
+              const qaMap = new Map(); // source -> { q: chunk|null, a: chunk|null }
+              for (const r of uniqueResults) {
+                const source = r.metadata?.source || 'unknown';
+                const type = r.metadata?.type || r.metadata?.role || 'generic';
+                if (!qaMap.has(source)) qaMap.set(source, { q: null, a: null, generic: [] });
+                const entry = qaMap.get(source);
+                if (type === 'question' || type === 'q') entry.q = r;
+                else if (type === 'answer' || type === 'a') entry.a = r;
+                else entry.generic.push(r);
+              }
+              // Build paired context: Question + Answer blocks first, then unpaired
+              for (const [source, entry] of qaMap) {
+                if (entry.q && entry.a) {
+                  pairedResults.push({ text: `Q: ${entry.q.text}\nA: ${entry.a.text}`, metadata: { source, paired: true } });
+                } else if (entry.q) {
+                  pairedResults.push(entry.q);
+                } else if (entry.a) {
+                  pairedResults.push(entry.a);
+                }
+                entry.generic.forEach(g => pairedResults.push(g));
+              }
+              // Fallback: if no pairing possible, use original unique results
+              const finalResults = pairedResults.length >= uniqueResults.length ? uniqueResults : pairedResults;
+              return finalResults.map(r => r.text).join('\n---\n');
+            }
+     async search(query, topK = 3, mode = 'hybrid') {
+        if (!this.chunks.length) return [];
+
+        const hasEmbeddings = embeddingReady && this.embeddings.length === this.chunks.length;
+
+        // Force keyword mode if no embeddings available
+        if ((mode === 'semantic' || mode === 'hybrid') && !hasEmbeddings) {
+          mode = 'keyword';
+        }
+
+        // Build BM25 index once (fast — only tokenization)
+        if (mode === 'keyword' || mode === 'hybrid') {
+          this._buildBM25Index();
+        }
+
+        // For large datasets with keyword mode: use BM25 pre-filter
+        // Score all docs with BM25 first, then only compute embeddings on top candidates
+        const LARGE_THRESHOLD = 5000;
+        const isLarge = this.chunks.length > LARGE_THRESHOLD;
+
+        let results;
+
+        if (mode === 'hybrid' && hasEmbeddings) {
+          // Two-phase search for hybrid mode
+          this._buildBM25Index();
+          let candidates = this.chunks.map((chunk, idx) => ({
+            chunk, idx, kw: this.keywordScore(query, chunk.text, idx), sem: 0
+          }));
+          
+          if (isLarge) {
+            // For large datasets, use BM25 to narrow down to top 50 candidates first
             candidates.sort((a, b) => b.kw - a.kw);
-            candidates = candidates.slice(0, 50);  // narrow
-      
+            candidates = candidates.slice(0, 50);
+          }
+          
+          try {
+            const qEmb = await embeddingModel(query, { pooling: 'mean', normalize: true });
+            const qVec = Array.from(qEmb.data);
+            candidates.forEach(r => { r.sem = this.cosineSim(qVec, this.embeddings[r.idx]); });
+          } catch {}
+          
+          candidates.forEach(r => { r.score = (r.sem * 0.7) + (r.kw * 0.3); });
+          results = candidates;
+        } else {
+          // Keyword or semantic only search
+          results = this.chunks.map((chunk, idx) => ({
+            chunk, idx,
+            kw: (mode !== 'semantic') ? this.keywordScore(query, chunk.text, idx) : 0,
+            sem: 0
+          }));
+          
+          if ((mode === 'semantic' || mode === 'hybrid') && hasEmbeddings) {
             try {
               const qEmb = await embeddingModel(query, { pooling: 'mean', normalize: true });
               const qVec = Array.from(qEmb.data);
-              candidates.forEach(r => { r.sem = this.cosineSim(qVec, this.embeddings[r.idx]); });
+              results.forEach(r => { r.sem = this.cosineSim(qVec, this.embeddings[r.idx]); });
             } catch {}
-      
-            candidates.forEach(r => { r.score = (r.sem * 0.6) + (r.kw * 0.4); });
-            results = candidates;
-      
-          } else {
-            results = this.chunks.map((chunk, idx) => ({
-              chunk, idx,
-              kw: (mode !== 'semantic') ? this.keywordScore(query, chunk.text, idx) : 0,
-              sem: 0
-            }));
-      
-            if ((mode === 'semantic' || mode === 'hybrid') && hasEmbeddings) {
-              try {
-                const qEmb = await embeddingModel(query, { pooling: 'mean', normalize: true });
-                const qVec = Array.from(qEmb.data);
-                results.forEach(r => { r.sem = this.cosineSim(qVec, this.embeddings[r.idx]); });
-              } catch {}
-            }
-      
-            results.forEach(r => {
-              if (mode === 'hybrid') r.score = (r.sem * 0.7) + (r.kw * 0.3);
-              else if (mode === 'semantic') r.score = r.sem;
-              else r.score = r.kw;
-            });
           }
-      
-          return results.sort((a, b) => b.score - a.score).slice(0, topK).map(r => r.chunk);
-        }
+          
+          results.forEach(r => {
+            if (mode === 'hybrid') r.score = (r.sem * 0.7) + (r.kw * 0.3);
+            else if (mode === 'semantic') r.score = r.sem;
+            else r.score = r.kw;
+          });
+        } 
+
+        // Sort by score descending
+        results.sort((a, b) => b.score - a.score);
+
+        // Apply adaptive-k cutoff based on score distribution
+        const adaptiveK = this._adaptiveKCutoff(results, {
+          minK: parseInt(document.getElementById('toolbar-topk')?.value) || 3,
+          maxK: 40,
+          cliffRatio: 0.15,
+          varianceSpike: 2.5,
+          entropyThreshold: 0.3
+        });
+
+        return results.slice(0, adaptiveK).map(r => r.chunk);
+      }
 
   clear() { this.chunks = []; this.embeddings = []; updateChunkCount(); }
 }
@@ -2015,7 +2163,7 @@ function renderChat() {
   container.innerHTML = conv.messages.map((m, i) => {
     const time = new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const avatar = m.role === 'user' ? 'U' : 'K';
-	const textContent = m.role === 'assistant' ? renderMarkdown(m.content || '') : escapeHtml(m.content || '');
+	  const textContent = renderMarkdown(m.content || '');
     const imgContent = m.imageHtml || '';
     const bubbleContent = textContent + imgContent;
 
@@ -2115,9 +2263,9 @@ function updateStreamBubble(text) {
 
   const msgs = document.getElementById('chat-messages');
   const allBubbles = msgs.querySelectorAll('.msg.assistant .msg-bubble');
-  if (allBubbles.length > 0) {
-    const last = allBubbles[allBubbles.length - 1];
-    last.innerHTML = renderMarkdown(text);
+	  if (allBubbles.length > 0) {
+	    const last = allBubbles[allBubbles.length - 1];
+	    last.innerHTML = text ? renderMarkdown(text) : '';
     msgs.scrollTop = msgs.scrollHeight;
   }
 }
@@ -3169,8 +3317,12 @@ function getTemp() { return (parseInt(getSetting('temperature', '70')) / 100); }
 async function queryInference(query, context, attachedImages = []) {
   const provider = getProvider();
   const temp = getTemp();
-  const { system, userText, images, history } = buildMessages(query, context, attachedImages);
-  const hasImages = images.length > 0;
+    let { system, userText, images, history } = buildMessages(query, context, attachedImages);
+        if (context?.includes('Q:') && context?.includes('A:')) {
+          system = system.replace('When context is provided, answer based on that context.', 
+            'When context is provided with Q&A pairs, focus on the most relevant information to answer the question.');
+        }
+      const hasImages = images.length > 0;
   const doStream = getSetting('streaming', 'true') === 'true';
 
   // ── Ollama ──
@@ -4632,14 +4784,48 @@ function initInput() {
   
     let context = '';
     let sources = [];
-  
-    if (ragEnabled && vectorStore.chunks.length > 0) {
-      const results = await vectorStore.search(text, topK, mode);
-      if (results.length) {
-        context = results.map(r => r.text).join('\n---\n');
-        sources = results.map(r => ({ text: r.text, source: r.metadata?.source || 'unknown' }));
+
+  if (ragEnabled && vectorStore.chunks.length > 0) {
+    const results = await vectorStore.search(q, topK, mode);
+    if (results.length) {
+      // Reconstruct full context from chunks with proper Q&A pairing and deduplication
+      const seenTexts = new Set();
+      const uniqueResults = [];
+      for (const r of results) {
+        const text = r.text?.trim();
+        if (!text || seenTexts.has(text)) continue;
+        seenTexts.add(text);
+        uniqueResults.push(r);
       }
+      // Pair Q&A chunks if they belong to same source/sequence
+      const pairedResults = [];
+      const qaMap = new Map(); // source -> { q: chunk|null, a: chunk|null }
+      for (const r of uniqueResults) {
+        const source = r.metadata?.source || 'unknown';
+        const type = r.metadata?.type || r.metadata?.role || 'generic';
+        if (!qaMap.has(source)) qaMap.set(source, { q: null, a: null, generic: [] });
+        const entry = qaMap.get(source);
+        if (type === 'question' || type === 'q') entry.q = r;
+        else if (type === 'answer' || type === 'a') entry.a = r;
+        else entry.generic.push(r);
+      }
+      // Build paired context: Question + Answer blocks first, then unpaired
+      for (const [source, entry] of qaMap) {
+        if (entry.q && entry.a) {
+          pairedResults.push({ text: `Q: ${entry.q.text}\nA: ${entry.a.text}`, metadata: { source, paired: true } });
+        } else if (entry.q) {
+          pairedResults.push(entry.q);
+        } else if (entry.a) {
+          pairedResults.push(entry.a);
+        }
+        entry.generic.forEach(g => pairedResults.push(g));
+      }
+      // Fallback: if no pairing possible, use original unique results
+      const finalResults = pairedResults.length >= uniqueResults.length ? uniqueResults : pairedResults;
+      context = finalResults.map(r => r.text).join('\n---\n');
+      sources = finalResults.map(r => ({ text: r.text, source: r.metadata?.source || 'unknown' }));
     }
+  }
   
     showThinking();
   
@@ -4983,7 +5169,12 @@ async function speakKokoroVoicePanel(text, speed) {
   // Save toolbar changes
   document.getElementById('toolbar-search-mode').addEventListener('change', (e) => setSetting('search_mode', e.target.value));
   document.getElementById('toolbar-rag-toggle').addEventListener('change', (e) => setSetting('rag_enabled', e.target.checked));
-  document.getElementById('toolbar-topk').addEventListener('change', (e) => setSetting('top_k', e.target.value));
+  document.getElementById('toolbar-topk').addEventListener('change', (e) => {
+    setSetting('top_k', e.target.value);
+    // Show adaptive-k indicator when topk is used as min floor
+    const adaptiveLabel = document.getElementById('toolbar-adaptive-k');
+    if (adaptiveLabel) adaptiveLabel.style.display = 'inline';
+  });
 });
 </script>
 
