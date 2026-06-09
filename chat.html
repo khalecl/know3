@@ -1637,92 +1637,173 @@ class VectorStore {
         return score;
       }
 
-      // ── Adaptive-k: dynamic retrieval based on score distribution ──
-        _adaptiveKCutoff(scores, options = {}) {
-          // scores: array of {idx, score} sorted descending by score
-          // Returns: cutoff index (exclusive) — how many to keep
+            // ── Adaptive-k: dynamic retrieval based on score distribution ──
+      // Stricter defaults for noisy long lists; all tunable via settings
+      _adaptiveKCutoff(scores, options = {}) {
+        if (scores.length === 0) return 0;
+        if (scores.length === 1) return 1;
+
+        // Stricter defaults: smaller maxK, tighter cliff, lower entropy threshold
+        const userMinK = parseInt(getSetting('adaptive_min_k', '2')) || 2;
+        const userMaxK = parseInt(getSetting('adaptive_max_k', '12')) || 12;
+        const userCliff = parseFloat(getSetting('adaptive_cliff', '0.25')) || 0.25;
+        const userVariance = parseFloat(getSetting('adaptive_variance', '2.0')) || 2.0;
+        const userEntropy = parseFloat(getSetting('adaptive_entropy', '0.2')) || 0.2;
+
+        const { minK = userMinK, maxK = userMaxK, cliffRatio = userCliff, varianceSpike = userVariance, entropyThreshold = userEntropy } = options;
+        const n = scores.length;
+        const scoreValues = scores.map(s => s.score);
+
+        // 1. Normalize scores to [0,1] for analysis
+        const maxScore = scoreValues[0];
+        const minScore = scoreValues[n - 1];
+        const range = maxScore - minScore || 1;
+        const normalized = scoreValues.map(s => (s - minScore) / range);
+
+        // 2. Find "cliff" — where score drops sharply relative to the curve
+        let cliffIdx = n;
+        for (let i = 1; i < n; i++) {
+          const drop = normalized[i - 1] - normalized[i];
+          const relativeDrop = drop / (normalized[i - 1] + 0.001);
+          // Stricter: require both relative drop AND absolute drop
+          if (relativeDrop > cliffRatio && drop > 0.08 && normalized[i] < 0.5) {
+            cliffIdx = i;
+            break;
+          }
+        }
+
+        // 3. Find variance spike — where gap between consecutive scores spikes
+        let varianceIdx = n;
+        const gaps = [];
+        for (let i = 1; i < n; i++) {
+          gaps.push(normalized[i - 1] - normalized[i]);
+        }
+        if (gaps.length > 2) {
+          const meanGap = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+          const gapVariance = gaps.reduce((sum, g) => sum + Math.pow(g - meanGap, 2), 0) / gaps.length;
+          const stdGap = Math.sqrt(gapVariance) || 0.001;
           
-          if (scores.length === 0) return 0;
-          if (scores.length === 1) return 1;
-
-          // Hard boundaries from user settings
-          const userMinK = parseInt(getSetting('adaptive_min_k', '2')) || 2;
-          const userMaxK = parseInt(getSetting('adaptive_max_k', '20')) || 20;
-          const userCliff = parseFloat(getSetting('adaptive_cliff', '0.15')) || 0.15;
-          const userVariance = parseFloat(getSetting('adaptive_variance', '2.5')) || 2.5;
-          const userEntropy = parseFloat(getSetting('adaptive_entropy', '0.3')) || 0.3;
-
-          const { minK = userMinK, maxK = userMaxK, cliffRatio = userCliff, varianceSpike = userVariance, entropyThreshold = userEntropy } = options;
-          const n = scores.length;
-          const scoreValues = scores.map(s => s.score);
-
-          // 1. Normalize scores to [0,1] for analysis
-          const maxScore = scoreValues[0];
-          const minScore = scoreValues[n - 1];
-          const range = maxScore - minScore || 1;
-          const normalized = scoreValues.map(s => (s - minScore) / range);
-
-          // 2. Find "cliff" — where score drops sharply relative to the curve
-          let cliffIdx = n;
-          for (let i = 1; i < n; i++) {
-            const drop = normalized[i - 1] - normalized[i];
-            const relativeDrop = drop / (normalized[i - 1] + 0.001); // avoid div by zero
-            if (relativeDrop > cliffRatio && normalized[i] < 0.5) {
-              cliffIdx = i;
+          for (let i = 0; i < gaps.length; i++) {
+            const zScore = (gaps[i] - meanGap) / stdGap;
+            // Require higher z-score for early positions (stricter)
+            const positionPenalty = Math.max(0.5, 1 - (i / n) * 0.5);
+            if (zScore > varianceSpike * positionPenalty && i >= minK - 1) {
+              varianceIdx = i + 1;
               break;
             }
           }
-
-          // 3. Find variance spike — where gap between consecutive scores spikes
-          let varianceIdx = n;
-          const gaps = [];
-          for (let i = 1; i < n; i++) {
-            gaps.push(normalized[i - 1] - normalized[i]);
-          }
-          if (gaps.length > 2) {
-            const meanGap = gaps.reduce((a, b) => a + b, 0) / gaps.length;
-            const gapVariance = gaps.reduce((sum, g) => sum + Math.pow(g - meanGap, 2), 0) / gaps.length;
-            const stdGap = Math.sqrt(gapVariance) || 0.001;
-            
-            for (let i = 0; i < gaps.length; i++) {
-              const zScore = (gaps[i] - meanGap) / stdGap;
-              if (zScore > varianceSpike && i >= minK - 1) {
-                varianceIdx = i + 1;
-                break;
-              }
-            }
-          }
-
-          // 4. Entropy-based: if top scores are too similar, we need more context
-          let entropyIdx = n;
-          const topN = Math.min(n, 20);
-          const topScores = normalized.slice(0, topN);
-          const sumScores = topScores.reduce((a, b) => a + b, 0);
-          if (sumScores > 0) {
-            const probs = topScores.map(s => s / sumScores);
-            const entropy = -probs.reduce((sum, p) => p > 0 ? sum + p * Math.log(p) : sum, 0);
-            const maxEntropy = Math.log(topN);
-            const normalizedEntropy = maxEntropy > 0 ? entropy / maxEntropy : 0;
-            // Low entropy = scores are similar = need more context
-            if (normalizedEntropy < entropyThreshold) {
-              entropyIdx = Math.min(n, Math.floor(maxK * 0.6));
-            }
-          }
-
-          // 5. Combine signals: use the most conservative (smallest) cutoff
-          // that still respects minK, but allow entropy to expand if needed
-          let cutoff = Math.min(cliffIdx, varianceIdx);
-          
-          // If entropy suggests we need more, use that instead
-          if (entropyIdx < n && cutoff < entropyIdx) {
-            cutoff = entropyIdx;
-          }
-
-          // Enforce hard boundaries
-          cutoff = Math.max(minK, Math.min(maxK, cutoff));
-          
-          return cutoff;
         }
+
+        // 4. Entropy-based: if top scores are too similar, we need more context
+        let entropyIdx = n;
+        const topN = Math.min(n, 15); // Reduced from 20 for tighter analysis
+        const topScores = normalized.slice(0, topN);
+        const sumScores = topScores.reduce((a, b) => a + b, 0);
+        if (sumScores > 0) {
+          const probs = topScores.map(s => s / sumScores);
+          const entropy = -probs.reduce((sum, p) => p > 0 ? sum + p * Math.log(p) : sum, 0);
+          const maxEntropy = Math.log(topN);
+          const normalizedEntropy = maxEntropy > 0 ? entropy / maxEntropy : 0;
+          // Lower threshold = stricter (need more dissimilarity to expand)
+          if (normalizedEntropy < entropyThreshold) {
+            entropyIdx = Math.min(n, Math.floor(maxK * 0.5)); // More conservative expansion
+          }
+        }
+
+        // 5. Combine signals: use the most conservative (smallest) cutoff
+        let cutoff = Math.min(cliffIdx, varianceIdx);
+        
+        // If entropy suggests we need more, use that instead
+        if (entropyIdx < n && cutoff < entropyIdx) {
+          cutoff = entropyIdx;
+        }
+
+        // Enforce hard boundaries
+        cutoff = Math.max(minK, Math.min(maxK, cutoff));
+        
+        return cutoff;
+      }
+          // ── Metadata filter: pre-filter results by collection/source/tags ──
+      applyMetadataFilter(results, query) {
+        // Parse any collection: or source: filters from query
+        const collectionMatch = query.match(/collection:\s*(\S+)/i);
+        const sourceMatch = query.match(/source:\s*(\S+)/i);
+        const tagMatch = query.match(/tag:\s*(\S+)/i);
+        
+        if (!collectionMatch && !sourceMatch && !tagMatch) return results;
+        
+        return results.filter(r => {
+          const meta = r.chunk?.metadata || r.metadata || {};
+          let keep = true;
+          
+          if (collectionMatch) {
+            const target = collectionMatch[1].toLowerCase();
+            const actual = (meta.collection || 'Default').toLowerCase();
+            keep = keep && actual.includes(target);
+          }
+          if (sourceMatch) {
+            const target = sourceMatch[1].toLowerCase();
+            const actual = (meta.source || 'unknown').toLowerCase();
+            keep = keep && actual.includes(target);
+          }
+          if (tagMatch) {
+            const target = tagMatch[1].toLowerCase();
+            const tags = (meta.tags || []).map(t => t.toLowerCase());
+            keep = keep && tags.some(t => t.includes(target));
+          }
+          
+          return keep;
+        });
+      }
+       // ── HyDE: Hypothetical Document Embedding for better retrieval ──
+      async hydeQueryEnhancement(query) {
+        // Only run if embeddings are ready and we have a configured provider
+        if (!embeddingReady || !query.trim()) return query;
+        
+        // Check if HyDE is enabled (default off — can be heavy)
+        if (getSetting('hyde_enabled', 'false') !== 'true') return query;
+        
+        // Simple cache to avoid repeated HyDE for same query
+        const cacheKey = 'hyde_' + btoa(query.slice(0, 200));
+        const cached = sessionStorage.getItem(cacheKey);
+        if (cached) return cached;
+        
+        try {
+          // Use a lightweight prompt to generate hypothetical answer
+          const hydePrompt = `Given the question, write a short hypothetical answer that would be found in a relevant document. Be specific and include key terms.\n\nQuestion: ${query}\n\nHypothetical answer:`;
+          
+          // Try to use Ollama if available (local, free), else skip
+          const ollamaUrl = getSetting('ollama_url', 'http://localhost:11434');
+          const model = getSetting('ollama_model', 'mistral');
+          
+          const res = await fetch(`${ollamaUrl}/api/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model,
+              prompt: hydePrompt,
+              stream: false,
+              options: { temperature: 0.3, num_predict: 150 }
+            }),
+            signal: AbortSignal.timeout(5000) // 5s timeout — don't block
+          });
+          
+          if (!res.ok) throw new Error('HyDE fallback');
+          const data = await res.json();
+          const hypothetical = (data.response || '').trim();
+          
+          if (hypothetical.length > 20) {
+            // Combine original + hypothetical for richer embedding
+            const enhanced = `${query}\n${hypothetical}`;
+            sessionStorage.setItem(cacheKey, enhanced);
+            return enhanced;
+          }
+        } catch (e) {
+          // Silently fall back to original query
+        }
+        
+        return query;
+      }
       _reconstructContext(chunks) {
               // Pair Q&A chunks if they belong to same source/sequence
               const seenTexts = new Set();
@@ -1760,8 +1841,15 @@ class VectorStore {
               const finalResults = pairedResults.length >= uniqueResults.length ? uniqueResults : pairedResults;
               return finalResults.map(r => r.text).join('\n---\n');
             }
-     async search(query, topK = 3, mode = 'hybrid') {
+    async search(query, topK = 3, mode = 'hybrid') {
         if (!this.chunks.length) return [];
+
+        // ── HyDE: Enhance query with hypothetical answer before embedding ──
+        let enhancedQuery = query;
+        const hydeEnabled = getSetting('hyde_enabled', 'false') === 'true';
+        if (hydeEnabled && (mode === 'semantic' || mode === 'hybrid')) {
+          enhancedQuery = await this.hydeQueryEnhancement(query);
+        }
 
         const hasEmbeddings = embeddingReady && this.embeddings.length === this.chunks.length;
 
@@ -1776,7 +1864,6 @@ class VectorStore {
         }
 
         // For large datasets with keyword mode: use BM25 pre-filter
-        // Score all docs with BM25 first, then only compute embeddings on top candidates
         const LARGE_THRESHOLD = 5000;
         const isLarge = this.chunks.length > LARGE_THRESHOLD;
 
@@ -1786,7 +1873,7 @@ class VectorStore {
           // Two-phase search for hybrid mode
           this._buildBM25Index();
           let candidates = this.chunks.map((chunk, idx) => ({
-            chunk, idx, kw: this.keywordScore(query, chunk.text, idx), sem: 0
+            chunk, idx, kw: this.keywordScore(enhancedQuery, chunk.text, idx), sem: 0
           }));
           
           if (isLarge) {
@@ -1796,7 +1883,7 @@ class VectorStore {
           }
           
           try {
-            const qEmb = await embeddingModel(query, { pooling: 'mean', normalize: true });
+            const qEmb = await embeddingModel(enhancedQuery, { pooling: 'mean', normalize: true });
             const qVec = Array.from(qEmb.data);
             candidates.forEach(r => { r.sem = this.cosineSim(qVec, this.embeddings[r.idx]); });
           } catch {}
@@ -1807,13 +1894,13 @@ class VectorStore {
           // Keyword or semantic only search
           results = this.chunks.map((chunk, idx) => ({
             chunk, idx,
-            kw: (mode !== 'semantic') ? this.keywordScore(query, chunk.text, idx) : 0,
+            kw: (mode !== 'semantic') ? this.keywordScore(enhancedQuery, chunk.text, idx) : 0,
             sem: 0
           }));
           
           if ((mode === 'semantic' || mode === 'hybrid') && hasEmbeddings) {
             try {
-              const qEmb = await embeddingModel(query, { pooling: 'mean', normalize: true });
+              const qEmb = await embeddingModel(enhancedQuery, { pooling: 'mean', normalize: true });
               const qVec = Array.from(qEmb.data);
               results.forEach(r => { r.sem = this.cosineSim(qVec, this.embeddings[r.idx]); });
             } catch {}
@@ -1827,36 +1914,43 @@ class VectorStore {
         } 
 
         // Sort by score descending
-        results.sort((a, b) => b.score - b.score);
+        results.sort((a, b) => b.score - a.score);
+
+        // ── Metadata filter: apply collection/source/tag filters from query ──
+        results = this.applyMetadataFilter(results, query);
 
         // Apply adaptive-k cutoff based on score distribution
         const adaptiveK = this._adaptiveKCutoff(results, {
           minK: parseInt(document.getElementById('toolbar-topk')?.value) || 3,
-          maxK: 40,
-          cliffRatio: 0.15,
-          varianceSpike: 2.5,
-          entropyThreshold: 0.3
+          maxK: 15, // Reduced from 40 — cap reranker input
+          cliffRatio: 0.25, // Stricter defaults
+          varianceSpike: 2.0,
+          entropyThreshold: 0.2
         });
 
         // ── RERANKER: Re-rank top candidates with cross-encoder for better relevance ──
-        let topResults = results.slice(0, adaptiveK);
+        // Cap candidates sent to reranker for performance and noise reduction
+        const RERANKER_CANDIDATE_CAP = parseInt(getSetting('reranker_cap', '20')) || 20;
+        let topResults = results.slice(0, Math.min(adaptiveK, RERANKER_CANDIDATE_CAP));
         
         if (rerankerReady && topResults.length > 1) {
           try {
             // Prepare query-chunk pairs for cross-encoder
             const pairs = topResults.map(r => ({
-              text: query,
+              text: query, // Use original query for reranker, not HyDE
               text_pair: r.chunk.text.substring(0, 512) // Truncate to avoid token limits
             }));
             
             // Run cross-encoder scoring
             const scores = await rerankerModel(pairs);
             
-            // Combine original score with reranker score
+            // Combine original score with reranker score — 50/50 weight if noise persists
+            const rerankWeight = parseFloat(getSetting('reranker_weight', '0.5')) || 0.5;
+            const origWeight = 1 - rerankWeight;
+            
             topResults.forEach((r, i) => {
               const rerankScore = scores[i]?.score || 0;
-              // Weighted combination: 60% original, 40% reranker
-              r.score = (r.score * 0.6) + (rerankScore * 0.4);
+              r.score = (r.score * origWeight) + (rerankScore * rerankWeight);
             });
             
             // Re-sort by combined score
