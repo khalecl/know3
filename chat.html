@@ -976,12 +976,15 @@ body {
           </select>
         </div>
         <div class="toolbar-divider"></div>
-	        <div class="toolbar-group">
-	          <span class="toolbar-label" id="toolbar-chunks-label">0 chunks</span>
-	        </div>
-	        <div class="toolbar-group">
-	          <span class="toolbar-label" id="toolbar-adaptive-k" style="color:var(--accent);font-size:0.65rem;display:none">adaptive-k</span>
-	        </div>
+            <div class="toolbar-group">
+		          <span class="toolbar-label" id="toolbar-chunks-label">0 chunks</span>
+		        </div>
+		        <div class="toolbar-group">
+		          <span class="toolbar-label" id="toolbar-adaptive-k" style="color:var(--accent);font-size:0.65rem;display:none">adaptive-k</span>
+		        </div>
+		        <div class="toolbar-group">
+		          <span class="toolbar-label" id="toolbar-reranker" style="color:var(--accent);font-size:0.65rem;display:none">rerank</span>
+		        </div>
         <div style="flex:1"></div>
         <button class="btn-secondary" id="btn-bg-embed" onclick="startBackgroundEmbedding()" style="padding:0.25rem 0.6rem;font-size:0.7rem;display:none" title="Embed chunks in background for semantic search">▶ Embed</button>
         <button class="btn-secondary" onclick="exportCurrentChat()" style="padding:0.25rem 0.6rem;font-size:0.7rem;">Export</button>
@@ -1263,6 +1266,8 @@ setInterval(() => {
 // ═══════════════════════════════════════════════
 let embeddingModel = null;
 let embeddingReady = false;
+let rerankerModel = null;
+let rerankerReady = false;
 let conversations = {};
 let currentConversationId = null;
 let currentStreamingIndex = -1;
@@ -1822,7 +1827,7 @@ class VectorStore {
         } 
 
         // Sort by score descending
-        results.sort((a, b) => b.score - a.score);
+        results.sort((a, b) => b.score - b.score);
 
         // Apply adaptive-k cutoff based on score distribution
         const adaptiveK = this._adaptiveKCutoff(results, {
@@ -1833,7 +1838,35 @@ class VectorStore {
           entropyThreshold: 0.3
         });
 
-        return results.slice(0, adaptiveK).map(r => r.chunk);
+        // ── RERANKER: Re-rank top candidates with cross-encoder for better relevance ──
+        let topResults = results.slice(0, adaptiveK);
+        
+        if (rerankerReady && topResults.length > 1) {
+          try {
+            // Prepare query-chunk pairs for cross-encoder
+            const pairs = topResults.map(r => ({
+              text: query,
+              text_pair: r.chunk.text.substring(0, 512) // Truncate to avoid token limits
+            }));
+            
+            // Run cross-encoder scoring
+            const scores = await rerankerModel(pairs);
+            
+            // Combine original score with reranker score
+            topResults.forEach((r, i) => {
+              const rerankScore = scores[i]?.score || 0;
+              // Weighted combination: 60% original, 40% reranker
+              r.score = (r.score * 0.6) + (rerankScore * 0.4);
+            });
+            
+            // Re-sort by combined score
+            topResults.sort((a, b) => b.score - a.score);
+          } catch (e) {
+            console.warn('Reranking failed:', e.message);
+          }
+        }
+
+        return topResults.map(r => r.chunk);
       }
 
   clear() { this.chunks = []; this.embeddings = []; updateChunkCount(); }
@@ -1921,30 +1954,50 @@ async function initConversationsDB() {
   });
 }
 
-// ═══════════════════════════════════════════════
-// EMBEDDING INIT
-// ═══════════════════════════════════════════════
-async function initEmbeddings() {
-  try {
-    setEmbedStatus('loading', '⏳ Loading model...');
-    const { pipeline } = await import('@xenova/transformers');
-    embeddingModel = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
-    embeddingReady = true;
-    setEmbedStatus('ready', '✓ Semantic ready');
-  } catch (e) {
-    console.warn('Embeddings unavailable:', e.message);
-    setEmbedStatus('', '⚠ Keyword only');
-    embeddingReady = false;
+  // ═══════════════════════════════════════════════
+  // EMBEDDING INIT
+  // ═══════════════════════════════════════════════
+  async function initEmbeddings() {
+    try {
+      setEmbedStatus('loading', '⏳ Loading model...');
+      const { pipeline } = await import('@xenova/transformers');
+      embeddingModel = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+      embeddingReady = true;
+      setEmbedStatus('ready', '✓ Semantic ready');
+    } catch (e) {
+      console.warn('Embeddings unavailable:', e.message);
+      setEmbedStatus('', '⚠ Keyword only');
+      embeddingReady = false;
+    }
+    // Restore cache
+    const cached = await loadEmbeddings();
+    if (cached?.chunks) {
+      vectorStore.chunks = cached.chunks;
+      vectorStore.embeddings = cached.embeddings;
+      setEmbedStatus('ready', `✓ ${cached.chunks.length} cached`);
+      updateChunkCount();
+    }
+    // Load reranker in background
+    initReranker();
   }
-  // Restore cache
-  const cached = await loadEmbeddings();
-  if (cached?.chunks) {
-    vectorStore.chunks = cached.chunks;
-    vectorStore.embeddings = cached.embeddings;
-    setEmbedStatus('ready', `✓ ${cached.chunks.length} cached`);
-    updateChunkCount();
+
+  // ═══════════════════════════════════════════════
+  // RERANKER INIT
+  // ═══════════════════════════════════════════════
+  async function initReranker() {
+    try {
+      const { pipeline } = await import('@xenova/transformers');
+      // Cross-encoder for re-ranking: scores query-chunk relevance
+      rerankerModel = await pipeline('text-classification', 'Xenova/cross-encoder-ms-marco-MiniLM-L-6-v2', {
+        quantized: true, // Use quantized model for faster inference
+      });
+      rerankerReady = true;
+      console.log('✓ Reranker loaded');
+    } catch (e) {
+      console.warn('Reranker unavailable:', e.message);
+      rerankerReady = false;
+    }
   }
-}
 
     function setEmbedStatus(cls, text) {
       const el = document.getElementById('embed-status');
@@ -5167,7 +5220,7 @@ async function speakKokoroVoicePanel(text, speed) {
   document.getElementById('toolbar-topk').value = getSetting('top_k', '3');
 
   // Save toolbar changes
-  document.getElementById('toolbar-search-mode').addEventListener('change', (e) => setSetting('search_mode', e.target.value));
+document.getElementById('toolbar-search-mode').addEventListener('change', (e) => setSetting('search_mode', e.target.value));
   document.getElementById('toolbar-rag-toggle').addEventListener('change', (e) => setSetting('rag_enabled', e.target.checked));
   document.getElementById('toolbar-topk').addEventListener('change', (e) => {
     setSetting('top_k', e.target.value);
@@ -5175,6 +5228,12 @@ async function speakKokoroVoicePanel(text, speed) {
     const adaptiveLabel = document.getElementById('toolbar-adaptive-k');
     if (adaptiveLabel) adaptiveLabel.style.display = 'inline';
   });
+  
+  // Show reranker status when ready
+  if (rerankerReady) {
+    const rerankLabel = document.getElementById('toolbar-reranker');
+    if (rerankLabel) rerankLabel.style.display = 'inline';
+  }
 });
 </script>
 
