@@ -2181,7 +2181,7 @@ class VectorStore {
         // Apply adaptive-k cutoff based on score distribution
         const adaptiveK = this._adaptiveKCutoff(results, {
           minK: parseInt(document.getElementById('toolbar-topk')?.value) || 3,
-          maxK: 15, // Reduced from 40 — cap reranker input
+          maxK: 100, // Reduced from 40 — cap reranker input
           cliffRatio: 0.25, // Stricter defaults
           varianceSpike: 2.0,
           entropyThreshold: 0.2
@@ -2189,7 +2189,7 @@ class VectorStore {
 
         // ── RERANKER: Re-rank top candidates with cross-encoder for better relevance ──
         // Cap candidates sent to reranker for performance and noise reduction
-        const RERANKER_CANDIDATE_CAP = parseInt(getSetting('reranker_cap', '20')) || 20;
+        const RERANKER_CANDIDATE_CAP = parseInt(getSetting('reranker_cap', '100')) || 100;
         let topResults = results.slice(0, Math.min(adaptiveK, RERANKER_CANDIDATE_CAP));
         
         if (rerankerReady && topResults.length > 1) {
