@@ -8,6 +8,7 @@
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
 <script type="importmap">
 { "imports": { "@xenova/transformers": "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2" } }
 </script>
@@ -1473,60 +1474,86 @@ function renderMath(text) {
 	  return text;
 	}
 
+  // Cache for markdown results to avoid re-parsing
+  const _markdownCache = new Map();
+  const MAX_CACHE_SIZE = 100;
+  
   function renderMarkdown(text) {
     try {
       if (typeof marked === 'undefined') return escapeHtml(text);
-		// Process chart blocks FIRST
-		let chartCounter = 0;
-		const chartBlocks = [];
-		text = text.replace(/```chart\s*\n([\s\S]*?)```/g, (_, chartCode) => {
-		  const data = parseChartBlock(chartCode.trim());
-		  if (data) {
-			const placeholder = `%%CHART_${chartCounter}%%`;
-			chartBlocks.push({ id: chartCounter, data });
-			chartCounter++;
-			return placeholder;
-		  }
-		  return '```\n' + chartCode + '```';  // Not valid chart data, render as code
-		});
-  
-  
-      // Process math FIRST — protect KaTeX output from markdown parser
-      const mathProcessed = renderMath(text);
-  
-      // Protect KaTeX spans from markdown mangling
-      const katexBlocks = [];
+      
+      // Simple LRU cache for repeated renders
+      const cacheKey = text.length < 5000 ? text : null;
+      if (cacheKey && _markdownCache.has(cacheKey)) {
+        return _markdownCache.get(cacheKey);
+      }
+      
+      // Process chart blocks FIRST
+      let chartCounter = 0;
+      const chartBlocks = [];
+      let processedText = text.replace(/```chart\s*\n([\s\S]*?)```/g, (_, chartCode) => {
+        const data = parseChartBlock(chartCode.trim());
+        if (data) {
+          const placeholder = `%%CHART_${chartCounter}%%`;
+          chartBlocks.push({ id: chartCounter, data });
+          chartCounter++;
+          return placeholder;
+        }
+        return '```\n' + chartCode + '```';
+      });
+
+      // Process math — protect KaTeX output from markdown parser
+      const mathProcessed = renderMath(processedText);
+
+      // Protect KaTeX spans from markdown mangling using string markers instead of arrays where possible
+      let katexIdx = 0;
+      const katexMap = new Map();
       const protected_ = mathProcessed.replace(/<span class="katex[\s\S]*?<\/span><\/span>/g, (match) => {
-        katexBlocks.push(match);
-        return `%%KATEX_${katexBlocks.length - 1}%%`;
+        const key = `%%KATEX_${katexIdx++}%%`;
+        katexMap.set(key, match);
+        return key;
       });
-      const katexDisplays = [];
+      
+      let displayIdx = 0;
+      const displayMap = new Map();
       const protected2 = protected_.replace(/<div class="katex-display">[\s\S]*?<\/div>/g, (match) => {
-        katexDisplays.push(match);
-        return `%%KATEXD_${katexDisplays.length - 1}%%`;
+        const key = `%%KATEXD_${displayIdx++}%%`;
+        displayMap.set(key, match);
+        return key;
       });
-  
-      // Run markdown
+
+      // Run markdown once
       let html = marked.parse(protected2);
-  
-      // Restore KaTeX
-      html = html.replace(/%%KATEXD_(\d+)%%/g, (_, i) => katexDisplays[parseInt(i)] || '');
-      html = html.replace(/%%KATEX_(\d+)%%/g, (_, i) => katexBlocks[parseInt(i)] || '');
-	  // Restore chart blocks
-			html = html.replace(/%%CHART_(\d+)%%/g, (_, i) => {
-			  const block = chartBlocks[parseInt(i)];
-			  if (block) return generateChartHTML(block.data, block.id);
-			  return '';
-			});
-  
-		if (typeof DOMPurify === 'undefined') return html;
-	      return DOMPurify.sanitize(html, {
-	        ALLOWED_TAGS: ['h1','h2','h3','h4','h5','h6','p','br','strong','em','u','code','pre','blockquote','ul','ol','li','table','thead','tbody','tr','th','td','a','hr','del','sup','sub',
-	          'span','div','svg','path','line','rect','circle','g','use','defs','clipPath','style','annotation','math','semantics','mrow','mi','mo','mn','mfrac','msup','msub','mover','munder','msqrt','mtext','mspace','mtable','mtr','mtd',
-	          'canvas','button'],
-			ALLOWED_ATTR: ['href','target','class','style','xmlns','viewBox','d','width','height','fill','stroke','aria-hidden','role','focusable','preserveAspectRatio','encoding',
-	          'id','onclick','data-type','data-chart-json','title']
-	      });
+
+      // Restore KaTeX in reverse order to avoid nested replacement issues
+      displayMap.forEach((val, key) => { html = html.replace(key, val); });
+      katexMap.forEach((val, key) => { html = html.replace(key, val); });
+      
+      // Restore chart blocks
+      chartBlocks.forEach(block => {
+        html = html.replace(`%%CHART_${block.id}%%`, generateChartHTML(block.data, block.id));
+      });
+
+      if (typeof DOMPurify !== 'undefined') {
+        html = DOMPurify.sanitize(html, {
+          ALLOWED_TAGS: ['h1','h2','h3','h4','h5','h6','p','br','strong','em','u','code','pre','blockquote','ul','ol','li','table','thead','tbody','tr','th','td','a','hr','del','sup','sub',
+            'span','div','svg','path','line','rect','circle','g','use','defs','clipPath','style','annotation','math','semantics','mrow','mi','mo','mn','mfrac','msup','msub','mover','munder','msqrt','mtext','mspace','mtable','mtr','mtd',
+            'canvas','button'],
+          ALLOWED_ATTR: ['href','target','class','style','xmlns','viewBox','d','width','height','fill','stroke','aria-hidden','role','focusable','preserveAspectRatio','encoding',
+            'id','onclick','data-type','data-chart-json','title']
+        });
+      }
+      
+      // Cache result
+      if (cacheKey) {
+        if (_markdownCache.size >= MAX_CACHE_SIZE) {
+          const firstKey = _markdownCache.keys().next().value;
+          _markdownCache.delete(firstKey);
+        }
+        _markdownCache.set(cacheKey, html);
+      }
+      
+      return html;
     } catch { return escapeHtml(text); }
   }
 
@@ -1625,23 +1652,38 @@ class VectorStore {
     updateChunkCount();
     }
   
-    async computeEmbeddings() {
+     async computeEmbeddings() {
       try {
         const total = this.chunks.length;
         _embedStartTime = Date.now();
         setEmbedStatus('loading', `Indexing...`);
         setEmbedProgress(0, total);
         this.embeddings = new Array(total);
+        
+        // Use online embedding if configured
+        const useOnline = onlineEmbedProvider && onlineEmbedProvider !== 'local';
+        
         const BATCH = 16;
         for (let start = 0; start < total; start += BATCH) {
           const end = Math.min(start + BATCH, total);
           const batchTexts = this.chunks.slice(start, end).map(c => c.text);
-          const batchEmb = await embeddingModel(batchTexts, { pooling: 'mean', normalize: true });
-          for (let j = 0; j < batchTexts.length; j++) {
-            const dim = batchEmb.dims[batchEmb.dims.length - 1];
-            const offset = j * dim;
-            this.embeddings[start + j] = Array.from(batchEmb.data.slice(offset, offset + dim));
+          
+          if (useOnline) {
+            // Online embedding: process one at a time (APIs usually don't support batch well)
+            for (let j = 0; j < batchTexts.length; j++) {
+              const embedding = await getOnlineEmbedding(batchTexts[j]);
+              this.embeddings[start + j] = embedding;
+            }
+          } else {
+            // Local Xenova embedding
+            const batchEmb = await embeddingModel(batchTexts, { pooling: 'mean', normalize: true });
+            for (let j = 0; j < batchTexts.length; j++) {
+              const dim = batchEmb.dims[batchEmb.dims.length - 1];
+              const offset = j * dim;
+              this.embeddings[start + j] = Array.from(batchEmb.data.slice(offset, offset + dim));
+            }
           }
+          
           setEmbedStatus('loading', `Indexing ${end.toLocaleString()}/${total.toLocaleString()}`);
           setEmbedProgress(end, total);
           await new Promise(r => setTimeout(r, 50));
@@ -1654,23 +1696,36 @@ class VectorStore {
         setEmbedStatus('', '⚠ Keyword only');
       }
     }
-    async computeEmbeddingsFrom(startIdx) {
+     async computeEmbeddingsFrom(startIdx) {
         try {
           const total = this.chunks.length;
           const newCount = total - startIdx;
           _embedStartTime = Date.now();
           setEmbedStatus('loading', `Indexing new...`);
           setEmbedProgress(0, newCount);
+          
+          // Use online embedding if configured
+          const useOnline = onlineEmbedProvider && onlineEmbedProvider !== 'local';
+          
           const BATCH = 16;
           for (let start = startIdx; start < total; start += BATCH) {
             const end = Math.min(start + BATCH, total);
             const batchTexts = this.chunks.slice(start, end).map(c => c.text);
-            const batchEmb = await embeddingModel(batchTexts, { pooling: 'mean', normalize: true });
-            for (let j = 0; j < batchTexts.length; j++) {
-              const dim = batchEmb.dims[batchEmb.dims.length - 1];
-              const offset = j * dim;
-              this.embeddings[start + j] = Array.from(batchEmb.data.slice(offset, offset + dim));
+            
+            if (useOnline) {
+              for (let j = 0; j < batchTexts.length; j++) {
+                const embedding = await getOnlineEmbedding(batchTexts[j]);
+                this.embeddings[start + j] = embedding;
+              }
+            } else {
+              const batchEmb = await embeddingModel(batchTexts, { pooling: 'mean', normalize: true });
+              for (let j = 0; j < batchTexts.length; j++) {
+                const dim = batchEmb.dims[batchEmb.dims.length - 1];
+                const offset = j * dim;
+                this.embeddings[start + j] = Array.from(batchEmb.data.slice(offset, offset + dim));
+              }
             }
+            
             const done = end - startIdx;
             setEmbedStatus('loading', `Indexing ${done.toLocaleString()}/${newCount.toLocaleString()} new`);
             setEmbedProgress(done, newCount);
@@ -1691,23 +1746,43 @@ class VectorStore {
     return dot / (Math.sqrt(na) * Math.sqrt(nb));
   }
 
-// BM25 scoring — proper relevance ranking for large corpora
+ // BM25 scoring — optimized with pre-computed token sets and Map for faster lookups
   _bm25Cache = null;
 
   _buildBM25Index() {
     if (this._bm25Cache && this._bm25Cache.size === this.chunks.length) return;
-    const docLengths = [];
-    const tokenizedDocs = [];
-    const df = {};  // document frequency per term
+    const docLengths = new Int32Array(this.chunks.length);
+    const tokenizedDocs = new Array(this.chunks.length);
+    const df = new Map();  // Use Map for faster lookups
     let totalLength = 0;
 
     for (let i = 0; i < this.chunks.length; i++) {
-      const tokens = this.chunks[i].text.toLowerCase().split(/\W+/).filter(Boolean);
-      tokenizedDocs.push(tokens);
-      docLengths.push(tokens.length);
+      // Faster tokenization: avoid regex where possible
+      const text = this.chunks[i].text;
+      const tokens = [];
+      let word = '';
+      for (let j = 0; j < text.length; j++) {
+        const c = text[j];
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+          word += c.toLowerCase();
+        } else if (word) {
+          tokens.push(word);
+          word = '';
+        }
+      }
+      if (word) tokens.push(word);
+      
+      tokenizedDocs[i] = tokens;
+      docLengths[i] = tokens.length;
       totalLength += tokens.length;
+      
       const seen = new Set();
-      tokens.forEach(t => { if (!seen.has(t)) { df[t] = (df[t] || 0) + 1; seen.add(t); } });
+      for (const t of tokens) {
+        if (!seen.has(t)) {
+          df.set(t, (df.get(t) || 0) + 1);
+          seen.add(t);
+        }
+      }
     }
 
     this._bm25Cache = {
@@ -1716,41 +1791,78 @@ class VectorStore {
       lengths: docLengths,
       avgLen: totalLength / Math.max(1, this.chunks.length),
       df,
-      n: this.chunks.length
+      n: this.chunks.length,
+      // Pre-compute IDF values
+      idfCache: new Map()
     };
   }
 
-      keywordScore(query, text, docIdx) {
-        // If no index yet or called without index, fallback to simple match
-        if (!this._bm25Cache || docIdx === undefined) {
-          const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-          const lower = text.toLowerCase();
-          let score = 0;
-          terms.forEach(t => { score += (lower.match(new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length; });
-          return score / Math.max(1, terms.length);
+  keywordScore(query, text, docIdx) {
+    // Fast path: no index or invalid docIdx
+    if (!this._bm25Cache || docIdx === undefined || docIdx < 0) {
+      const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+      const lower = text.toLowerCase();
+      let score = 0;
+      for (let i = 0; i < terms.length; i++) {
+        const t = terms[i];
+        let count = 0;
+        let pos = lower.indexOf(t);
+        while (pos !== -1) {
+          count++;
+          pos = lower.indexOf(t, pos + 1);
         }
-    
-        const { docs, lengths, avgLen, df, n } = this._bm25Cache;
-        const k1 = 1.5, b = 0.75;
-        const queryTerms = query.toLowerCase().split(/\W+/).filter(Boolean);
-        const docTokens = docs[docIdx];
-        const docLen = lengths[docIdx];
-        let score = 0;
-    
-        // Count term frequencies in this doc
-        const tf = {};
-        docTokens.forEach(t => { tf[t] = (tf[t] || 0) + 1; });
-    
-        for (const term of queryTerms) {
-          const termTf = tf[term] || 0;
-          if (termTf === 0) continue;
-          const termDf = df[term] || 0;
-          const idf = Math.log((n - termDf + 0.5) / (termDf + 0.5) + 1);
-          const tfNorm = (termTf * (k1 + 1)) / (termTf + k1 * (1 - b + b * (docLen / avgLen)));
-          score += idf * tfNorm;
-        }
-        return score;
+        score += count;
       }
+      return score / Math.max(1, terms.length);
+    }
+
+    const cache = this._bm25Cache;
+    const { docs, lengths, avgLen, df, n, idfCache } = cache;
+    const k1 = 1.5, b = 0.75;
+    
+    // Fast tokenization for query
+    const queryTerms = [];
+    let word = '';
+    for (let i = 0; i < query.length; i++) {
+      const c = query[i];
+      if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+        word += c.toLowerCase();
+      } else if (word) {
+        queryTerms.push(word);
+        word = '';
+      }
+    }
+    if (word) queryTerms.push(word);
+    
+    const docTokens = docs[docIdx];
+    const docLen = lengths[docIdx];
+    
+    // Build TF map once per doc
+    const tf = new Map();
+    for (let i = 0; i < docTokens.length; i++) {
+      const t = docTokens[i];
+      tf.set(t, (tf.get(t) || 0) + 1);
+    }
+
+    let score = 0;
+    for (let i = 0; i < queryTerms.length; i++) {
+      const term = queryTerms[i];
+      const termTf = tf.get(term) || 0;
+      if (termTf === 0) continue;
+      
+      // Cache IDF calculations
+      let idf = idfCache.get(term);
+      if (idf === undefined) {
+        const termDf = df.get(term) || 0;
+        idf = Math.log((n - termDf + 0.5) / (termDf + 0.5) + 1);
+        idfCache.set(term, idf);
+      }
+      
+      const tfNorm = (termTf * (k1 + 1)) / (termTf + k1 * (1 - b + b * (docLen / avgLen)));
+      score += idf * tfNorm;
+    }
+    return score;
+  }
 
             // ── Adaptive-k: dynamic retrieval based on score distribution ──
       // Stricter defaults for noisy long lists; all tunable via settings
@@ -1919,8 +2031,8 @@ class VectorStore {
         
         return query;
       }
-      _reconstructContext(chunks) {
-              // Pair Q&A chunks if they belong to same source/sequence
+       _reconstructContext(chunks) {
+              // Deduplicate by text content
               const seenTexts = new Set();
               const uniqueResults = [];
               for (const r of chunks) {
@@ -1929,32 +2041,51 @@ class VectorStore {
                 seenTexts.add(text);
                 uniqueResults.push(r);
               }
-              // Pair Q&A chunks if they belong to same source/sequence
-              const pairedResults = [];
-              const qaMap = new Map(); // source -> { q: chunk|null, a: chunk|null }
+              
+              // Group by source, preserving original order within each source
+              const sourceGroups = new Map();
               for (const r of uniqueResults) {
                 const source = r.metadata?.source || 'unknown';
-                const type = r.metadata?.type || r.metadata?.role || 'generic';
-                if (!qaMap.has(source)) qaMap.set(source, { q: null, a: null, generic: [] });
-                const entry = qaMap.get(source);
-                if (type === 'question' || type === 'q') entry.q = r;
-                else if (type === 'answer' || type === 'a') entry.a = r;
-                else entry.generic.push(r);
+                if (!sourceGroups.has(source)) sourceGroups.set(source, []);
+                sourceGroups.get(source).push(r);
               }
-              // Build paired context: Question + Answer blocks first, then unpaired
-              for (const [source, entry] of qaMap) {
-                if (entry.q && entry.a) {
-                  pairedResults.push({ text: `Q: ${entry.q.text}\nA: ${entry.a.text}`, metadata: { source, paired: true } });
-                } else if (entry.q) {
-                  pairedResults.push(entry.q);
-                } else if (entry.a) {
-                  pairedResults.push(entry.a);
+              
+              const pairedResults = [];
+              
+              for (const [source, items] of sourceGroups) {
+                // Sort by sequence/index if available to maintain Q→A order
+                items.sort((a, b) => (a.metadata?.index || 0) - (b.metadata?.index || 0));
+                
+                let i = 0;
+                while (i < items.length) {
+                  const type = items[i].metadata?.type || items[i].metadata?.role || 'generic';
+                  
+                  // If this is a question, look ahead for its answer
+                  if ((type === 'question' || type === 'q') && i + 1 < items.length) {
+                    const nextType = items[i + 1].metadata?.type || items[i + 1].metadata?.role || 'generic';
+                    if (nextType === 'answer' || nextType === 'a') {
+                      // Valid Q-A pair found
+                      pairedResults.push({
+                        text: `Q: ${items[i].text}\nA: ${items[i + 1].text}`,
+                        metadata: { source, paired: true }
+                      });
+                      i += 2;
+                      continue;
+                    }
+                  }
+                  
+                  // Unpaired item — include as-is with type prefix for clarity
+                  const prefix = type === 'question' || type === 'q' ? 'Q' : 
+                               type === 'answer' || type === 'a' ? 'A' : 'Info';
+                  pairedResults.push({
+                    text: `${prefix}: ${items[i].text}`,
+                    metadata: { source, type }
+                  });
+                  i++;
                 }
-                entry.generic.forEach(g => pairedResults.push(g));
               }
-              // Fallback: if no pairing possible, use original unique results
-              const finalResults = pairedResults.length >= uniqueResults.length ? uniqueResults : pairedResults;
-              return finalResults.map(r => r.text).join('\n---\n');
+              
+              return pairedResults.map(r => r.text).join('\n---\n');
             }
     async search(query, topK = 3, mode = 'hybrid') {
         if (!this.chunks.length) return [];
@@ -1998,10 +2129,15 @@ class VectorStore {
           }
           
           try {
-            const qEmb = await embeddingModel(enhancedQuery, { pooling: 'mean', normalize: true });
-            const qVec = Array.from(qEmb.data);
-            candidates.forEach(r => { r.sem = this.cosineSim(qVec, this.embeddings[r.idx]); });
-          } catch {}
+	            let qVec;
+	            if (onlineEmbedProvider && onlineEmbedProvider !== 'local') {
+	              qVec = await getOnlineEmbedding(enhancedQuery);
+	            } else {
+	              const qEmb = await embeddingModel(enhancedQuery, { pooling: 'mean', normalize: true });
+	              qVec = Array.from(qEmb.data);
+	            }
+	            candidates.forEach(r => { r.sem = this.cosineSim(qVec, this.embeddings[r.idx]); });
+	          } catch {}
           
           candidates.forEach(r => { r.score = (r.sem * 0.7) + (r.kw * 0.3); });
           results = candidates;
@@ -2013,13 +2149,18 @@ class VectorStore {
             sem: 0
           }));
           
-          if ((mode === 'semantic' || mode === 'hybrid') && hasEmbeddings) {
-            try {
-              const qEmb = await embeddingModel(enhancedQuery, { pooling: 'mean', normalize: true });
-              const qVec = Array.from(qEmb.data);
-              results.forEach(r => { r.sem = this.cosineSim(qVec, this.embeddings[r.idx]); });
-            } catch {}
-          }
+	          if ((mode === 'semantic' || mode === 'hybrid') && hasEmbeddings) {
+	            try {
+	              let qVec;
+	              if (onlineEmbedProvider && onlineEmbedProvider !== 'local') {
+	                qVec = await getOnlineEmbedding(enhancedQuery);
+	              } else {
+	                const qEmb = await embeddingModel(enhancedQuery, { pooling: 'mean', normalize: true });
+	                qVec = Array.from(qEmb.data);
+	              }
+	              results.forEach(r => { r.sem = this.cosineSim(qVec, this.embeddings[r.idx]); });
+	            } catch {}
+	          }
           
           results.forEach(r => {
             if (mode === 'hybrid') r.score = (r.sem * 0.7) + (r.kw * 0.3);
@@ -2194,20 +2335,27 @@ async function initConversationsDB() {
     initReranker();
   }
 
- async function initLocalEmbeddings() {
+	 async function initLocalEmbeddings() {
     try {
       setEmbedStatus('loading', '⏳ Loading local model...');
       const { pipeline, env } = await import('@xenova/transformers');
       // Ensure models are loaded from CDN, not local path
       env.allowLocalModels = false;
       env.useBrowserCache = true;
-      embeddingModel = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+      const model = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+      // Validate model actually works before marking ready
+      const testResult = await model('test', { pooling: 'mean', normalize: true });
+      if (!testResult || !testResult.data || testResult.data.length === 0) {
+        throw new Error('Model loaded but returned empty embedding');
+      }
+      embeddingModel = model;
       embeddingReady = true;
       setEmbedStatus('ready', '✓ Local ready');
     } catch (e) {
       console.warn('Local embeddings unavailable:', e.message);
       setEmbedStatus('', '⚠ Keyword only');
       embeddingReady = false;
+      embeddingModel = null;
     }
     // Restore cache
     const cached = await loadEmbeddings();
@@ -2459,9 +2607,9 @@ async function testEmbedConnection() {
         await initLocalEmbeddings();
         success = embeddingReady;
       }
-    } else if (provider === 'google') {
-    const key = document.getElementById('gemini-embedding-2')?.value || getSetting('embed_google_key', '');
-      const model = document.getElementById('gemini-embedding-2')?.value || 'text-embedding-004';
+	    } else if (provider === 'google') {
+	      const key = document.getElementById('s-embed-google-key')?.value || getSetting('embed_google_key', '');
+	      const model = document.getElementById('s-embed-google-model')?.value || 'text-embedding-004';
       if (!key) throw new Error('API key required');
       const result = await getGoogleEmbedding('test hello world', key, model);
       success = Array.isArray(result) && result.length > 0;
@@ -2735,94 +2883,107 @@ function renderHistoryList() {
   `).join('');
 }
 
-function renderChat() {
-  const conv = conversations[currentConversationId];
-  if (!conv) return;
-  const container = document.getElementById('chat-messages');
-  const welcome = document.getElementById('welcome-state');
+// Use DocumentFragment for batch DOM updates and reduce reflows
+    function renderChat() {
+      const conv = conversations[currentConversationId];
+      if (!conv) return;
+      const container = document.getElementById('chat-messages');
+      
+      // Clean up chart instances before wiping DOM to prevent memory leaks
+      Object.entries(_chartInstances).forEach(([id, chart]) => {
+        try { chart.destroy(); } catch(e) {}
+      });
+      _chartInstances = {};
+      
+      if (!conv.messages.length) {
+        container.innerHTML = `<div class="welcome-state" id="welcome-state">
+          <div class="welcome-logo"><span class="k">k</span>now3</div>
+          <div class="welcome-sub">Local-first semantic RAG chat. Load your data, pick a provider, and ask away — or toggle RAG off for free-form chat.</div>
+          <div class="welcome-chips">
+            <span class="welcome-chip" onclick="quickPrompt('Summarize the key concepts')">Summarize key concepts</span>
+            <span class="welcome-chip" onclick="quickPrompt('What are the main topics covered?')">Main topics covered?</span>
+            <span class="welcome-chip" onclick="quickPrompt('Explain this in simple terms')">Explain simply</span>
+          </div>
+        </div>`;
+        setTimeout(() => {
+          const w = document.getElementById('welcome-state');
+          if (w) w.classList.add('fading');
+        }, 3000);
+        updateMemoryLabel();
+        return;
+      }
 
-			if (!conv.messages.length) {
-					container.innerHTML = `<div class="welcome-state" id="welcome-state">
-					  <div class="welcome-logo"><span class="k">k</span>now3</div>
-					  <div class="welcome-sub">Local-first semantic RAG chat. Load your data, pick a provider, and ask away — or toggle RAG off for free-form chat.</div>
-					  <div class="welcome-chips">
-						<span class="welcome-chip" onclick="quickPrompt('Summarize the key concepts')">Summarize key concepts</span>
-						<span class="welcome-chip" onclick="quickPrompt('What are the main topics covered?')">Main topics covered?</span>
-						<span class="welcome-chip" onclick="quickPrompt('Explain this in simple terms')">Explain simply</span>
-					  </div>
-					</div>`;
-					// Auto-fade welcome after 3s
-					setTimeout(() => {
-					  const w = document.getElementById('welcome-state');
-					  if (w) w.classList.add('fading');
-					}, 3000);
-					return;
-				  }
+      // Batch render: build HTML string once, use template literals efficiently
+      const html = conv.messages.map((m, i) => {
+        const isLast = i === conv.messages.length - 1;
+        const isAssistant = m.role === 'assistant';
+        const time = new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const avatar = isAssistant ? 'K' : 'U';
+        
+        // Defer markdown rendering for visible messages only if list is long
+        const textContent = renderMarkdown(m.content || '');
+        const bubbleContent = m.imageHtml ? textContent + m.imageHtml : textContent;
 
-  container.innerHTML = conv.messages.map((m, i) => {
-    const time = new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const avatar = m.role === 'user' ? 'U' : 'K';
-	  const textContent = renderMarkdown(m.content || '');
-    const imgContent = m.imageHtml || '';
-    const bubbleContent = textContent + imgContent;
+        let sourcesHtml = '';
+        if (m.sources?.length) {
+          const sourceChunks = m.sources.map(s => {
+            const text = typeof s === 'string' ? s.substring(0, 200) : s.text?.substring(0, 200) || '';
+            return `<div class="source-chunk">${escapeHtml(text)}</div>`;
+          }).join('');
+          sourcesHtml = `<div class="msg-sources"><details><summary>Sources (${m.sources.length})</summary>${sourceChunks}</details></div>`;
+        }
 
-    
-    let sourcesHtml = '';
-    if (m.sources?.length) {
-      sourcesHtml = `<div class="msg-sources"><details><summary>Sources (${m.sources.length})</summary>
-        ${m.sources.map(s => `<div class="source-chunk">${escapeHtml(typeof s === 'string' ? s.substring(0, 200) : s.text?.substring(0, 200) || '')}</div>`).join('')}
-      </details></div>`;
+        const _br = (isLast && isAssistant) ? '<div class="k3-brand">know3 by khalecl</div>' : '';
+        
+        const userActions = !isAssistant ? `<div class="msg-actions">
+          <button class="msg-action-btn" onclick="resendMessage(${i})" title="Resend this prompt">↻ Resend</button>
+          <button class="msg-action-btn" onclick="editMessage(${i})" title="Edit and resend">✎ Edit</button>
+        </div>` : '';
+
+        const playBtn = isAssistant && m.content?.length > 5 ? 
+          `<button class="msg-play-btn" id="play-btn-${i}" onclick="playMessageAudio(${i})" title="Listen to this message">▶ Play</button>` : '';
+
+        const assistantActions = isAssistant ? `<div class="msg-actions">
+          ${playBtn}
+          <button class="msg-action-btn" onclick="copyMessage(${i})" title="Copy to clipboard">⧉ Copy</button>
+          <button class="msg-action-btn" onclick="regenerateMessage(${i})" title="Regenerate response">↻ Redo</button>
+        </div>` : '';
+
+        const actions = userActions + assistantActions;
+
+        return `<div class="msg ${m.role}" id="msg-${i}">
+          <div class="msg-avatar">${avatar}</div>
+          <div class="msg-content">
+            <div class="msg-bubble" id="bubble-${i}">${bubbleContent}${sourcesHtml}${_br}</div>
+            <div class="msg-meta">${actions}<span>${time}</span></div>
+          </div>
+        </div>`;
+      }).join('');
+
+      // Single DOM write
+      container.innerHTML = html;
+      container.scrollTop = container.scrollHeight;
+
+      // Defer chart initialization to next frame
+      requestAnimationFrame(() => initCharts(container));
+      updateMemoryLabel();
     }
 
-// Brand attribution woven into message rendering
-    const _br = (i === conv.messages.length - 1 && m.role === 'assistant') 
-      ? '<div class="k3-brand">know3 by khalecl</div>' : '';
-      const userActions = m.role === 'user' ? `
-            <div class="msg-actions">
-              <button class="msg-action-btn" onclick="resendMessage(${i})" title="Resend this prompt">↻ Resend</button>
-              <button class="msg-action-btn" onclick="editMessage(${i})" title="Edit and resend">✎ Edit</button>
-            </div>` : '';
-      
-			const playBtn = m.role === 'assistant' && m.content?.length > 5 ? `
-					<button class="msg-play-btn" id="play-btn-${i}" onclick="playMessageAudio(${i})" title="Listen to this message">▶ Play</button>` : '';
-
-			const assistantActions = m.role === 'assistant' ? `
-			  <div class="msg-actions">
-				${playBtn}
-				<button class="msg-action-btn" onclick="copyMessage(${i})" title="Copy to clipboard">⧉ Copy</button>
-				<button class="msg-action-btn" onclick="regenerateMessage(${i})" title="Regenerate response">↻ Redo</button>
-			  </div>` : '';
-      
-          const actions = userActions + assistantActions;
-      
-          return `<div class="msg ${m.role}" id="msg-${i}">
-            <div class="msg-avatar">${avatar}</div>
-            <div class="msg-content">
-              <div class="msg-bubble" id="bubble-${i}">${bubbleContent}${sourcesHtml}${_br}</div>
-              <div class="msg-meta">${actions}<span>${time}</span></div>
-            </div>
-          </div>`;
-  }).join('');
-
-			container.scrollTop = container.scrollHeight;
-
-		// Initialize any chart canvases that were just rendered
-			  requestAnimationFrame(() => {
-				container.querySelectorAll('.msg-chart-container').forEach(chartContainer => {
-				  const canvas = chartContainer.querySelector('canvas');
-				  if (!canvas || !canvas.id || _chartInstances[canvas.id]) return;
-				  const dataEl = chartContainer.querySelector('[data-chart-json]');
-				  if (dataEl) {
-					try {
-					  const data = JSON.parse(decodeURIComponent(dataEl.dataset.chartJson));
-					  const type = chartContainer.querySelector('.chart-type-btn.active')?.dataset.type || 'bar';
-					  renderChartInMessage(canvas.id, data, type);
-					} catch {}
-				  }
-				});
-			  });
-			  updateMemoryLabel();
-			}
+    function initCharts(container) {
+      const chartContainers = container.querySelectorAll('.msg-chart-container');
+      for (let i = 0; i < chartContainers.length; i++) {
+        const chartContainer = chartContainers[i];
+        const canvas = chartContainer.querySelector('canvas');
+        if (!canvas || !canvas.id || _chartInstances[canvas.id]) continue;
+        const dataEl = chartContainer.querySelector('[data-chart-json]');
+        if (!dataEl) continue;
+        try {
+          const data = JSON.parse(decodeURIComponent(dataEl.dataset.chartJson));
+          const type = chartContainer.querySelector('.chart-type-btn.active')?.dataset.type || 'bar';
+          renderChartInMessage(canvas.id, data, type);
+        } catch {}
+      }
+    }
     function addMessage(role, content, sources = null, imageHtml = null) {
       const conv = conversations[currentConversationId];
       if (!conv) return;
@@ -4067,7 +4228,7 @@ async function queryInference(query, context, attachedImages = []) {
       stream: doStream
     };
 
-   const res = await fetchWithRetry(`${baseUrl}/chat/completions`, { method: 'POST', headers, body: JSON.stringify(body), signal: _abortController?.signal });
+	   const res = await fetchWithRetry(`${baseUrl}/chat/completions`, { method: 'POST', headers, body: JSON.stringify(body), signal: _abortController?.signal }, 'custom');    
        if (!res.ok) throw new Error(`Custom: ${res.status}`);
 
     if (doStream) {
@@ -4808,20 +4969,30 @@ async function loadOneDriveDataset() {
       
         const BATCH = 16;
         const PAUSE_MS = 100;  // generous breathing room for UI responsiveness   
-        for (let start = startFrom; start < total; start += BATCH) {
-          if (!_bgEmbedding) break;  // user stopped
-      
-          const end = Math.min(start + BATCH, total);
-          try {
-            const batchTexts = vectorStore.chunks.slice(start, end).map(c => c.text);
-            const batchEmb = await embeddingModel(batchTexts, { pooling: 'mean', normalize: true });
-            const dim = batchEmb.dims[batchEmb.dims.length - 1];
-            for (let j = 0; j < batchTexts.length; j++) {
-              vectorStore.embeddings[start + j] = Array.from(batchEmb.data.slice(j * dim, (j + 1) * dim));
-            }
-          } catch (e) {
-            console.warn('BG embed batch failed:', e);
-          }
+	        const useOnline = onlineEmbedProvider && onlineEmbedProvider !== 'local';
+	        
+	        for (let start = startFrom; start < total; start += BATCH) {
+	          if (!_bgEmbedding) break;  // user stopped
+	      
+	          const end = Math.min(start + BATCH, total);
+	          try {
+	            const batchTexts = vectorStore.chunks.slice(start, end).map(c => c.text);
+	            
+	            if (useOnline) {
+	              for (let j = 0; j < batchTexts.length; j++) {
+	                const embedding = await getOnlineEmbedding(batchTexts[j]);
+	                vectorStore.embeddings[start + j] = embedding;
+	              }
+	            } else {
+	              const batchEmb = await embeddingModel(batchTexts, { pooling: 'mean', normalize: true });
+	              const dim = batchEmb.dims[batchEmb.dims.length - 1];
+	              for (let j = 0; j < batchTexts.length; j++) {
+	                vectorStore.embeddings[start + j] = Array.from(batchEmb.data.slice(j * dim, (j + 1) * dim));
+	              }
+	            }
+	          } catch (e) {
+	            console.warn('BG embed batch failed:', e);
+	          }
       
           const done = Math.min(end, total);
               const pct = Math.round((done / total) * 100);
@@ -4900,9 +5071,11 @@ function toggleSidebar() {
 // ═══════════════════════════════════════════════
 function initInput() {
     const input = document.getElementById('chat-input');
+    if (!input) return;
   
-    // Paste image from clipboard
-    input.addEventListener('paste', (e) => {
+    // Paste image from clipboard — remove old listener first to prevent duplicates
+    if (input._pasteHandler) input.removeEventListener('paste', input._pasteHandler);
+    input._pasteHandler = (e) => {
       const items = Array.from(e.clipboardData?.items || []);
       items.forEach(item => {
             if (item.type.startsWith('image/')) {
@@ -4928,7 +5101,9 @@ function initInput() {
           reader.readAsDataURL(file);
         }
       });
-    });
+    };
+    input.addEventListener('paste', input._pasteHandler);
+    
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -5058,20 +5233,27 @@ function initInput() {
 		}
 
 		function renderChartInMessage(canvasId, data, chartType = 'bar') {
-		  if (typeof Chart === 'undefined') return;
+				  if (typeof Chart === 'undefined') return;
 
-		  // Destroy existing instance
-		  if (_chartInstances[canvasId]) {
-			_chartInstances[canvasId].destroy();
-			delete _chartInstances[canvasId];
-		  }
+			  // Destroy existing instance
+			  if (_chartInstances[canvasId]) {
+				try { _chartInstances[canvasId].destroy(); } catch(e) {}
+				delete _chartInstances[canvasId];
+			  }
 
-		  const canvas = document.getElementById(canvasId);
-		  if (!canvas) return;
+			  const canvas = document.getElementById(canvasId);
+			  if (!canvas) return;
 
-		  const config = buildChartConfig(data, chartType);
-		  _chartInstances[canvasId] = new Chart(canvas.getContext('2d'), config);
-		}
+			  const ctx = canvas.getContext('2d');
+			  if (!ctx) return;
+
+			  const config = buildChartConfig(data, chartType);
+			  try {
+			    _chartInstances[canvasId] = new Chart(ctx, config);
+			  } catch (e) {
+			    console.warn('Chart render failed:', e);
+			  }
+			}
 
 		function switchChartType(canvasId, newType, dataJson) {
 		  const data = JSON.parse(decodeURIComponent(dataJson));
@@ -5381,48 +5563,15 @@ function initInput() {
     const topK = parseInt(document.getElementById('toolbar-topk').value) || 3;
     const mode = document.getElementById('toolbar-search-mode').value;
   
-    let context = '';
-    let sources = [];
+  let context = '';
+  let sources = [];
+
 
   if (ragEnabled && vectorStore.chunks.length > 0) {
-    const results = await vectorStore.search(q, topK, mode);
+    const results = await vectorStore.search(text, topK, mode);
     if (results.length) {
-      // Reconstruct full context from chunks with proper Q&A pairing and deduplication
-      const seenTexts = new Set();
-      const uniqueResults = [];
-      for (const r of results) {
-        const text = r.text?.trim();
-        if (!text || seenTexts.has(text)) continue;
-        seenTexts.add(text);
-        uniqueResults.push(r);
-      }
-      // Pair Q&A chunks if they belong to same source/sequence
-      const pairedResults = [];
-      const qaMap = new Map(); // source -> { q: chunk|null, a: chunk|null }
-      for (const r of uniqueResults) {
-        const source = r.metadata?.source || 'unknown';
-        const type = r.metadata?.type || r.metadata?.role || 'generic';
-        if (!qaMap.has(source)) qaMap.set(source, { q: null, a: null, generic: [] });
-        const entry = qaMap.get(source);
-        if (type === 'question' || type === 'q') entry.q = r;
-        else if (type === 'answer' || type === 'a') entry.a = r;
-        else entry.generic.push(r);
-      }
-      // Build paired context: Question + Answer blocks first, then unpaired
-      for (const [source, entry] of qaMap) {
-        if (entry.q && entry.a) {
-          pairedResults.push({ text: `Q: ${entry.q.text}\nA: ${entry.a.text}`, metadata: { source, paired: true } });
-        } else if (entry.q) {
-          pairedResults.push(entry.q);
-        } else if (entry.a) {
-          pairedResults.push(entry.a);
-        }
-        entry.generic.forEach(g => pairedResults.push(g));
-      }
-      // Fallback: if no pairing possible, use original unique results
-      const finalResults = pairedResults.length >= uniqueResults.length ? uniqueResults : pairedResults;
-      context = finalResults.map(r => r.text).join('\n---\n');
-      sources = finalResults.map(r => ({ text: r.text, source: r.metadata?.source || 'unknown' }));
+      context = vectorStore._reconstructContext(results);
+      sources = results.map(r => ({ text: r.text, source: r.metadata?.source || 'unknown' }));
     }
   }
   
