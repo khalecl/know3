@@ -2082,7 +2082,7 @@ async function initConversationsDB() {
     try {
       const { pipeline } = await import('@xenova/transformers');
       // Cross-encoder for re-ranking: scores query-chunk relevance
-      rerankerModel = await pipeline('text-classification', 'Xenova/cross-encoder-ms-marco-MiniLM-L-6-v2', {
+      rerankerModel = await pipeline('text-classification', 'Xenova/ms-marco-MiniLM-L-6-v2', {
         quantized: true, // Use quantized model for faster inference
       });
       rerankerReady = true;
