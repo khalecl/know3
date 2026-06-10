@@ -1035,8 +1035,9 @@ body {
       <button class="modal-tab active" onclick="switchSettingsTab('tab-provider',this)">Provider</button>
       <button class="modal-tab" onclick="switchSettingsTab('tab-data',this)">Data</button>
       <button class="modal-tab" onclick="switchSettingsTab('tab-prompt',this)">System Prompt</button>
+      <button class="modal-tab" onclick="switchSettingsTab('tab-embeddings',this)">Embeddings</button>
       <button class="modal-tab" onclick="switchSettingsTab('tab-advanced',this)">Advanced</button>
-    </div>
+    </div>    
     <div class="modal-body">
 
       <!-- TAB: Provider -->
@@ -1193,17 +1194,119 @@ body {
       </div>
 
       <!-- TAB: Advanced -->
-      <div class="modal-pane" id="tab-advanced">
-			<div class="field">
-	          <label class="field-label">Chat Memory (message pairs)</label>
-	          <input type="number" id="s-chat-memory" value="5" min="0" max="20">
-	          <div class="field-hint">Number of previous message pairs (user+assistant) sent with each request. 0 = no memory, each message is standalone. Higher = better continuity but more tokens used.</div>
-	        </div>
+ <!-- TAB: Embeddings -->
+      <div class="modal-pane" id="tab-embeddings">
         <div class="field">
-          <label class="field-label">Embedding Model</label>
-          <input type="text" id="s-embed-model" value="Xenova/all-MiniLM-L6-v2" disabled>
-          <div class="field-hint">In-browser transformer for semantic search</div>
+          <label class="field-label">Embedding Provider</label>
+          <select id="s-embed-provider" onchange="onEmbedProviderChange()">
+            <option value="local">Local Xenova (Free, Browser)</option>
+            <option value="google">Google Gemini</option>
+            <option value="openai">OpenAI</option>
+            <option value="together">Together AI</option>
+            <option value="custom">Custom (OpenAI-compatible)</option>
+          </select>
+          <div class="field-hint" id="embed-provider-hint">Uses in-browser transformer. No API key needed.</div>
         </div>
+
+        <!-- Local Xenova config -->
+        <div class="provider-config active" id="cfg-embed-local">
+          <div class="field">
+            <label class="field-label">Local Model</label>
+            <input type="text" id="s-embed-local-model" value="Xenova/all-MiniLM-L6-v2" disabled>
+            <div class="field-hint">In-browser transformer for semantic search. No internet required.</div>
+          </div>
+        </div>
+
+        <!-- Google Gemini embedding config -->
+        <div class="provider-config" id="cfg-embed-google">
+          <div class="field">
+            <label class="field-label">API Key</label>
+            <input type="password" id="s-embed-google-key" placeholder="From aistudio.google.com">
+          </div>
+          <div class="field">
+            <label class="field-label">Model</label>
+            <div style="display:flex;gap:0.3rem">
+                <select id="s-embed-google-model" style="flex:1">
+                <option value="text-embedding-004" selected>text-embedding-004 (latest)</option>
+                <option value="gemini-embedding-exp-03-07">gemini-embedding-exp-03-07 (experimental)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- OpenAI embedding config -->
+        <div class="provider-config" id="cfg-embed-openai">
+          <div class="field">
+            <label class="field-label">API Key</label>
+            <input type="password" id="s-embed-openai-key" placeholder="sk-...">
+          </div>
+          <div class="field">
+            <label class="field-label">Model</label>
+            <div style="display:flex;gap:0.3rem">
+              <select id="s-embed-openai-model" style="flex:1">
+                <option value="text-embedding-3-small">text-embedding-3-small</option>
+                <option value="text-embedding-3-large">text-embedding-3-large</option>
+                <option value="text-embedding-ada-002">text-embedding-ada-002</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Together AI embedding config -->
+        <div class="provider-config" id="cfg-embed-together">
+          <div class="field">
+            <label class="field-label">API Key</label>
+            <input type="password" id="s-embed-together-key" placeholder="From api.together.xyz">
+          </div>
+          <div class="field">
+            <label class="field-label">Model</label>
+            <div style="display:flex;gap:0.3rem">
+              <select id="s-embed-together-model" style="flex:1">
+                <option value="togethercomputer/m2-bert-80M-8k-retrieval">m2-bert-80M-8k-retrieval</option>
+                <option value="togethercomputer/m2-bert-80M-32k-retrieval">m2-bert-80M-32k-retrieval</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Custom embedding config -->
+        <div class="provider-config" id="cfg-embed-custom">
+          <div class="field">
+            <label class="field-label">Base URL</label>
+            <input type="text" id="s-embed-custom-url" placeholder="https://api.example.com/v1">
+            <div class="field-hint">Must support OpenAI-compatible /embeddings endpoint</div>
+          </div>
+          <div class="field">
+            <label class="field-label">API Key</label>
+            <input type="password" id="s-embed-custom-key" placeholder="sk-... or leave empty">
+          </div>
+          <div class="field">
+            <label class="field-label">Model</label>
+            <div style="display:flex;gap:0.3rem">
+              <select id="s-embed-custom-model" style="flex:1"><option value="">— enter URL & key, then click Refresh —</option></select>
+              <button class="btn-secondary" onclick="fetchEmbedCustomModels()" style="width:auto;padding:0.4rem 0.6rem;white-space:nowrap" title="Refresh models">↻</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="field" style="margin-top:1rem">
+          <button class="btn-secondary" onclick="testEmbedConnection()" style="width:100%">Test Embedding Connection</button>
+          <div class="field-hint" id="embed-test-result"></div>
+        </div>
+
+        <div class="field" style="margin-top:1rem;padding:0.7rem;background:var(--surface2);border:1px solid var(--border);border-radius:8px;">
+          <div style="font-size:0.75rem;color:var(--accent);font-weight:600;margin-bottom:0.3rem">Current Status</div>
+          <div id="embed-status-detail" style="font-size:0.72rem;color:var(--text3);">Local Xenova — ready when model loads</div>
+        </div>
+      </div>
+
+      <!-- TAB: Advanced -->
+      <div class="modal-pane" id="tab-advanced">
+				<div class="field">
+		          <label class="field-label">Chat Memory (message pairs)</label>
+		          <input type="number" id="s-chat-memory" value="5" min="0" max="20">
+		          <div class="field-hint">Number of previous message pairs (user+assistant) sent with each request. 0 = no memory, each message is standalone. Higher = better continuity but more tokens used.</div>
+		        </div>
         <div class="field">
           <label class="field-label">Stream Responses</label>
           <select id="s-streaming">
@@ -1220,6 +1323,15 @@ body {
   </div>
 </div>
 <script>
+
+// Embedding provider configurations
+const EMBED_PROVIDERS = {
+  local: { name: 'Local Xenova', needsKey: false, needsUrl: false, defaultModel: 'Xenova/all-MiniLM-L6-v2' },
+  google: { name: 'Google Gemini', needsKey: true, needsUrl: false, defaultModel: 'gemini-embedding-2', endpoint: 'https://generativelanguage.googleapis.com/v1beta/models' },
+  openai: { name: 'OpenAI', needsKey: true, needsUrl: false, defaultModel: 'text-embedding-3-small', endpoint: 'https://api.openai.com/v1/embeddings' },
+  together: { name: 'Together AI', needsKey: true, needsUrl: false, defaultModel: 'togethercomputer/m2-bert-80M-8k-retrieval', endpoint: 'https://api.together.xyz/v1/embeddings' },
+  custom: { name: 'Custom', needsKey: true, needsUrl: true, defaultModel: '', endpoint: '' },
+};
 
   // ═══════════════════════════════════════════════
 // INTEGRITY & BRAND PROTECTION
@@ -1266,6 +1378,9 @@ setInterval(() => {
 // ═══════════════════════════════════════════════
 let embeddingModel = null;
 let embeddingReady = false;
+let onlineEmbedProvider = null;  // 'local', 'google', 'openai', 'together', 'custom'
+let onlineEmbedModel = null;     // model name for online provider
+let onlineEmbedConfig = {};      // { key, url, model, etc. }
 let rerankerModel = null;
 let rerankerReady = false;
 let conversations = {};
@@ -1499,7 +1614,7 @@ class VectorStore {
 	        });
 	      }
 	    });
-	
+
     if (embeddingReady && this.chunks.length > 0) {
       const prevCount = this.embeddings.length;
       this._pendingEmbedStart = prevCount;
@@ -1638,17 +1753,17 @@ class VectorStore {
       }
 
             // ── Adaptive-k: dynamic retrieval based on score distribution ──
-       // Relaxed defaults to return more results; all tunable via settings
+      // Stricter defaults for noisy long lists; all tunable via settings
       _adaptiveKCutoff(scores, options = {}) {
         if (scores.length === 0) return 0;
         if (scores.length === 1) return 1;
 
-        // Relaxed defaults: larger maxK, gentler cliff, higher entropy threshold
-        const userMinK = parseInt(getSetting('adaptive_min_k', '5')) || 5;
-        const userMaxK = parseInt(getSetting('adaptive_max_k', '100')) || 100;
-        const userCliff = parseFloat(getSetting('adaptive_cliff', '0.35')) || 0.35;
-        const userVariance = parseFloat(getSetting('adaptive_variance', '1.5')) || 1.5;
-        const userEntropy = parseFloat(getSetting('adaptive_entropy', '0.35')) || 0.35;
+        // Stricter defaults: smaller maxK, tighter cliff, lower entropy threshold
+        const userMinK = parseInt(getSetting('adaptive_min_k', '2')) || 2;
+        const userMaxK = parseInt(getSetting('adaptive_max_k', '12')) || 12;
+        const userCliff = parseFloat(getSetting('adaptive_cliff', '0.25')) || 0.25;
+        const userVariance = parseFloat(getSetting('adaptive_variance', '2.0')) || 2.0;
+        const userEntropy = parseFloat(getSetting('adaptive_entropy', '0.2')) || 0.2;
 
         const { minK = userMinK, maxK = userMaxK, cliffRatio = userCliff, varianceSpike = userVariance, entropyThreshold = userEntropy } = options;
         const n = scores.length;
@@ -1665,8 +1780,8 @@ class VectorStore {
         for (let i = 1; i < n; i++) {
           const drop = normalized[i - 1] - normalized[i];
           const relativeDrop = drop / (normalized[i - 1] + 0.001);
-          // Relaxed: only require relative drop, allow higher scores after cliff
-          if (relativeDrop > cliffRatio && drop > 0.05) {
+          // Stricter: require both relative drop AND absolute drop
+          if (relativeDrop > cliffRatio && drop > 0.08 && normalized[i] < 0.5) {
             cliffIdx = i;
             break;
           }
@@ -1685,8 +1800,8 @@ class VectorStore {
           
           for (let i = 0; i < gaps.length; i++) {
             const zScore = (gaps[i] - meanGap) / stdGap;
-            // Gentler position penalty
-            const positionPenalty = Math.max(0.7, 1 - (i / n) * 0.3);
+            // Require higher z-score for early positions (stricter)
+            const positionPenalty = Math.max(0.5, 1 - (i / n) * 0.5);
             if (zScore > varianceSpike * positionPenalty && i >= minK - 1) {
               varianceIdx = i + 1;
               break;
@@ -1696,7 +1811,7 @@ class VectorStore {
 
         // 4. Entropy-based: if top scores are too similar, we need more context
         let entropyIdx = n;
-        const topN = Math.min(n, 25); // Increased from 15 for broader analysis
+        const topN = Math.min(n, 15); // Reduced from 20 for tighter analysis
         const topScores = normalized.slice(0, topN);
         const sumScores = topScores.reduce((a, b) => a + b, 0);
         if (sumScores > 0) {
@@ -1704,23 +1819,22 @@ class VectorStore {
           const entropy = -probs.reduce((sum, p) => p > 0 ? sum + p * Math.log(p) : sum, 0);
           const maxEntropy = Math.log(topN);
           const normalizedEntropy = maxEntropy > 0 ? entropy / maxEntropy : 0;
-          // Higher threshold = more permissive (include more when scores are spread out)
+          // Lower threshold = stricter (need more dissimilarity to expand)
           if (normalizedEntropy < entropyThreshold) {
-            entropyIdx = Math.min(n, Math.floor(maxK * 0.75)); // Less conservative expansion
+            entropyIdx = Math.min(n, Math.floor(maxK * 0.5)); // More conservative expansion
           }
         }
 
-        // 5. Combine signals: use the most permissive (largest) cutoff that still makes sense
-        // Default to maxK unless there's a strong signal to cut earlier
-        let cutoff = Math.max(cliffIdx, varianceIdx);
+        // 5. Combine signals: use the most conservative (smallest) cutoff
+        let cutoff = Math.min(cliffIdx, varianceIdx);
         
         // If entropy suggests we need more, use that instead
         if (entropyIdx < n && cutoff < entropyIdx) {
           cutoff = entropyIdx;
         }
 
-        // Enforce hard boundaries — but prefer maxK when no strong cutoff found
-        cutoff = Math.max(minK, Math.min(maxK, cutoff === n ? maxK : cutoff));
+        // Enforce hard boundaries
+        cutoff = Math.max(minK, Math.min(maxK, cutoff));
         
         return cutoff;
       }
@@ -1843,7 +1957,6 @@ class VectorStore {
               return finalResults.map(r => r.text).join('\n---\n');
             }
     async search(query, topK = 3, mode = 'hybrid') {
-      
         if (!this.chunks.length) return [];
 
         // ── HyDE: Enhance query with hypothetical answer before embedding ──
@@ -1881,7 +1994,7 @@ class VectorStore {
           if (isLarge) {
             // For large datasets, use BM25 to narrow down to top 50 candidates first
             candidates.sort((a, b) => b.kw - a.kw);
-            candidates = candidates.slice(0, 150);
+            candidates = candidates.slice(0, 50);
           }
           
           try {
@@ -1924,42 +2037,27 @@ class VectorStore {
         // Apply adaptive-k cutoff based on score distribution
         const adaptiveK = this._adaptiveKCutoff(results, {
           minK: parseInt(document.getElementById('toolbar-topk')?.value) || 3,
-          maxK: 100, // Allow up to 100 pairs as requested
-          cliffRatio: 0.35, // Gentler cliff detection
-          varianceSpike: 1.5,
-          entropyThreshold: 0.35
+          maxK: 15, // Reduced from 40 — cap reranker input
+          cliffRatio: 0.25, // Stricter defaults
+          varianceSpike: 2.0,
+          entropyThreshold: 0.2
         });
 
         // ── RERANKER: Re-rank top candidates with cross-encoder for better relevance ──
-        // Cap candidates sent to reranker for performance — but allow more with larger maxK
-        const RERANKER_CANDIDATE_CAP = parseInt(getSetting('reranker_cap', '100')) || 100;
+        // Cap candidates sent to reranker for performance and noise reduction
+        const RERANKER_CANDIDATE_CAP = parseInt(getSetting('reranker_cap', '20')) || 20;
         let topResults = results.slice(0, Math.min(adaptiveK, RERANKER_CANDIDATE_CAP));
         
         if (rerankerReady && topResults.length > 1) {
           try {
             // Prepare query-chunk pairs for cross-encoder
-             // Prepare separate arrays for queries and passages
-            const queries = topResults.map(() => query);
-            const passages = topResults.map(r => r.chunk.text.substring(0, 512));
+            const pairs = topResults.map(r => ({
+              text: query, // Use original query for reranker, not HyDE
+              text_pair: r.chunk.text.substring(0, 512) // Truncate to avoid token limits
+            }));
             
-            // Run cross-encoder scoring using raw tokenizer + model
-            const inputs = await rerankerTokenizer(queries, {
-                text_pair: passages, 
-                padding: true,
-                truncation: true,
-                return_tensor: true
-            });
-            
-            const outputs = await rerankerModelRaw(inputs);
-            const logits = outputs.logits;
-            
-            // Extract scores (apply sigmoid to the logit for class 1)
-            const scores = [];
-            for (let i = 0; i < logits.dims[0]; i++) {
-                const logit = logits.data[i * logits.dims[1] + 1];
-                const score = 1 / (1 + Math.exp(-logit)); // Sigmoid function
-                scores.push({ score });
-            }
+            // Run cross-encoder scoring
+            const scores = await rerankerModel(pairs);
             
             // Combine original score with reranker score — 50/50 weight if noise persists
             const rerankWeight = parseFloat(getSetting('reranker_weight', '0.5')) || 0.5;
@@ -1977,9 +2075,7 @@ class VectorStore {
           }
         }
 
-        // Final relevance filter: remove very low scoring results that survived reranking
-          const finalResults = topResults.filter(r => r.score > 0.05);
-          return finalResults.map(r => r.chunk);
+        return topResults.map(r => r.chunk);
       }
 
   clear() { this.chunks = []; this.embeddings = []; updateChunkCount(); }
@@ -2067,18 +2163,49 @@ async function initConversationsDB() {
   });
 }
 
-  // ═══════════════════════════════════════════════
+ // ═══════════════════════════════════════════════
   // EMBEDDING INIT
   // ═══════════════════════════════════════════════
   async function initEmbeddings() {
+    // Load saved embedding provider preference
+    const savedProvider = getSetting('embed_provider', 'local');
+    onlineEmbedProvider = savedProvider;
+    
+    if (savedProvider !== 'local') {
+      // Try to initialize online embedding
+      const success = await initOnlineEmbedding(savedProvider);
+      if (success) {
+        setEmbedStatus('ready', `✓ ${EMBED_PROVIDERS[savedProvider]?.name || savedProvider} ready`);
+        updateEmbedHeaderStatus();
+        // Still load local Xenova as fallback
+        initLocalEmbeddingsBackground();
+        // Load reranker in background
+        initReranker();
+        return;
+      }
+      // Fall back to local if online init failed
+      console.warn(`Online embedding ${savedProvider} failed, falling back to local`);
+      onlineEmbedProvider = 'local';
+    }
+    
+    // Local Xenova path
+    await initLocalEmbeddings();
+    // Load reranker in background
+    initReranker();
+  }
+
+ async function initLocalEmbeddings() {
     try {
-      setEmbedStatus('loading', '⏳ Loading model...');
-      const { pipeline } = await import('@xenova/transformers');
+      setEmbedStatus('loading', '⏳ Loading local model...');
+      const { pipeline, env } = await import('@xenova/transformers');
+      // Ensure models are loaded from CDN, not local path
+      env.allowLocalModels = false;
+      env.useBrowserCache = true;
       embeddingModel = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
       embeddingReady = true;
-      setEmbedStatus('ready', '✓ Semantic ready');
+      setEmbedStatus('ready', '✓ Local ready');
     } catch (e) {
-      console.warn('Embeddings unavailable:', e.message);
+      console.warn('Local embeddings unavailable:', e.message);
       setEmbedStatus('', '⚠ Keyword only');
       embeddingReady = false;
     }
@@ -2090,24 +2217,328 @@ async function initConversationsDB() {
       setEmbedStatus('ready', `✓ ${cached.chunks.length} cached`);
       updateChunkCount();
     }
-    // Load reranker in background
-    initReranker();
   }
 
+ function initLocalEmbeddingsBackground() {
+    // Load local model in background for fallback
+    import('@xenova/transformers').then(({ pipeline, env }) => {
+      env.allowLocalModels = false;
+      env.useBrowserCache = true;
+      pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2').then(model => {
+        embeddingModel = model;
+        if (!embeddingReady) {
+          embeddingReady = true;
+          console.log('✓ Local Xenova loaded (background fallback)');
+        }
+      }).catch(e => console.warn('Background local embed load failed:', e));
+    }).catch(e => console.warn('Background local embed import failed:', e));
+  }
+ // ═══════════════════════════════════════════════
+  // ONLINE EMBEDDING
+  // ═══════════════════════════════════════════════
+  
+  function getEmbedProvider() {
+    return getSetting('embed_provider', 'local');
+  }
+
+  function updateEmbedHeaderStatus() {
+    const provider = getEmbedProvider();
+    const el = document.getElementById('embed-header-status');
+    if (!el) return;
+    
+    if (provider === 'local') {
+      el.textContent = embeddingReady ? 'Local' : 'Loading...';
+      el.style.color = 'var(--text3)';
+    } else {
+      const model = getSetting(`embed_${provider}_model`, EMBED_PROVIDERS[provider]?.defaultModel || '');
+      el.textContent = `${EMBED_PROVIDERS[provider]?.name || provider}/${model}`;
+      el.style.color = 'var(--accent)';
+    }
+  }
+
+  async function initOnlineEmbedding(provider) {
+    const key = getSetting(`embed_${provider}_key`, '');
+    const model = getSetting(`embed_${provider}_model`, EMBED_PROVIDERS[provider]?.defaultModel || '');
+    
+    if (!model) {
+      console.warn(`No model configured for ${provider}`);
+      return false;
+    }
+    
+    // Validate key for providers that need it
+    if (EMBED_PROVIDERS[provider]?.needsKey && !key) {
+      console.warn(`No API key for ${provider}`);
+      return false;
+    }
+    
+    onlineEmbedConfig = {
+      provider,
+      key,
+      model,
+      url: provider === 'custom' ? getSetting('embed_custom_url', '') : EMBED_PROVIDERS[provider]?.endpoint
+    };
+    
+    // Test the connection with a sample embedding
+    try {
+      const testResult = await getOnlineEmbedding('test", "hello world');
+      if (testResult && Array.isArray(testResult) && testResult.length > 0) {
+        onlineEmbedModel = model;
+        embeddingReady = true;
+        console.log(`✓ Online embedding: ${provider}/${model} (${testResult.length}d)`);
+        return true;
+      }
+    } catch (e) {
+      console.warn(`Online embedding test failed for ${provider}:`, e.message);
+    }
+    
+    return false;
+  }
+
+  async function getOnlineEmbedding(text) {
+    const provider = onlineEmbedConfig.provider;
+    if (!provider || provider === 'local') return null;
+    
+    const { key, model, url } = onlineEmbedConfig;
+    
+    switch (provider) {
+      case 'google':
+        return await getGoogleEmbedding(text, key, model);
+      case 'openai':
+        return await getOpenAIEmbedding(text, key, model, url);
+      case 'together':
+        return await getOpenAIEmbedding(text, key, model, url);
+      case 'custom':
+        return await getOpenAIEmbedding(text, key, model, url);
+      default:
+        throw new Error(`Unknown embedding provider: ${provider}`);
+    }
+  }
+
+async function getGoogleEmbedding(text, key, model) {
+    // Ensure model has proper prefix for Gemini API
+     const modelName = model.startsWith('models/') ? model : `models/${model}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/${modelName}:embedContent?key=${key}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        content: { parts: [{ text }] }
+      })
+    });
+    
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Gemini embedding: ${res.status} ${err}`);
+    }
+    
+    const data = await res.json();
+    const embedding = data.embedding?.values;
+    if (!embedding) throw new Error('No embedding in response');
+    return embedding;
+  }
+
+  async function getOpenAIEmbedding(text, key, model, endpoint) {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${key}`
+      },
+      body: JSON.stringify({
+        model,
+        input: text,
+        encoding_format: 'float'
+      })
+    });
+    
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`OpenAI embedding: ${res.status} ${err}`);
+    }
+    
+    const data = await res.json();
+    const embedding = data.data?.[0]?.embedding;
+    if (!embedding) throw new Error('No embedding in response');
+    return embedding;
+  }
+
+  // Batch online embeddings with retry
+  async function getOnlineEmbeddingsBatch(texts, onProgress) {
+    const results = [];
+    const BATCH_SIZE = 8; // Conservative for rate limits
+    
+    for (let i = 0; i < texts.length; i += BATCH_SIZE) {
+      const batch = texts.slice(i, i + BATCH_SIZE);
+      
+      // Process batch in parallel with individual retries
+      const batchPromises = batch.map(async (text, idx) => {
+        let retries = 3;
+        while (retries > 0) {
+          try {
+            const embedding = await getOnlineEmbedding(text);
+            if (onProgress) onProgress(i + idx + 1);
+            return embedding;
+          } catch (e) {
+            retries--;
+            if (retries === 0) throw e;
+            await new Promise(r => setTimeout(r, 1000 * (4 - retries))); // exponential backoff
+          }
+        }
+      });
+      
+      const batchResults = await Promise.all(batchPromises);
+      results.push(...batchResults);
+      
+      // Small delay between batches to be nice to APIs
+      if (i + BATCH_SIZE < texts.length) {
+        await new Promise(r => setTimeout(r, 100));
+      }
+    }
+    
+    return results;
+  }
+  // ═══════════════════════════════════════════════
+// EMBEDDING PROVIDER UI HANDLERS
+// ═══════════════════════════════════════════════
+function onEmbedProviderChange() {
+  const provider = document.getElementById('s-embed-provider').value;
+  setSetting('embed_provider', provider);
+  
+  // Show/hide provider config sections
+  document.querySelectorAll('[id^="cfg-embed-"]').forEach(el => {
+    el.classList.remove('active');
+  });
+  const cfgEl = document.getElementById(`cfg-embed-${provider}`);
+  if (cfgEl) cfgEl.classList.add('active');
+  
+  // Update hint
+  const hint = document.getElementById('embed-provider-hint');
+  if (hint) {
+    const hints = {
+      local: 'Uses in-browser transformer. No API key needed.',
+      google: 'Requires Google AI Studio API key.',
+      openai: 'Requires OpenAI API key.',
+      together: 'Requires Together AI API key.',
+      custom: 'Requires OpenAI-compatible /embeddings endpoint.'
+    };
+    hint.textContent = hints[provider] || '';
+  }
+  
+  // Update status detail
+  const detail = document.getElementById('embed-status-detail');
+  if (detail) {
+    const names = {
+      local: 'Local Xenova — ready when model loads',
+      google: 'Google Gemini — requires API key',
+      openai: 'OpenAI — requires API key',
+      together: 'Together AI — requires API key',
+      custom: 'Custom — configure URL and model'
+    };
+    detail.textContent = names[provider] || names.local;
+  }
+}
+
+async function testEmbedConnection() {
+  const provider = document.getElementById('s-embed-provider').value;
+  const resultEl = document.getElementById('embed-test-result');
+  
+  if (!resultEl) return;
+  
+  resultEl.textContent = 'Testing...';
+  resultEl.style.color = 'var(--warn)';
+  
+  try {
+    let success = false;
+    
+    if (provider === 'local') {
+      // Test local Xenova
+      if (embeddingReady) {
+        success = true;
+      } else {
+        // Try to initialize
+        await initLocalEmbeddings();
+        success = embeddingReady;
+      }
+    } else if (provider === 'google') {
+    const key = document.getElementById('gemini-embedding-2')?.value || getSetting('embed_google_key', '');
+      const model = document.getElementById('gemini-embedding-2')?.value || 'text-embedding-004';
+      if (!key) throw new Error('API key required');
+      const result = await getGoogleEmbedding('test hello world', key, model);
+      success = Array.isArray(result) && result.length > 0;
+    } else if (provider === 'openai') {
+      const key = document.getElementById('s-embed-openai-key')?.value || getSetting('embed_openai_key', '');
+      const model = document.getElementById('s-embed-openai-model')?.value || 'text-embedding-3-small';
+      if (!key) throw new Error('API key required');
+      const result = await getOpenAIEmbedding('test hello world', key, model, 'https://api.openai.com/v1/embeddings');
+      success = Array.isArray(result) && result.length > 0;
+    } else if (provider === 'together') {
+      const key = document.getElementById('s-embed-together-key')?.value || getSetting('embed_together_key', '');
+      const model = document.getElementById('s-embed-together-model')?.value || 'togethercomputer/m2-bert-80M-8k-retrieval';
+      if (!key) throw new Error("No API key provided, falling back to local embedding");
+      throw new Error('Together AI embedding test not yet implemented');
+    } else if (provider === 'custom') {
+      const url = document.getElementById('s-embed-custom-url')?.value || getSetting('embed_custom_url', '');
+      const key = document.getElementById('s-embed-custom-key')?.value || getSetting('embed_custom_key', '');
+      const model = document.getElementById('s-embed-custom-model')?.value || '';
+      if (!url) throw new Error('Base URL required');
+      const result = await getOpenAIEmbedding('test hello world', key, model, url.replace(/\/$/, '') + '/embeddings');
+      success = Array.isArray(result) && result.length > 0;
+    }
+    
+    if (success) {
+      resultEl.textContent = '✓ Connection successful';
+      resultEl.style.color = 'var(--accent)';
+    } else {
+      throw new Error('Test returned empty result');
+    }
+  } catch (e) {
+    resultEl.textContent = `✗ Failed: ${e.message}`;
+    resultEl.style.color = 'var(--danger)';
+  }
+}
+
+async function fetchEmbedCustomModels() {
+  const url = document.getElementById('s-embed-custom-url')?.value?.trim();
+  const key = document.getElementById('s-embed-custom-key')?.value?.trim() || '';
+  const sel = document.getElementById('s-embed-custom-model');
+  if (!url) { sel.innerHTML = '<option value="">Enter URL first</option>'; return; }
+  sel.innerHTML = '<option value="">Loading...</option>';
+  sel.disabled = true;
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (key) headers['Authorization'] = `Bearer ${key}`;
+    const res = await fetch(`${url.replace(/\/$/, '')}/models`, { headers });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const models = (data.data || data.models || [])
+      .map(m => typeof m === 'string' ? m : (m.id || m.name))
+      .filter(Boolean)
+      .sort();
+    if (!models.length) throw new Error('No models found');
+    const saved = getSetting('embed_custom_model', '');
+    sel.innerHTML = models.map(m => `<option value="${m}" ${m === saved ? 'selected' : ''}>${m}</option>`).join('');
+    if (!saved || !models.includes(saved)) sel.selectedIndex = 0;
+  } catch (e) {
+    sel.innerHTML = `<option value="">Failed: ${e.message}</option>`;
+  } finally {
+    sel.disabled = false;
+  }
+}
   // ═══════════════════════════════════════════════
   // RERANKER INIT
   // ═══════════════════════════════════════════════
-
-    let rerankerTokenizer = null;
-    let rerankerModelRaw = null;
-
-  async function initReranker() {
+ async function initReranker() {
     try {
-       const { AutoTokenizer, AutoModelForSequenceClassification } = await import('@xenova/transformers');
-      rerankerTokenizer = await AutoTokenizer.from_pretrained('Xenova/bge-reranker-base', { quantized: true });
-      rerankerModelRaw = await AutoModelForSequenceClassification.from_pretrained('Xenova/bge-reranker-base', { quantized: true });
+      const { pipeline, env } = await import('@xenova/transformers');
+      // Ensure models are loaded from CDN, not local path
+      env.allowLocalModels = false;
+      env.useBrowserCache = true;
+      // Cross-encoder for re-ranking: scores query-chunk relevance
+      rerankerModel = await pipeline('text-classification', 'Xenova/cross-encoder-ms-marco-MiniLM-L-6-v2', {
+        quantized: true, // Use quantized model for faster inference
+      });
       rerankerReady = true;
-      console.log('✓ Reranker loaded (Raw API)');
+      console.log('✓ Reranker loaded');
     } catch (e) {
       console.warn('Reranker unavailable:', e.message);
       rerankerReady = false;
@@ -3298,11 +3729,11 @@ async function readSSEStream(response) {
           if (!trimmed || !trimmed.startsWith('data: ')) continue;
           const payload = trimmed.slice(6);
           if (payload === '[DONE]') continue;
-	          try {
-	            const json = JSON.parse(payload);
-	            const token = json.choices?.[0]?.delta?.content || json.choices?.[0]?.message?.content || '';
-	            if (token) { full += token; updateStreamBubble(full); }
-	          } catch {}
+          try {
+            const json = JSON.parse(payload);
+            const token = json.choices?.[0]?.delta?.content || '';
+            if (token) { full += token; updateStreamBubble(full); }
+          } catch {}
         }
       }
     } catch (e) {
