@@ -1638,17 +1638,17 @@ class VectorStore {
       }
 
             // ── Adaptive-k: dynamic retrieval based on score distribution ──
-      // Stricter defaults for noisy long lists; all tunable via settings
+       // Relaxed defaults to return more results; all tunable via settings
       _adaptiveKCutoff(scores, options = {}) {
         if (scores.length === 0) return 0;
         if (scores.length === 1) return 1;
 
-        // Stricter defaults: smaller maxK, tighter cliff, lower entropy threshold
-        const userMinK = parseInt(getSetting('adaptive_min_k', '2')) || 2;
-        const userMaxK = parseInt(getSetting('adaptive_max_k', '12')) || 12;
-        const userCliff = parseFloat(getSetting('adaptive_cliff', '0.25')) || 0.25;
-        const userVariance = parseFloat(getSetting('adaptive_variance', '2.0')) || 2.0;
-        const userEntropy = parseFloat(getSetting('adaptive_entropy', '0.2')) || 0.2;
+        // Relaxed defaults: larger maxK, gentler cliff, higher entropy threshold
+        const userMinK = parseInt(getSetting('adaptive_min_k', '5')) || 5;
+        const userMaxK = parseInt(getSetting('adaptive_max_k', '100')) || 100;
+        const userCliff = parseFloat(getSetting('adaptive_cliff', '0.35')) || 0.35;
+        const userVariance = parseFloat(getSetting('adaptive_variance', '1.5')) || 1.5;
+        const userEntropy = parseFloat(getSetting('adaptive_entropy', '0.35')) || 0.35;
 
         const { minK = userMinK, maxK = userMaxK, cliffRatio = userCliff, varianceSpike = userVariance, entropyThreshold = userEntropy } = options;
         const n = scores.length;
@@ -1665,8 +1665,8 @@ class VectorStore {
         for (let i = 1; i < n; i++) {
           const drop = normalized[i - 1] - normalized[i];
           const relativeDrop = drop / (normalized[i - 1] + 0.001);
-          // Stricter: require both relative drop AND absolute drop
-          if (relativeDrop > cliffRatio && drop > 0.08 && normalized[i] < 0.5) {
+          // Relaxed: only require relative drop, allow higher scores after cliff
+          if (relativeDrop > cliffRatio && drop > 0.05) {
             cliffIdx = i;
             break;
           }
@@ -1685,8 +1685,8 @@ class VectorStore {
           
           for (let i = 0; i < gaps.length; i++) {
             const zScore = (gaps[i] - meanGap) / stdGap;
-            // Require higher z-score for early positions (stricter)
-            const positionPenalty = Math.max(0.5, 1 - (i / n) * 0.5);
+            // Gentler position penalty
+            const positionPenalty = Math.max(0.7, 1 - (i / n) * 0.3);
             if (zScore > varianceSpike * positionPenalty && i >= minK - 1) {
               varianceIdx = i + 1;
               break;
@@ -1696,7 +1696,7 @@ class VectorStore {
 
         // 4. Entropy-based: if top scores are too similar, we need more context
         let entropyIdx = n;
-        const topN = Math.min(n, 15); // Reduced from 20 for tighter analysis
+        const topN = Math.min(n, 25); // Increased from 15 for broader analysis
         const topScores = normalized.slice(0, topN);
         const sumScores = topScores.reduce((a, b) => a + b, 0);
         if (sumScores > 0) {
@@ -1704,22 +1704,23 @@ class VectorStore {
           const entropy = -probs.reduce((sum, p) => p > 0 ? sum + p * Math.log(p) : sum, 0);
           const maxEntropy = Math.log(topN);
           const normalizedEntropy = maxEntropy > 0 ? entropy / maxEntropy : 0;
-          // Lower threshold = stricter (need more dissimilarity to expand)
+          // Higher threshold = more permissive (include more when scores are spread out)
           if (normalizedEntropy < entropyThreshold) {
-            entropyIdx = Math.min(n, Math.floor(maxK * 0.5)); // More conservative expansion
+            entropyIdx = Math.min(n, Math.floor(maxK * 0.75)); // Less conservative expansion
           }
         }
 
-        // 5. Combine signals: use the most conservative (smallest) cutoff
-        let cutoff = Math.min(cliffIdx, varianceIdx);
+        // 5. Combine signals: use the most permissive (largest) cutoff that still makes sense
+        // Default to maxK unless there's a strong signal to cut earlier
+        let cutoff = Math.max(cliffIdx, varianceIdx);
         
         // If entropy suggests we need more, use that instead
         if (entropyIdx < n && cutoff < entropyIdx) {
           cutoff = entropyIdx;
         }
 
-        // Enforce hard boundaries
-        cutoff = Math.max(minK, Math.min(maxK, cutoff));
+        // Enforce hard boundaries — but prefer maxK when no strong cutoff found
+        cutoff = Math.max(minK, Math.min(maxK, cutoff === n ? maxK : cutoff));
         
         return cutoff;
       }
@@ -1842,6 +1843,7 @@ class VectorStore {
               return finalResults.map(r => r.text).join('\n---\n');
             }
     async search(query, topK = 3, mode = 'hybrid') {
+      
         if (!this.chunks.length) return [];
 
         // ── HyDE: Enhance query with hypothetical answer before embedding ──
@@ -1879,7 +1881,7 @@ class VectorStore {
           if (isLarge) {
             // For large datasets, use BM25 to narrow down to top 50 candidates first
             candidates.sort((a, b) => b.kw - a.kw);
-            candidates = candidates.slice(0, 50);
+            candidates = candidates.slice(0, 150);
           }
           
           try {
@@ -1922,27 +1924,42 @@ class VectorStore {
         // Apply adaptive-k cutoff based on score distribution
         const adaptiveK = this._adaptiveKCutoff(results, {
           minK: parseInt(document.getElementById('toolbar-topk')?.value) || 3,
-          maxK: 15, // Reduced from 40 — cap reranker input
-          cliffRatio: 0.25, // Stricter defaults
-          varianceSpike: 2.0,
-          entropyThreshold: 0.2
+          maxK: 100, // Allow up to 100 pairs as requested
+          cliffRatio: 0.35, // Gentler cliff detection
+          varianceSpike: 1.5,
+          entropyThreshold: 0.35
         });
 
         // ── RERANKER: Re-rank top candidates with cross-encoder for better relevance ──
-        // Cap candidates sent to reranker for performance and noise reduction
-        const RERANKER_CANDIDATE_CAP = parseInt(getSetting('reranker_cap', '20')) || 20;
+        // Cap candidates sent to reranker for performance — but allow more with larger maxK
+        const RERANKER_CANDIDATE_CAP = parseInt(getSetting('reranker_cap', '100')) || 100;
         let topResults = results.slice(0, Math.min(adaptiveK, RERANKER_CANDIDATE_CAP));
         
         if (rerankerReady && topResults.length > 1) {
           try {
             // Prepare query-chunk pairs for cross-encoder
-            const pairs = topResults.map(r => ({
-              text: query, // Use original query for reranker, not HyDE
-              text_pair: r.chunk.text.substring(0, 512) // Truncate to avoid token limits
-            }));
+             // Prepare separate arrays for queries and passages
+            const queries = topResults.map(() => query);
+            const passages = topResults.map(r => r.chunk.text.substring(0, 512));
             
-            // Run cross-encoder scoring
-            const scores = await rerankerModel(pairs);
+            // Run cross-encoder scoring using raw tokenizer + model
+            const inputs = await rerankerTokenizer(queries, {
+                text_pair: passages, 
+                padding: true,
+                truncation: true,
+                return_tensor: true
+            });
+            
+            const outputs = await rerankerModelRaw(inputs);
+            const logits = outputs.logits;
+            
+            // Extract scores (apply sigmoid to the logit for class 1)
+            const scores = [];
+            for (let i = 0; i < logits.dims[0]; i++) {
+                const logit = logits.data[i * logits.dims[1] + 1];
+                const score = 1 / (1 + Math.exp(-logit)); // Sigmoid function
+                scores.push({ score });
+            }
             
             // Combine original score with reranker score — 50/50 weight if noise persists
             const rerankWeight = parseFloat(getSetting('reranker_weight', '0.5')) || 0.5;
@@ -1960,7 +1977,9 @@ class VectorStore {
           }
         }
 
-        return topResults.map(r => r.chunk);
+        // Final relevance filter: remove very low scoring results that survived reranking
+          const finalResults = topResults.filter(r => r.score > 0.05);
+          return finalResults.map(r => r.chunk);
       }
 
   clear() { this.chunks = []; this.embeddings = []; updateChunkCount(); }
@@ -2078,15 +2097,17 @@ async function initConversationsDB() {
   // ═══════════════════════════════════════════════
   // RERANKER INIT
   // ═══════════════════════════════════════════════
+
+    let rerankerTokenizer = null;
+    let rerankerModelRaw = null;
+
   async function initReranker() {
     try {
-      const { pipeline } = await import('@xenova/transformers');
-      // Cross-encoder for re-ranking: scores query-chunk relevance
-      rerankerModel = await pipeline('text-classification', 'Xenova/ms-marco-MiniLM-L-6-v2', {
-        quantized: true, // Use quantized model for faster inference
-      });
+       const { AutoTokenizer, AutoModelForSequenceClassification } = await import('@xenova/transformers');
+      rerankerTokenizer = await AutoTokenizer.from_pretrained('Xenova/bge-reranker-base', { quantized: true });
+      rerankerModelRaw = await AutoModelForSequenceClassification.from_pretrained('Xenova/bge-reranker-base', { quantized: true });
       rerankerReady = true;
-      console.log('✓ Reranker loaded');
+      console.log('✓ Reranker loaded (Raw API)');
     } catch (e) {
       console.warn('Reranker unavailable:', e.message);
       rerankerReady = false;
@@ -3277,11 +3298,11 @@ async function readSSEStream(response) {
           if (!trimmed || !trimmed.startsWith('data: ')) continue;
           const payload = trimmed.slice(6);
           if (payload === '[DONE]') continue;
-          try {
-            const json = JSON.parse(payload);
-            const token = json.choices?.[0]?.delta?.content || '';
-            if (token) { full += token; updateStreamBubble(full); }
-          } catch {}
+	          try {
+	            const json = JSON.parse(payload);
+	            const token = json.choices?.[0]?.delta?.content || json.choices?.[0]?.message?.content || '';
+	            if (token) { full += token; updateStreamBubble(full); }
+	          } catch {}
         }
       }
     } catch (e) {
