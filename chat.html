@@ -1746,25 +1746,28 @@ class VectorStore {
     return dot / (Math.sqrt(na) * Math.sqrt(nb));
   }
 
- // BM25 scoring — optimized with pre-computed token sets and Map for faster lookups
+// BM25 scoring — optimized with pre-computed token sets and Map for faster lookups
   _bm25Cache = null;
 
   _buildBM25Index() {
     if (this._bm25Cache && this._bm25Cache.size === this.chunks.length) return;
     const docLengths = new Int32Array(this.chunks.length);
     const tokenizedDocs = new Array(this.chunks.length);
-    const df = new Map();  // Use Map for faster lookups
+    const df = new Map();
     let totalLength = 0;
 
+    // Pre-allocate arrays for better memory locality
     for (let i = 0; i < this.chunks.length; i++) {
-      // Faster tokenization: avoid regex where possible
       const text = this.chunks[i].text;
       const tokens = [];
       let word = '';
+      // Manual char iteration is faster than regex split
       for (let j = 0; j < text.length; j++) {
         const c = text[j];
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
-          word += c.toLowerCase();
+        const code = c.charCodeAt(0);
+        // ASCII alphanumeric check (faster than char range comparisons)
+        if ((code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122)) {
+          word += (code >= 65 && code <= 90) ? String.fromCharCode(code + 32) : c; // inline toLowerCase
         } else if (word) {
           tokens.push(word);
           word = '';
@@ -1773,96 +1776,96 @@ class VectorStore {
       if (word) tokens.push(word);
       
       tokenizedDocs[i] = tokens;
-      docLengths[i] = tokens.length;
-      totalLength += tokens.length;
+      const len = tokens.length;
+      docLengths[i] = len;
+      totalLength += len;
       
-      const seen = new Set();
-      for (const t of tokens) {
-        if (!seen.has(t)) {
+      // Use object as set for small token counts (faster than Set for < 100 items)
+      const seen = {};
+      for (let k = 0; k < tokens.length; k++) {
+        const t = tokens[k];
+        if (!seen[t]) {
+          seen[t] = 1;
           df.set(t, (df.get(t) || 0) + 1);
-          seen.add(t);
         }
       }
     }
 
-    this._bm25Cache = {
-      size: this.chunks.length,
-      docs: tokenizedDocs,
-      lengths: docLengths,
-      avgLen: totalLength / Math.max(1, this.chunks.length),
-      df,
-      n: this.chunks.length,
-      // Pre-compute IDF values
-      idfCache: new Map()
-    };
-  }
+        this._bm25Cache = {
+          size: this.chunks.length,
+          docs: tokenizedDocs,
+          lengths: docLengths,
+          avgLen: totalLength / Math.max(1, this.chunks.length),
+          df,
+          n: this.chunks.length,
+          idfCache: new Map()
+        };
+      }
 
-  keywordScore(query, text, docIdx) {
-    // Fast path: no index or invalid docIdx
-    if (!this._bm25Cache || docIdx === undefined || docIdx < 0) {
-      const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-      const lower = text.toLowerCase();
-      let score = 0;
-      for (let i = 0; i < terms.length; i++) {
-        const t = terms[i];
-        let count = 0;
-        let pos = lower.indexOf(t);
-        while (pos !== -1) {
-          count++;
-          pos = lower.indexOf(t, pos + 1);
+      keywordScore(query, text, docIdx) {
+        if (!this._bm25Cache || docIdx === undefined || docIdx < 0) {
+          const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+          const lower = text.toLowerCase();
+          let score = 0;
+          for (let i = 0; i < terms.length; i++) {
+            const t = terms[i];
+            let count = 0;
+            let pos = lower.indexOf(t);
+            while (pos !== -1) {
+              count++;
+              pos = lower.indexOf(t, pos + 1);
+            }
+            score += count;
+          }
+          return score / Math.max(1, terms.length);
         }
-        score += count;
-      }
-      return score / Math.max(1, terms.length);
-    }
 
-    const cache = this._bm25Cache;
-    const { docs, lengths, avgLen, df, n, idfCache } = cache;
-    const k1 = 1.5, b = 0.75;
-    
-    // Fast tokenization for query
-    const queryTerms = [];
-    let word = '';
-    for (let i = 0; i < query.length; i++) {
-      const c = query[i];
-      if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
-        word += c.toLowerCase();
-      } else if (word) {
-        queryTerms.push(word);
-        word = '';
-      }
-    }
-    if (word) queryTerms.push(word);
-    
-    const docTokens = docs[docIdx];
-    const docLen = lengths[docIdx];
-    
-    // Build TF map once per doc
-    const tf = new Map();
-    for (let i = 0; i < docTokens.length; i++) {
-      const t = docTokens[i];
-      tf.set(t, (tf.get(t) || 0) + 1);
-    }
+        const cache = this._bm25Cache;
+        const { docs, lengths, avgLen, df, n, idfCache } = cache;
+        const k1 = 1.5, b = 0.75;
+        
+        // Fast query tokenization with char codes
+        const queryTerms = [];
+        let word = '';
+        for (let i = 0; i < query.length; i++) {
+          const code = query.charCodeAt(i);
+          if ((code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122)) {
+            word += (code >= 65 && code <= 90) ? String.fromCharCode(code + 32) : query[i];
+          } else if (word) {
+            queryTerms.push(word);
+            word = '';
+          }
+        }
+        if (word) queryTerms.push(word);
+        
+        const docTokens = docs[docIdx];
+        const docLen = lengths[docIdx];
+        
+        // Build TF map using object (faster than Map for small vocabularies)
+        const tf = {};
+        for (let i = 0; i < docTokens.length; i++) {
+          const t = docTokens[i];
+          tf[t] = (tf[t] || 0) + 1;
+        }
 
-    let score = 0;
-    for (let i = 0; i < queryTerms.length; i++) {
-      const term = queryTerms[i];
-      const termTf = tf.get(term) || 0;
-      if (termTf === 0) continue;
-      
-      // Cache IDF calculations
-      let idf = idfCache.get(term);
-      if (idf === undefined) {
-        const termDf = df.get(term) || 0;
-        idf = Math.log((n - termDf + 0.5) / (termDf + 0.5) + 1);
-        idfCache.set(term, idf);
+        let score = 0;
+        for (let i = 0; i < queryTerms.length; i++) {
+          const term = queryTerms[i];
+          const termTf = tf[term] || 0;
+          if (termTf === 0) continue;
+          
+          let idf = idfCache.get(term);
+          if (idf === undefined) {
+            const termDf = df.get(term) || 0;
+            idf = Math.log((n - termDf + 0.5) / (termDf + 0.5) + 1);
+            idfCache.set(term, idf);
+          }
+          
+          const tfNorm = (termTf * (k1 + 1)) / (termTf + k1 * (1 - b + b * (docLen / avgLen)));
+          score += idf * tfNorm;
+        }
+        return score;
       }
-      
-      const tfNorm = (termTf * (k1 + 1)) / (termTf + k1 * (1 - b + b * (docLen / avgLen)));
-      score += idf * tfNorm;
-    }
-    return score;
-  }
 
             // ── Adaptive-k: dynamic retrieval based on score distribution ──
       // Stricter defaults for noisy long lists; all tunable via settings
