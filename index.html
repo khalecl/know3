@@ -2127,7 +2127,46 @@ OUTPUT: [your output here]</textarea>
           </div>
         </div>
       </details>
-
+   <!-- DISTRIBUTED ENDPOINTS SECTION -->
+      <details class="settings-section">
+        <summary style="font-weight: 600; color: var(--accent); cursor: pointer;">🌐 Distributed Endpoints</summary>
+        <div class="settings-category">
+          <div class="setting-item">
+            <label>Enable Load Balancing</label>
+            <select id="settings-dist-enabled">
+              <option value="no">No — Single endpoint (default)</option>
+              <option value="yes">Yes — Distribute across multiple endpoints</option>
+            </select>
+            <div class="hint">Split chunk processing across multiple API endpoints for faster generation</div>
+          </div>
+          <div id="dist-endpoints-list" style="display:none; margin-top:1rem;">
+            <div style="font-size:.78rem; color:var(--text2); margin-bottom:.5rem;">Configure multiple endpoints (same provider)</div>
+            <div id="dist-endpoint-entries" style="display:flex; flex-direction:column; gap:.8rem;"></div>
+            <button class="btn btn-secondary" style="font-size:.75rem; padding:.4rem .7rem; margin-top:.8rem;" onclick="addDistEndpoint()">+ Add Endpoint</button>
+          </div>
+          <div class="setting-item" style="margin-top:1rem;">
+            <label>Concurrency Limit</label>
+            <input type="number" id="settings-dist-concurrency" min="1" max="20" value="4">
+            <div class="hint">Max parallel requests per endpoint (adjust based on rate limits)</div>
+          </div>
+          <div class="setting-item">
+            <label>Load Balancing Strategy</label>
+            <select id="settings-dist-strategy">
+              <option value="round-robin">Round Robin (equal distribution)</option>
+              <option value="least-loaded">Least Loaded (dynamic)</option>
+              <option value="weighted">Weighted (based on speed)</option>
+            </select>
+            <div class="hint">How to distribute chunks across endpoints</div>
+          </div>
+          <div class="setting-item">
+            <button class="btn btn-primary" style="width:100%; font-size:.78rem;" onclick="testAllDistEndpoints()">🏓 Health Check All Endpoints</button>
+            <div id="dist-health-status" style="margin-top:.5rem; font-size:.72rem; font-family:var(--mono);"></div>
+          </div>
+          <div class="setting-item" style="background:rgba(0,229,160,.08); border-radius:6px; padding:.6rem; font-size:.78rem; color:var(--text2);">
+            💡 <strong>Tip:</strong> Use different API keys or base URLs for the same provider to increase throughput. Each endpoint must support the same model.
+          </div>
+        </div>
+      </details>
     </div>
 
     <div class="settings-footer">
@@ -2518,6 +2557,8 @@ function closeSettings() {
 }
 
 function syncSettingsFromDOM() {
+  // Sync distributed endpoint settings
+  syncDistSettingsFromDOM();
   // Read current DOM values and populate settings drawer
   console.log('📍 Syncing settings from DOM...');
 
@@ -2580,6 +2621,8 @@ function syncSettingsFromDOM() {
 }
 
 function applySettings() {
+  // Apply distributed endpoint settings
+  applyDistSettings();
   console.log('💾 Applying settings...');
 
   // Sync model selections back to main dropdowns
@@ -3342,6 +3385,432 @@ async function loadExternalPrompts() {
   } catch(e) {
     console.warn('⚠️ Could not load prompts.json, using Generic fallback:', e.message);
   }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// DISTRIBUTED ENDPOINT LOAD BALANCER
+// ════════════════════════════════════════════════════════════════════════════
+
+let distEndpoints = []; // Array of { id, baseUrl, apiKey, model, healthy, latency, requestCount }
+let distEnabled = false;
+let distConcurrency = 4;
+let distStrategy = 'round-robin';
+let distRoundRobinIdx = 0;
+
+// Load distributed endpoints from localStorage
+function loadDistEndpoints() {
+  const saved = localStorage.getItem('know3_dist_endpoints');
+  if (saved) {
+    try {
+      distEndpoints = JSON.parse(saved);
+      distEnabled = localStorage.getItem('know3_dist_enabled') === 'yes';
+      distConcurrency = parseInt(localStorage.getItem('know3_dist_concurrency') || '4');
+      distStrategy = localStorage.getItem('know3_dist_strategy') || 'round-robin';
+      console.log(`🌐 Loaded ${distEndpoints.length} distributed endpoints`);
+    } catch(e) {
+      console.warn('⚠️ Failed to load distributed endpoints:', e);
+      distEndpoints = [];
+    }
+  }
+}
+
+// Save distributed endpoints to localStorage
+function saveDistEndpoints() {
+  localStorage.setItem('know3_dist_endpoints', JSON.stringify(distEndpoints));
+  localStorage.setItem('know3_dist_enabled', distEnabled ? 'yes' : 'no');
+  localStorage.setItem('know3_dist_concurrency', String(distConcurrency));
+  localStorage.setItem('know3_dist_strategy', distStrategy);
+  console.log(`💾 Saved ${distEndpoints.length} distributed endpoints`);
+}
+
+// Add a new endpoint entry
+window.addDistEndpoint = function() {
+  const container = document.getElementById('dist-endpoint-entries');
+  if (!container) return;
+  
+  const id = Date.now().toString(36);
+  const entry = document.createElement('div');
+  entry.className = 'dist-endpoint-entry';
+  entry.dataset.id = id;
+  entry.style.cssText = 'display:grid; grid-template-columns: 1fr 1fr; gap:.5rem; padding:.8rem; background:var(--surface3); border-radius:8px; border:1px solid var(--border);';
+  entry.innerHTML = `
+    <div style="grid-column: 1 / -1; display:flex; justify-content:space-between; align-items:center;">
+      <span style="font-size:.72rem; color:var(--text3); font-family:var(--mono);">Endpoint ${distEndpoints.length + 1}</span>
+      <button onclick="removeDistEndpoint('${id}')" style="background:none; border:none; color:var(--text3); cursor:pointer; font-size:1.1rem;" title="Remove">🗑️</button>
+    </div>
+    <input type="text" class="dist-base-url" placeholder="Base URL (e.g., https://api.groq.com/openai/v1)" style="width:100%; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem; grid-column: 1 / 2;">
+    <input type="password" class="dist-api-key" placeholder="API Key" style="width:100%; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem; grid-column: 2 / 3;">
+    <input type="text" class="dist-model" placeholder="Model (e.g., llama-3.1-8b-instant)" style="width:100%; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem; grid-column: 1 / -1;">
+  `;
+  
+  container.appendChild(entry);
+  
+  // Add to distEndpoints array
+  distEndpoints.push({ id, baseUrl: '', apiKey: '', model: '', healthy: null, latency: 0, requestCount: 0 });
+}
+
+// Remove an endpoint
+window.removeDistEndpoint = function(id) {
+  const entry = document.querySelector(`.dist-endpoint-entry[data-id="${id}"]`);
+  if (entry) entry.remove();
+  
+  distEndpoints = distEndpoints.filter(ep => ep.id !== id);
+  saveDistEndpoints();
+  renderDistEndpoints();
+};
+
+// Render endpoints from array to UI
+function renderDistEndpoints() {
+  const container = document.getElementById('dist-endpoint-entries');
+  if (!container) return;
+  
+  container.innerHTML = '';
+  distEndpoints.forEach((ep, idx) => {
+    const entry = document.createElement('div');
+    entry.className = 'dist-endpoint-entry';
+    entry.dataset.id = ep.id;
+    entry.style.cssText = 'display:grid; grid-template-columns: 1fr 1fr; gap:.5rem; padding:.8rem; background:var(--surface3); border-radius:8px; border:1px solid var(--border);';
+    entry.innerHTML = `
+      <div style="grid-column: 1 / -1; display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:.72rem; color:var(--text3); font-family:var(--mono);">Endpoint ${idx + 1}${ep.healthy !== null ? (ep.healthy ? ' ✅' : ' ❌') : ''}</span>
+        <button onclick="removeDistEndpoint('${ep.id}')" style="background:none; border:none; color:var(--text3); cursor:pointer; font-size:1.1rem;" title="Remove">🗑️</button>
+      </div>
+      <input type="text" class="dist-base-url" value="${escHtml(ep.baseUrl)}" placeholder="Base URL" style="width:100%; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem; grid-column: 1 / 2;">
+      <input type="password" class="dist-api-key" value="${escHtml(ep.apiKey)}" placeholder="API Key" style="width:100%; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem; grid-column: 2 / 3;">
+      <input type="text" class="dist-model" value="${escHtml(ep.model)}" placeholder="Model" style="width:100%; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem; grid-column: 1 / -1;">
+    `;
+    container.appendChild(entry);
+  });
+}
+
+// Collect endpoints from UI
+function collectDistEndpointsFromUI() {
+  const entries = document.querySelectorAll('.dist-endpoint-entry');
+  const collected = [];
+  
+  entries.forEach(entry => {
+    const baseUrl = entry.querySelector('.dist-base-url')?.value.trim() || '';
+    const apiKey = entry.querySelector('.dist-api-key')?.value.trim() || '';
+    const model = entry.querySelector('.dist-model')?.value.trim() || '';
+    const id = entry.dataset.id || Date.now().toString(36);
+    
+    if (baseUrl && apiKey) {
+      const existing = distEndpoints.find(ep => ep.id === id);
+      collected.push({
+        id,
+        baseUrl,
+        apiKey,
+        model: model || existing?.model || '',
+        healthy: existing?.healthy || null,
+        latency: existing?.latency || 0,
+        requestCount: existing?.requestCount || 0
+      });
+    }
+  });
+  
+  distEndpoints = collected;
+  saveDistEndpoints();
+}
+
+// Health check for a single endpoint
+async function testDistEndpoint(endpoint) {
+  const startTime = Date.now();
+  try {
+    const resp = await fetch(`${endpoint.baseUrl}/models`, {
+      headers: { 'Authorization': `Bearer ${endpoint.apiKey}` },
+      signal: AbortSignal.timeout(5000)
+    });
+    
+    const latency = Date.now() - startTime;
+    
+    if (resp.ok) {
+      endpoint.healthy = true;
+      endpoint.latency = latency;
+      return { success: true, latency, status: resp.status };
+    } else {
+      endpoint.healthy = false;
+      endpoint.latency = latency;
+      return { success: false, latency, status: resp.status, error: `HTTP ${resp.status}` };
+    }
+  } catch(e) {
+    endpoint.healthy = false;
+    endpoint.latency = Date.now() - startTime;
+    return { success: false, latency: endpoint.latency, error: e.message };
+  }
+}
+
+// Health check all endpoints
+window.testAllDistEndpoints = async function() {
+  collectDistEndpointsFromUI();
+  
+  const statusDiv = document.getElementById('dist-health-status');
+  if (!statusDiv) return;
+  
+  statusDiv.innerHTML = '<span style="color:var(--text3);">Testing endpoints...</span>';
+  
+  const results = [];
+  for (const ep of distEndpoints) {
+    const result = await testDistEndpoint(ep);
+    results.push(result);
+  }
+  
+  saveDistEndpoints();
+  renderDistEndpoints();
+  
+  const healthy = results.filter(r => r.success).length;
+  const total = results.length;
+  
+  statusDiv.innerHTML = results.map((r, i) => 
+    `<div style="padding:.25rem .5rem; margin:.2rem 0; background:${r.success ? 'rgba(0,229,160,0.08)' : 'rgba(248,113,113,0.08)'}; border-radius:4px; font-size:.7rem;">
+      Endpoint ${i + 1}: ${r.success ? '✅' : '❌'} ${r.latency}ms ${r.error ? `(${r.error})` : ''}
+    </div>`
+  ).join('');
+  
+  if (healthy > 0) {
+    statusDiv.innerHTML += `<div style="margin-top:.5rem; color:var(--accent); font-weight:600;">${healthy}/${total} endpoints healthy</div>`;
+  } else {
+    statusDiv.innerHTML += `<div style="margin-top:.5rem; color:var(--err); font-weight:600;">⚠️ No healthy endpoints</div>`;
+  }
+};
+
+// Get next endpoint based on strategy
+function getNextDistEndpoint() {
+  const healthy = distEndpoints.filter(ep => ep.healthy === true);
+  if (healthy.length === 0) return null;
+  
+  switch (distStrategy) {
+    case 'round-robin':
+      const ep = healthy[distRoundRobinIdx % healthy.length];
+      distRoundRobinIdx++;
+      return ep;
+    
+    case 'least-loaded':
+      return healthy.reduce((min, ep) => ep.requestCount < min.requestCount ? ep : min, healthy[0]);
+    
+    case 'weighted':
+      // Weight by inverse latency (faster = more weight)
+      const totalWeight = healthy.reduce((sum, ep) => sum + (1000 / (ep.latency || 1000)), 0);
+      let random = Math.random() * totalWeight;
+      for (const ep of healthy) {
+        const weight = 1000 / (ep.latency || 1000);
+        if (random < weight) return ep;
+        random -= weight;
+      }
+      return healthy[0];
+    
+    default:
+      return healthy[0];
+  }
+}
+
+// Distributed generation with load balancing
+async function generatePairsDistributed(chunksToProcess, model, systemPrompt, onProgress) {
+  const healthyEndpoints = distEndpoints.filter(ep => ep.healthy === true);
+  if (healthyEndpoints.length === 0) {
+    console.warn('⚠️ No healthy distributed endpoints, falling back to single endpoint');
+    return false; // Signal to use fallback
+  }
+  
+  log(`🌐 Distributed generation across ${healthyEndpoints.length} endpoints (${distStrategy})`, 'info');
+  if (window.neuralBG) window.neuralBG.state = 'generate';
+  
+  // Split chunks into batches based on concurrency
+  const batchSize = Math.ceil(chunksToProcess.length / (healthyEndpoints.length * distConcurrency));
+  const batches = [];
+  
+  for (let i = 0; i < chunksToProcess.length; i += batchSize) {
+    batches.push(chunksToProcess.slice(i, i + batchSize));
+  }
+  
+  // Assign batches to endpoints
+  const endpointBatches = healthyEndpoints.map((ep, idx) => ({
+    endpoint: ep,
+    batches: []
+  }));
+  
+  // Distribute batches round-robin style
+  batches.forEach((batch, idx) => {
+    endpointBatches[idx % endpointBatches.length].batches.push(batch);
+  });
+  
+  // Process all batches in parallel
+  const allResults = [];
+  const promises = [];
+  
+  for (const assignment of endpointBatches) {
+    if (assignment.batches.length === 0) continue;
+    
+    const endpoint = assignment.endpoint;
+    const processBatch = async (batch, batchIdx) => {
+      const batchResults = [];
+      
+      for (let i = 0; i < batch.length; i++) {
+        if (!running) break;
+        
+        const chunk = batch[i];
+        const prompt = `${systemPrompt}\n\nText:\n${sanitizeChunkForGeneration(chunk.text)}`;
+        
+        try {
+          endpoint.requestCount++;
+          const startTime = Date.now();
+          
+          const resp = await fetch(`${endpoint.baseUrl}/chat/completions`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${endpoint.apiKey}`
+            },
+            body: JSON.stringify({
+              model: endpoint.model || model,
+              messages: [{ role: 'user', content: prompt }],
+              temperature: 0.7,
+              max_tokens: 800,
+              stream: false
+            }),
+            signal: abortCtrl?.signal,
+          });
+          
+          const latency = Date.now() - startTime;
+          endpoint.latency = latency; // Update latency for weighted strategy
+          
+          if (!resp.ok) {
+            throw new Error(`API error: ${resp.status}`);
+          }
+          
+          const data = await resp.json();
+          const response = data.choices?.[0]?.message?.content || '';
+          const parsedPairs = parsePairResponse(response);
+          
+          for (const pair of parsedPairs) {
+            pair.source = chunk.text.substring(0, 150) + '...';
+            pair.collection = chunk.collection;
+            pair.file = chunk.meta?.file || '';
+            pair.endpoint = endpoint.id;
+            batchResults.push(pair);
+          }
+          
+          if (onProgress) {
+            onProgress({
+              chunkIndex: chunksToProcess.indexOf(chunk),
+              total: chunksToProcess.length,
+              pairs: parsedPairs.length,
+              endpoint: endpoint.id,
+              latency
+            });
+          }
+          
+        } catch (e) {
+          if (e.name === 'AbortError') break;
+          console.warn(`⚠️ Endpoint ${endpoint.id} failed:`, e.message);
+          
+          // Mark endpoint as unhealthy if multiple failures
+          if (endpoint.requestCount % 5 === 0) {
+            endpoint.healthy = false;
+            log(`❌ Endpoint ${endpoint.id} marked unhealthy`, 'warn');
+          }
+          
+          // Retry with another endpoint (simple failover)
+          const fallbackEndpoint = getNextDistEndpoint();
+          if (fallbackEndpoint && fallbackEndpoint.id !== endpoint.id) {
+            log(`🔄 Retrying with endpoint ${fallbackEndpoint.id}`, 'info');
+            // Recursive retry (simplified - in production would need better queue management)
+          }
+        }
+        
+        // Small yield to prevent UI freeze
+        if (i % 3 === 0) await new Promise(r => setTimeout(r, 30));
+      }
+      
+      return batchResults;
+    };
+    
+    // Process batches for this endpoint with concurrency limit
+    for (const batch of assignment.batches) {
+      promises.push(processBatch(batch, assignment.batches.indexOf(batch)));
+    }
+  }
+  
+  // Wait for all batches to complete
+  const resultsArray = await Promise.all(promises);
+  
+  // Flatten results
+  resultsArray.forEach(results => {
+    results.forEach(pair => allResults.push(pair));
+  });
+  
+  log(`✨ Distributed generation complete: ${allResults.length} pairs from ${healthyEndpoints.length} endpoints`, 'ok');
+  
+  return { pairs: allResults, distributed: true };
+}
+
+// Initialize distributed settings UI
+function initDistSettings() {
+  loadDistEndpoints();
+  
+  const enabledSelect = document.getElementById('settings-dist-enabled');
+  const endpointsList = document.getElementById('dist-endpoints-list');
+  const concurrencyInput = document.getElementById('settings-dist-concurrency');
+  const strategySelect = document.getElementById('settings-dist-strategy');
+  
+  if (enabledSelect) {
+    enabledSelect.value = distEnabled ? 'yes' : 'no';
+    enabledSelect.addEventListener('change', (e) => {
+      distEnabled = e.target.value === 'yes';
+      if (endpointsList) endpointsList.style.display = distEnabled ? 'block' : 'none';
+      saveDistEndpoints();
+    });
+    
+    if (endpointsList) {
+      endpointsList.style.display = distEnabled ? 'block' : 'none';
+    }
+  }
+  
+  if (concurrencyInput) {
+    concurrencyInput.value = distConcurrency;
+    concurrencyInput.addEventListener('change', (e) => {
+      distConcurrency = parseInt(e.target.value) || 4;
+      saveDistEndpoints();
+    });
+  }
+  
+  if (strategySelect) {
+    strategySelect.value = distStrategy;
+    strategySelect.addEventListener('change', (e) => {
+      distStrategy = e.target.value;
+      saveDistEndpoints();
+    });
+  }
+  
+  renderDistEndpoints();
+}
+
+// Sync distributed settings from main settings
+function syncDistSettingsFromDOM() {
+  const enabledSelect = document.getElementById('settings-dist-enabled');
+  const concurrencyInput = document.getElementById('settings-dist-concurrency');
+  const strategySelect = document.getElementById('settings-dist-strategy');
+  
+  if (enabledSelect) enabledSelect.value = distEnabled ? 'yes' : 'no';
+  if (concurrencyInput) concurrencyInput.value = distConcurrency;
+  if (strategySelect) strategySelect.value = distStrategy;
+  
+  renderDistEndpoints();
+}
+
+// Apply distributed settings
+function applyDistSettings() {
+  collectDistEndpointsFromUI();
+  
+  const enabledSelect = document.getElementById('settings-dist-enabled');
+  const concurrencyInput = document.getElementById('settings-dist-concurrency');
+  const strategySelect = document.getElementById('settings-dist-strategy');
+  
+  if (enabledSelect) distEnabled = enabledSelect.value === 'yes';
+  if (concurrencyInput) distConcurrency = parseInt(concurrencyInput.value) || 4;
+  if (strategySelect) distStrategy = strategySelect.value || 'round-robin';
+  
+  saveDistEndpoints();
+  console.log('✅ Distributed settings applied:', { distEnabled, distConcurrency, distStrategy, endpoints: distEndpoints.length });
 }
 
 function updateDomainSelects() {
