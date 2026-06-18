@@ -2140,9 +2140,48 @@ OUTPUT: [your output here]</textarea>
             <div class="hint">Split chunk processing across multiple API endpoints for faster generation</div>
           </div>
           <div id="dist-endpoints-list" style="display:none; margin-top:1rem;">
-            <div style="font-size:.78rem; color:var(--text2); margin-bottom:.5rem;">Configure multiple endpoints (same provider)</div>
+            <div style="font-size:.78rem; color:var(--text2); margin-bottom:.5rem;">Add endpoints with their own service, model, and API key</div>
+            
+            <!-- New Endpoint Form -->
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:.5rem; margin-bottom:.8rem; padding:.8rem; background:var(--surface3); border-radius:8px; border:1px solid var(--border);">
+              <div style="grid-column: 1 / -1; font-size:.72rem; color:var(--accent); font-weight:600; margin-bottom:.3rem; text-transform:uppercase; letter-spacing:.05em;">New Endpoint</div>
+              
+              <div style="grid-column: 1 / -1;">
+                <label style="font-size:.7rem; color:var(--text3); display:block; margin-bottom:.25rem;">Service Provider</label>
+                <select id="dist-new-provider" style="width:100%; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem;">
+                  <option value="groq">Groq</option>
+                  <option value="cerebras">Cerebras</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+              
+              <div style="grid-column: 1 / -1;">
+                <label style="font-size:.7rem; color:var(--text3); display:block; margin-bottom:.25rem;">Model Name</label>
+                <input type="text" id="dist-new-model" placeholder="e.g. llama-3.1-8b-instant" style="width:100%; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem;">
+              </div>
+              
+              <div style="grid-column: 1 / -1;">
+                <label style="font-size:.7rem; color:var(--text3); display:block; margin-bottom:.25rem;">API Key</label>
+                <input type="password" id="dist-new-apikey" placeholder="sk-..." style="width:100%; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem;">
+              </div>
+              
+              <div style="grid-column: 1 / -1;">
+                <label style="font-size:.7rem; color:var(--text3); display:block; margin-bottom:.25rem;">Base URL (optional — auto-filled for known providers)</label>
+                <input type="text" id="dist-new-baseurl" placeholder="https://api.groq.com/openai/v1" style="width:100%; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem;">
+              </div>
+              
+              <div style="grid-column: 1 / -1;">
+                <label style="font-size:.7rem; color:var(--text3); display:block; margin-bottom:.25rem;">Display Name (optional)</label>
+                <input type="text" id="dist-new-name" placeholder="e.g. Groq Fast" style="width:100%; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem;">
+              </div>
+              
+              <button class="btn btn-primary" style="grid-column: 1 / -1; font-size:.78rem; padding:.4rem .7rem;" onclick="addDistEndpointFromForm()">➕ Add Endpoint</button>
+            </div>
+            
+            <div style="font-size:.72rem; color:var(--text3); margin-bottom:.5rem; text-transform:uppercase; letter-spacing:.05em;">Configured Endpoints</div>
             <div id="dist-endpoint-entries" style="display:flex; flex-direction:column; gap:.8rem;"></div>
-            <button class="btn btn-secondary" style="font-size:.75rem; padding:.4rem .7rem; margin-top:.8rem;" onclick="addDistEndpoint()">+ Add Endpoint</button>
           </div>
           <div class="setting-item" style="margin-top:1rem;">
             <label>Concurrency Limit</label>
@@ -3423,7 +3462,69 @@ function saveDistEndpoints() {
   console.log(`💾 Saved ${distEndpoints.length} distributed endpoints`);
 }
 
-// Add a new endpoint entry
+// Provider default base URLs
+const DIST_PROVIDER_URLS = {
+  groq: 'https://api.groq.com/openai/v1',
+  cerebras: 'https://api.cerebras.ai/v1',
+  openai: 'https://api.openai.com/v1',
+  anthropic: 'https://api.anthropic.com/v1',
+  custom: ''
+};
+
+// Add a new endpoint from the form
+window.addDistEndpointFromForm = function() {
+  const provider = document.getElementById('dist-new-provider')?.value || 'custom';
+  const model = document.getElementById('dist-new-model')?.value.trim() || '';
+  const apiKey = document.getElementById('dist-new-apikey')?.value.trim() || '';
+  let baseUrl = document.getElementById('dist-new-baseurl')?.value.trim() || '';
+  const name = document.getElementById('dist-new-name')?.value.trim() || '';
+  
+  // Auto-fill base URL from provider if not specified
+  if (!baseUrl && DIST_PROVIDER_URLS[provider]) {
+    baseUrl = DIST_PROVIDER_URLS[provider];
+  }
+  
+  // Validation
+  if (!model) {
+    alert('Please enter a model name');
+    return;
+  }
+  if (!apiKey) {
+    alert('Please enter an API key');
+    return;
+  }
+  if (!baseUrl) {
+    alert('Please enter a base URL');
+    return;
+  }
+  
+  const id = Date.now().toString(36);
+  const endpoint = {
+    id,
+    provider,
+    model,
+    apiKey,
+    baseUrl,
+    name: name || `${provider} · ${model}`,
+    healthy: null,
+    latency: 0,
+    requestCount: 0
+  };
+  
+  distEndpoints.push(endpoint);
+  saveDistEndpoints();
+  renderDistEndpoints();
+  
+  // Clear form
+  document.getElementById('dist-new-model').value = '';
+  document.getElementById('dist-new-apikey').value = '';
+  document.getElementById('dist-new-baseurl').value = '';
+  document.getElementById('dist-new-name').value = '';
+  
+  console.log('✅ Added distributed endpoint:', endpoint.name);
+};
+
+// Legacy: Add a blank endpoint entry (kept for backwards compatibility)
 window.addDistEndpoint = function() {
   const container = document.getElementById('dist-endpoint-entries');
   if (!container) return;
@@ -3446,7 +3547,7 @@ window.addDistEndpoint = function() {
   container.appendChild(entry);
   
   // Add to distEndpoints array
-  distEndpoints.push({ id, baseUrl: '', apiKey: '', model: '', healthy: null, latency: 0, requestCount: 0 });
+  distEndpoints.push({ id, provider: 'custom', baseUrl: '', apiKey: '', model: '', healthy: null, latency: 0, requestCount: 0 });
 }
 
 // Remove an endpoint
@@ -3465,79 +3566,74 @@ function renderDistEndpoints() {
   if (!container) return;
   
   container.innerHTML = '';
+  if (distEndpoints.length === 0) {
+    container.innerHTML = '<div style="padding:1rem; text-align:center; color:var(--text3); font-size:.78rem;">No endpoints configured. Add one above.</div>';
+    return;
+  }
+  
   distEndpoints.forEach((ep, idx) => {
     const entry = document.createElement('div');
     entry.className = 'dist-endpoint-entry';
     entry.dataset.id = ep.id;
-    entry.style.cssText = 'display:grid; grid-template-columns: 1fr 1fr; gap:.5rem; padding:.8rem; background:var(--surface3); border-radius:8px; border:1px solid var(--border);';
+    
+    // Provider icon
+    const providerIcons = {
+      groq: '⚡', cerebras: '🚀', openai: '🤖', anthropic: '🧠', custom: '🔧'
+    };
+    const icon = providerIcons[ep.provider] || '🔧';
+    const healthIndicator = ep.healthy === null ? '⏳' : (ep.healthy ? '✅' : '❌');
+    const healthColor = ep.healthy === null ? 'var(--text3)' : (ep.healthy ? 'var(--accent)' : 'var(--err)');
+    
+    entry.style.cssText = 'padding:.8rem; background:var(--surface3); border-radius:8px; border:1px solid var(--border);';
     entry.innerHTML = `
-      <div style="grid-column: 1 / -1; display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-size:.72rem; color:var(--text3); font-family:var(--mono);">Endpoint ${idx + 1}${ep.healthy !== null ? (ep.healthy ? ' ✅' : ' ❌') : ''}</span>
-        <button onclick="removeDistEndpoint('${ep.id}')" style="background:none; border:none; color:var(--text3); cursor:pointer; font-size:1.1rem;" title="Remove">🗑️</button>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:.5rem;">
+        <div style="display:flex; align-items:center; gap:.4rem;">
+          <span style="font-size:1.1rem;">${icon}</span>
+          <div>
+            <div style="font-size:.82rem; font-weight:600; color:var(--text);">${escHtml(ep.name || `Endpoint ${idx + 1}`)}</div>
+            <div style="font-size:.7rem; color:var(--text3); font-family:var(--mono);">${escHtml(ep.model)}</div>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:.4rem;">
+          <span style="color:${healthColor}; font-size:.9rem;" title="${ep.healthy === null ? 'Not tested' : (ep.healthy ? 'Healthy' : 'Unhealthy')}">${healthIndicator}</span>
+          <button onclick="removeDistEndpoint('${ep.id}')" style="background:none; border:none; color:var(--text3); cursor:pointer; font-size:1.1rem;" title="Remove">🗑️</button>
+        </div>
       </div>
-      <input type="text" class="dist-base-url" value="${escHtml(ep.baseUrl)}" placeholder="Base URL" style="width:100%; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem; grid-column: 1 / 2;">
-      <input type="password" class="dist-api-key" value="${escHtml(ep.apiKey)}" placeholder="API Key" style="width:100%; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem; grid-column: 2 / 3;">
-      <input type="text" class="dist-model" value="${escHtml(ep.model)}" placeholder="Model" style="width:100%; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem; grid-column: 1 / -1;">
+      <div style="display:grid; grid-template-columns: 1fr auto; gap:.5rem; font-size:.72rem; color:var(--text2); font-family:var(--mono);">
+        <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escHtml(ep.baseUrl)}</div>
+        <div style="color:var(--text3); white-space:nowrap;">${ep.latency > 0 ? ep.latency + 'ms' : ''}</div>
+      </div>
     `;
     container.appendChild(entry);
   });
 }
 
-// Collect endpoints from UI
+// Collect endpoints from UI (legacy — now endpoints are managed via the form)
 function collectDistEndpointsFromUI() {
+  // Modern endpoints are already in distEndpoints array from addDistEndpointFromForm
+  // This function now just ensures sync for any legacy inline edits
   const entries = document.querySelectorAll('.dist-endpoint-entry');
-  const collected = [];
   
   entries.forEach(entry => {
-    const baseUrl = entry.querySelector('.dist-base-url')?.value.trim() || '';
-    const apiKey = entry.querySelector('.dist-api-key')?.value.trim() || '';
-    const model = entry.querySelector('.dist-model')?.value.trim() || '';
-    const id = entry.dataset.id || Date.now().toString(36);
+    const baseUrlInput = entry.querySelector('.dist-base-url');
+    const apiKeyInput = entry.querySelector('.dist-api-key');
+    const modelInput = entry.querySelector('.dist-model');
+    const id = entry.dataset.id;
     
-    if (baseUrl && apiKey) {
-      const existing = distEndpoints.find(ep => ep.id === id);
-      collected.push({
-        id,
-        baseUrl,
-        apiKey,
-        model: model || existing?.model || '',
-        healthy: existing?.healthy || null,
-        latency: existing?.latency || 0,
-        requestCount: existing?.requestCount || 0
-      });
+    if (!id || !baseUrlInput) return;
+    
+    const ep = distEndpoints.find(e => e.id === id);
+    if (ep) {
+      if (baseUrlInput) ep.baseUrl = baseUrlInput.value.trim() || ep.baseUrl;
+      if (apiKeyInput) ep.apiKey = apiKeyInput.value.trim() || ep.apiKey;
+      if (modelInput) ep.model = modelInput.value.trim() || ep.model;
     }
   });
   
-  distEndpoints = collected;
   saveDistEndpoints();
 }
 
-// Health check for a single endpoint
-async function testDistEndpoint(endpoint) {
-  const startTime = Date.now();
-  try {
-    const resp = await fetch(`${endpoint.baseUrl}/models`, {
-      headers: { 'Authorization': `Bearer ${endpoint.apiKey}` },
-      signal: AbortSignal.timeout(5000)
-    });
-    
-    const latency = Date.now() - startTime;
-    
-    if (resp.ok) {
-      endpoint.healthy = true;
-      endpoint.latency = latency;
-      return { success: true, latency, status: resp.status };
-    } else {
-      endpoint.healthy = false;
-      endpoint.latency = latency;
-      return { success: false, latency, status: resp.status, error: `HTTP ${resp.status}` };
-    }
-  } catch(e) {
-    endpoint.healthy = false;
-    endpoint.latency = Date.now() - startTime;
-    return { success: false, latency: endpoint.latency, error: e.message };
-  }
-}
+
 
 // Health check all endpoints
 window.testAllDistEndpoints = async function() {
@@ -3816,6 +3912,7 @@ function applyDistSettings() {
 window.syncDistSettingsFromDOM = syncDistSettingsFromDOM;
 window.applyDistSettings = applyDistSettings;
 window.addDistEndpoint = addDistEndpoint;
+window.addDistEndpointFromForm = addDistEndpointFromForm;
 window.removeDistEndpoint = removeDistEndpoint;
 window.testAllDistEndpoints = testAllDistEndpoints;
 
