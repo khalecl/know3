@@ -3812,6 +3812,12 @@ function applyDistSettings() {
   saveDistEndpoints();
   console.log('✅ Distributed settings applied:', { distEnabled, distConcurrency, distStrategy, endpoints: distEndpoints.length });
 }
+// Expose distributed endpoint functions to global scope
+window.syncDistSettingsFromDOM = syncDistSettingsFromDOM;
+window.applyDistSettings = applyDistSettings;
+window.addDistEndpoint = addDistEndpoint;
+window.removeDistEndpoint = removeDistEndpoint;
+window.testAllDistEndpoints = testAllDistEndpoints;
 
 function updateDomainSelects() {
   const domainKeys = Object.keys(DOMAIN_PROMPTS);
