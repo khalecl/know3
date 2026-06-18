@@ -3461,188 +3461,321 @@ const vectorStore = {
   }
 };
 
-	 // ════════════════════════════════════════════════════════════════════════════
-	// IndexedDB PERSISTENCE — Survive page refresh
-	// ════════════════════════════════════════════════════════════════════════════
-	const DB_NAME = 'know3_db';
-	const DB_VERSION = 2;
+		// ════════════════════════════════════════════════════════════════════════════
+		// HYBRID PERSISTENCE: OPFS for chunks + IndexedDB for metadata
+		// OPFS = unlimited storage, fast streaming writes for large text
+		// IndexedDB = structured queries, small metadata, pairs
+		// ════════════════════════════════════════════════════════════════════════════
+		const DB_NAME = 'know3_db';
+		const DB_VERSION = 3;
+		const OPFS_ROOT = 'know3_chunks';
 
-	function openDB() {
-	  return new Promise((resolve, reject) => {
-		const req = indexedDB.open(DB_NAME, DB_VERSION);
-		req.onupgradeneeded = (e) => {
-		  const db = e.target.result;
-		  if (!db.objectStoreNames.contains('vectorStore')) {
-			db.createObjectStore('vectorStore', { keyPath: 'collection' });
-		  }
-		  if (!db.objectStoreNames.contains('pairs')) {
-			db.createObjectStore('pairs', { keyPath: 'id', autoIncrement: true });
-		  }
-		  if (!db.objectStoreNames.contains('meta')) {
-			db.createObjectStore('meta', { keyPath: 'key' });
-		  }
-		};
-		req.onsuccess = () => resolve(req.result);
-		req.onerror = () => reject(req.error);
-	  });
-	}
-
-	async function saveVectorStoreToDB() {
-	  try {
-		const db = await openDB();
-		const tx = db.transaction(['vectorStore', 'meta'], 'readwrite');
-		const store = tx.objectStore('vectorStore');
-		
-		// Clear and re-save all collections
-		store.clear();
-		for (const [name, col] of Object.entries(vectorStore.collections)) {
-		  store.put({
-			collection: name,
-			chunks: col.chunks,
-			embeddings: col.embeddings,
-			metadata: col.metadata
-		  });
+		// ── OPFS helpers ──
+		async function getOPFS() {
+		  return await navigator.storage.getDirectory();
 		}
-		
-		// Save metadata
-		const metaStore = tx.objectStore('meta');
-		metaStore.put({ key: 'documentsIngested', value: documentsIngested });
-		metaStore.put({ key: 'savedAt', value: Date.now() });
-		
-		await new Promise((resolve, reject) => {
-		  tx.oncomplete = resolve;
-		  tx.onerror = () => reject(tx.error);
-		});
-		
-		console.log(`💾 Vector store saved to IndexedDB (${Object.keys(vectorStore.collections).length} collections)`);
-	  } catch (e) {
-		console.warn('⚠️ IndexedDB save failed:', e.message);
-	  }
-	}
 
-	async function savePairsToDB() {
-	  try {
-		const db = await openDB();
-		const tx = db.transaction('pairs', 'readwrite');
-		const store = tx.objectStore('pairs');
-		
-		store.clear();
-		for (let i = 0; i < allPairs.length; i++) {
-		  store.put({ ...allPairs[i], id: i });
+		async function opfsWrite(path, data) {
+		  const root = await getOPFS();
+		  const dirPath = path.substring(0, path.lastIndexOf('/'));
+		  const fileName = path.substring(path.lastIndexOf('/') + 1);
+		  let dir = root;
+		  if (dirPath) {
+			for (const part of dirPath.split('/').filter(Boolean)) {
+			  dir = await dir.getDirectoryHandle(part, { create: true });
+			}
+		  }
+		  const fileHandle = await dir.getFileHandle(fileName, { create: true });
+		  const writable = await fileHandle.createWritable();
+		  await writable.write(data);
+		  await writable.close();
 		}
-		
-		await new Promise((resolve, reject) => {
-		  tx.oncomplete = resolve;
-		  tx.onerror = () => reject(tx.error);
-		});
-		
-		console.log(`💾 ${allPairs.length} pairs saved to IndexedDB`);
-	  } catch (e) {
-		console.warn('⚠️ IndexedDB pairs save failed:', e.message);
-	  }
-	}
 
-	async function loadFromDB() {
-	  try {
-		const db = await openDB();
-		
-		// Load vector store
-		const vsTx = db.transaction('vectorStore', 'readonly');
-		const vsStore = vsTx.objectStore('vectorStore');
-		const vsReq = vsStore.getAll();
-		
-		const vsData = await new Promise((resolve, reject) => {
-		  vsReq.onsuccess = () => resolve(vsReq.result);
-		  vsReq.onerror = () => reject(vsReq.error);
-		});
-		
-		if (vsData && vsData.length > 0) {
-		  for (const col of vsData) {
-			vectorStore.collections[col.collection] = {
-			  chunks: col.chunks || [],
-			  embeddings: col.embeddings || [],
-			  metadata: col.metadata || []
+		async function opfsRead(path) {
+		  try {
+			const root = await getOPFS();
+			const parts = path.split('/').filter(Boolean);
+			let dir = root;
+			for (let i = 0; i < parts.length - 1; i++) {
+			  dir = await dir.getDirectoryHandle(parts[i]);
+			}
+			const fileHandle = await dir.getFileHandle(parts[parts.length - 1]);
+			const file = await fileHandle.getFile();
+			return await file.text();
+		  } catch (e) {
+			return null;
+		  }
+		}
+
+		async function opfsDelete(path) {
+		  try {
+			const root = await getOPFS();
+			const parts = path.split('/').filter(Boolean);
+			let dir = root;
+			for (let i = 0; i < parts.length - 1; i++) {
+			  dir = await dir.getDirectoryHandle(parts[i]);
+			}
+			await dir.removeEntry(parts[parts.length - 1]);
+		  } catch (e) { /* ignore */ }
+		}
+
+		async function opfsExists(path) {
+		  try {
+			const root = await getOPFS();
+			const parts = path.split('/').filter(Boolean);
+			let dir = root;
+			for (let i = 0; i < parts.length - 1; i++) {
+			  dir = await dir.getDirectoryHandle(parts[i]);
+			}
+			await dir.getFileHandle(parts[parts.length - 1]);
+			return true;
+		  } catch (e) {
+			return false;
+		  }
+		}
+
+		async function opfsClearCollection(collectionName) {
+		  try {
+			const root = await getOPFS();
+			const colDir = await root.getDirectoryHandle(OPFS_ROOT, { create: true });
+			const targetDir = await colDir.getDirectoryHandle(collectionName, { create: true });
+			// Remove all files in the collection directory
+			for await (const [name, handle] of targetDir.entries()) {
+			  if (handle.kind === 'file') {
+				await targetDir.removeEntry(name);
+			  }
+			}
+		  } catch (e) {
+			console.warn('⚠️ OPFS clear failed:', e.message);
+		  }
+		}
+
+		// ── IndexedDB ──
+		function openDB() {
+		  return new Promise((resolve, reject) => {
+			const req = indexedDB.open(DB_NAME, DB_VERSION);
+			req.onupgradeneeded = (e) => {
+			  const db = e.target.result;
+			  if (!db.objectStoreNames.contains('vectorStore')) {
+				db.createObjectStore('vectorStore', { keyPath: 'collection' });
+			  }
+			  if (!db.objectStoreNames.contains('pairs')) {
+				db.createObjectStore('pairs', { keyPath: 'id', autoIncrement: true });
+			  }
+			  if (!db.objectStoreNames.contains('meta')) {
+				db.createObjectStore('meta', { keyPath: 'key' });
+			  }
+			  // Migration: remove old chunk data from IndexedDB if upgrading
+			  if (e.oldVersion < 3) {
+				console.log('🔄 Migrating to hybrid storage (OPFS + IndexedDB)');
+			  }
 			};
-		  }
-		  console.log(`📂 Loaded ${vsData.length} collections from IndexedDB`);
-		}
-		
-		// Load pairs
-		const pTx = db.transaction('pairs', 'readonly');
-		const pStore = pTx.objectStore('pairs');
-		const pReq = pStore.getAll();
-		
-		const pData = await new Promise((resolve, reject) => {
-		  pReq.onsuccess = () => resolve(pReq.result);
-		  pReq.onerror = () => reject(pReq.error);
-		});
-		
-		if (pData && pData.length > 0) {
-		  allPairs = pData.map(p => {
-			const { id, ...rest } = p;
-			return rest;
+			req.onsuccess = () => resolve(req.result);
+			req.onerror = () => reject(req.error);
 		  });
-		  console.log(`📂 Loaded ${allPairs.length} pairs from IndexedDB`);
-		  
-		  // Render pairs
-		  resultsList.innerHTML = '';
-		  allPairs.forEach((p, i) => addPairToUI(p, i + 1));
-		  resultsDiv.style.display = allPairs.length > 0 ? 'block' : 'none';
-		  if (allPairs.length > 0) {
-			$('btn-export').disabled = false;
-			resultsCount.textContent = `${allPairs.length} pairs (restored from session)`;
+		}
+
+		// ── Hybrid Save: OPFS for chunks, IndexedDB for metadata ──
+		async function saveVectorStoreToDB() {
+		  try {
+			const db = await openDB();
+			const tx = db.transaction(['vectorStore', 'meta'], 'readwrite');
+			const store = tx.objectStore('vectorStore');
+
+			for (const [name, col] of Object.entries(vectorStore.collections)) {
+			  // Save each chunk to OPFS, store only path in metadata
+			  const chunkPaths = [];
+			  for (let i = 0; i < col.chunks.length; i++) {
+				const chunkPath = `${OPFS_ROOT}/${name}/chunk_${i}.txt`;
+				await opfsWrite(chunkPath, col.chunks[i]);
+				chunkPaths.push(chunkPath);
+			  }
+
+			  // Save metadata to IndexedDB (small, queryable)
+			  store.put({
+				collection: name,
+				chunkPaths: chunkPaths,
+				embeddings: col.embeddings,
+				metadata: col.metadata
+			  });
+			}
+
+			// Save metadata
+			const metaStore = tx.objectStore('meta');
+			metaStore.put({ key: 'documentsIngested', value: documentsIngested });
+			metaStore.put({ key: 'savedAt', value: Date.now() });
+
+			await new Promise((resolve, reject) => {
+			  tx.oncomplete = resolve;
+			  tx.onerror = () => reject(tx.error);
+			});
+
+			console.log(`💾 Hybrid save: ${Object.keys(vectorStore.collections).length} collections, OPFS + IndexedDB`);
+		  } catch (e) {
+			console.warn('⚠️ Hybrid save failed:', e.message);
 		  }
 		}
-		
-		// Load meta
-		const mTx = db.transaction('meta', 'readonly');
-		const mStore = mTx.objectStore('meta');
-		const docReq = mStore.get('documentsIngested');
-		
-		const docData = await new Promise((resolve, reject) => {
-		  docReq.onsuccess = () => resolve(docReq.result);
-		  docReq.onerror = () => reject(docReq.error);
-		});
-		
-		if (docData) documentsIngested = docData.value || 0;
-		
-		updateStoreUI();
-		
-		if (vsData?.length > 0 || pData?.length > 0) {
-		  log(`📂 Restored session: ${vsData?.length || 0} collections, ${allPairs.length} pairs`, 'ok');
+
+		async function savePairsToDB() {
+		  try {
+			const db = await openDB();
+			const tx = db.transaction('pairs', 'readwrite');
+			const store = tx.objectStore('pairs');
+
+			store.clear();
+			for (let i = 0; i < allPairs.length; i++) {
+			  store.put({ ...allPairs[i], id: i });
+			}
+
+			await new Promise((resolve, reject) => {
+			  tx.oncomplete = resolve;
+			  tx.onerror = () => reject(tx.error);
+			});
+
+			console.log(`💾 ${allPairs.length} pairs saved to IndexedDB`);
+		  } catch (e) {
+			console.warn('⚠️ IndexedDB pairs save failed:', e.message);
+		  }
 		}
-		
-	  } catch (e) {
-		console.warn('⚠️ IndexedDB load failed (first run?):', e.message);
-	  }
-	}
 
-	async function clearDB() {
-	  try {
-		const db = await openDB();
-		const tx = db.transaction(['vectorStore', 'pairs', 'meta'], 'readwrite');
-		tx.objectStore('vectorStore').clear();
-		tx.objectStore('pairs').clear();
-		tx.objectStore('meta').clear();
-		await new Promise((resolve, reject) => {
-		  tx.oncomplete = resolve;
-		  tx.onerror = () => reject(tx.error);
-		});
-		console.log('🗑️ IndexedDB cleared');
-	  } catch (e) {
-		console.warn('⚠️ IndexedDB clear failed:', e.message);
-	  }
-	}
+		// Routinely clean up stale OPFS files that are no longer referenced by any collection
+		async function cleanupOrphanedOPFS() {
+		  try {
+			const root = await getOPFS();
+			const colDir = await root.getDirectoryHandle(OPFS_ROOT, { create: true });
+			const liveCollections = new Set(Object.keys(vectorStore.collections));
 
-	// Auto-save to IndexedDB after key operations (debounced)
-	let _dbSaveTimer = null;
-	function scheduleSaveToDB() {
-	  if (_dbSaveTimer) clearTimeout(_dbSaveTimer);
-	  _dbSaveTimer = setTimeout(async () => {
-		await saveVectorStoreToDB();
-		await savePairsToDB();
-	  }, 2000); // Save 2s after last change
-	}
+			for await (const [name, handle] of colDir.entries()) {
+			  if (handle.kind === 'directory' && !liveCollections.has(name)) {
+				await colDir.removeEntry(name, { recursive: true });
+				console.log(`🗑️ Cleaned up orphaned OPFS collection: ${name}`);
+			  }
+			}
+		  } catch (e) {
+			console.warn('⚠️ OPFS cleanup failed:', e.message);
+		  }
+		}
+
+		async function loadFromDB() {
+		  try {
+			const db = await openDB();
+
+			// Load vector store metadata from IndexedDB
+			const vsTx = db.transaction('vectorStore', 'readonly');
+			const vsStore = vsTx.objectStore('vectorStore');
+			const vsReq = vsStore.getAll();
+
+			const vsData = await new Promise((resolve, reject) => {
+			  vsReq.onsuccess = () => resolve(vsReq.result);
+			  vsReq.onerror = () => reject(vsReq.error);
+			});
+
+			if (vsData && vsData.length > 0) {
+			  for (const col of vsData) {
+				// Load chunks from OPFS
+				const chunks = [];
+				if (col.chunkPaths && col.chunkPaths.length > 0) {
+				  for (const path of col.chunkPaths) {
+					const text = await opfsRead(path);
+					chunks.push(text || '');
+				  }
+				}
+
+				vectorStore.collections[col.collection] = {
+				  chunks: chunks,
+				  embeddings: col.embeddings || [],
+				  metadata: col.metadata || []
+				};
+			  }
+			  console.log(`📂 Loaded ${vsData.length} collections from hybrid storage (OPFS + IndexedDB)`);
+			}
+
+			// Load pairs
+			const pTx = db.transaction('pairs', 'readonly');
+			const pStore = pTx.objectStore('pairs');
+			const pReq = pStore.getAll();
+
+			const pData = await new Promise((resolve, reject) => {
+			  pReq.onsuccess = () => resolve(pReq.result);
+			  pReq.onerror = () => reject(pReq.error);
+			});
+
+			if (pData && pData.length > 0) {
+			  allPairs = pData.map(p => {
+				const { id, ...rest } = p;
+				return rest;
+			  });
+			  console.log(`📂 Loaded ${allPairs.length} pairs from IndexedDB`);
+
+			  // Render pairs
+			  resultsList.innerHTML = '';
+			  allPairs.forEach((p, i) => addPairToUI(p, i + 1));
+			  resultsDiv.style.display = allPairs.length > 0 ? 'block' : 'none';
+			  if (allPairs.length > 0) {
+				$('btn-export').disabled = false;
+				resultsCount.textContent = `${allPairs.length} pairs (restored from session)`;
+			  }
+			}
+
+			// Load meta
+			const mTx = db.transaction('meta', 'readonly');
+			const mStore = mTx.objectStore('meta');
+			const docReq = mStore.get('documentsIngested');
+
+			const docData = await new Promise((resolve, reject) => {
+			  docReq.onsuccess = () => resolve(docReq.result);
+			  docReq.onerror = () => reject(docReq.error);
+			});
+
+			if (docData) documentsIngested = docData.value || 0;
+
+			updateStoreUI();
+
+			if (vsData?.length > 0 || pData?.length > 0) {
+			  log(`📂 Restored session: ${vsData?.length || 0} collections, ${allPairs.length} pairs`, 'ok');
+			}
+
+			// Clean up any stale OPFS files
+			await cleanupOrphanedOPFS();
+
+		  } catch (e) {
+			console.warn('⚠️ Hybrid load failed (first run?):', e.message);
+		  }
+		}
+
+		async function clearDB() {
+		  try {
+			const db = await openDB();
+			const tx = db.transaction(['vectorStore', 'pairs', 'meta'], 'readwrite');
+			tx.objectStore('vectorStore').clear();
+			tx.objectStore('pairs').clear();
+			tx.objectStore('meta').clear();
+			await new Promise((resolve, reject) => {
+			  tx.oncomplete = resolve;
+			  tx.onerror = () => reject(tx.error);
+			});
+
+			// Also clear OPFS
+			try {
+			  const root = await getOPFS();
+			  await root.removeEntry(OPFS_ROOT, { recursive: true });
+			} catch (e) { /* ignore */ }
+
+			console.log('🗑️ Hybrid storage cleared (OPFS + IndexedDB)');
+		  } catch (e) {
+			console.warn('⚠️ Hybrid clear failed:', e.message);
+		  }
+		}
+
+		// Auto-save to hybrid storage after key operations (debounced)
+		let _dbSaveTimer = null;
+		function scheduleSaveToDB() {
+		  if (_dbSaveTimer) clearTimeout(_dbSaveTimer);
+		  _dbSaveTimer = setTimeout(async () => {
+			await saveVectorStoreToDB();
+			await savePairsToDB();
+		  }, 2000); // Save 2s after last change
+		}
 
 // Training pairs store
 let allPairs = [];
@@ -6701,20 +6834,20 @@ if ($('rag-input')) $('rag-input').addEventListener('keydown', e => {
 $('btn-export').addEventListener('click', exportTrainingData);
 $('btn-export-vectors').addEventListener('click', exportVectorStore);
 
-$('btn-clear-store').addEventListener('click', () => {
-  if (confirm('Clear all ingested data and training pairs?')) {
-    vectorStore.clear();
-    allPairs = [];
-    documentsIngested = 0;
-	clearDB(); // Clear IndexedDB too
-	updateStoreUI();
-    resultsList.innerHTML = '';
-    resultsDiv.style.display = 'none';
-    if ($('rag-results')) $('rag-results').innerHTML = '';
-    if ($('rag-answer')) $('rag-answer').style.display = 'none';
-    log('🗑 Vector store cleared', 'warn');
-  }
-});
+	$('btn-clear-store').addEventListener('click', async () => {
+	  if (confirm('Clear all ingested data and training pairs?')) {
+	    vectorStore.clear();
+	    allPairs = [];
+	    documentsIngested = 0;
+		await clearDB(); // Clear both OPFS and IndexedDB
+		updateStoreUI();
+	    resultsList.innerHTML = '';
+	    resultsDiv.style.display = 'none';
+	    if ($('rag-results')) $('rag-results').innerHTML = '';
+	    if ($('rag-answer')) $('rag-answer').style.display = 'none';
+	    log('🗑 Vector store cleared (OPFS + IndexedDB)', 'warn');
+	  }
+	});
 
 $('chunk-size').addEventListener('change', () => {
   // Update estimate if a file was already shown
@@ -6753,6 +6886,5 @@ window.clearRAGConversation = clearRAGConversation;
 window.fillRAGInput = fillRAGInput;
 
 </script>
-<script data-goatcounter="https://khalecl.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>
