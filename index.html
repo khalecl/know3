@@ -3788,20 +3788,77 @@ async function generatePairsDistributed(chunksToProcess, model, systemPrompt, on
   }
   
   // Assign batches to endpoints
-  const endpointBatches = healthyEndpoints.map((ep, idx) => ({
-    endpoint: ep,
-    batches: []
-  }));
-  
-  // Distribute batches round-robin style
-  batches.forEach((batch, idx) => {
-    endpointBatches[idx % endpointBatches.length].batches.push(batch);
-  });
+	    // Distribute chunks among endpoints based on selected strategy
+	    const endpointBatches = healthyEndpoints.map(ep => ({ endpoint: ep, chunks: [] }));
+	    if (distStrategy === 'round-robin') {
+	      chunksToProcess.forEach((chunk, idx) => {
+	        const ep = healthyEndpoints[idx % healthyEndpoints.length];
+	        endpointBatches[healthyEndpoints.indexOf(ep)].chunks.push(chunk);
+	      });
+	    } else if (distStrategy === 'least-loaded') {
+	      // Sort endpoints by current request count ascending
+	      endpointBatches.sort((a, b) => (a.endpoint.requestCount || 0) - (b.endpoint.requestCount || 0));
+	      chunksToProcess.forEach(chunk => {
+	        // Always add to the least loaded endpoint
+	        endpointBatches[0].chunks.push(chunk);
+	        // Re-sort after adding chunk
+	        endpointBatches.sort((a, b) => (a.endpoint.requestCount || 0) - (b.endpoint.requestCount || 0));
+	      });
+	    }
+	
+	  // Create batches from assigned chunks for each endpoint
+	  endpointBatches.forEach(assignment => {
+	    const batchSize = Math.ceil(assignment.chunks.length / distConcurrency);
+	    for (let i = 0; i < assignment.chunks.length; i += batchSize) {
+	      batches.push(assignment.chunks.slice(i, i + batchSize));
+	    }
+	  });
   
   // Process all batches in parallel
   const allResults = [];
   const promises = [];
-  
+  	  // Process all batches in parallel
+	  const allResults = [];
+	  const promises = [];
+	
+	  endpointBatches.forEach(assignment => {
+	    if (assignment.batches.length === 0) return;
+	    
+	    const endpoint = assignment.endpoint;
+	    const processBatch = async (batch) => {
+	      // Process each chunk in batch
+	      const batchResults = [];
+	      for (const chunk of batch) {
+	        // Generate pairs for this chunk
+	        const prompt = `${systemPrompt}\n\nText:\n${sanitizeChunkForGeneration(chunk.text)}`;
+	        try {
+	          endpoint.requestCount++;
+	          const response = await ollamaGenerate(prompt, model, temperature);
+	          const parsedPairs = parsePairResponse(response);
+	          
+	          for (const pair of parsedPairs) {
+	            pair.source = chunk.text.substring(0, 150) + '...';
+	            pair.collection = chunk.collection;
+	            pair.file = chunk.meta?.file || '';
+	            pair.endpoint = endpoint.id;
+	            batchResults.push(pair);
+	          }
+	        } catch (e) {
+	          console.warn(`Error processing chunk on ${endpoint.id}:`, e);
+	        }
+	      }
+	      return batchResults;
+	    };
+	
+	    // Process batches for this endpoint with concurrency limit
+	    for (const batch of assignment.batches) {
+	      promises.push(processBatch(batch));
+	    }
+	  });
+	
+	  // Wait for all batches to complete
+	  const resultsArray = await Promise.all(promises);
+	  resultsArray.forEach(results => allResults.push(...results));
   for (const assignment of endpointBatches) {
     if (assignment.batches.length === 0) continue;
     
