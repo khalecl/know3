@@ -2128,7 +2128,7 @@ OUTPUT: [your output here]</textarea>
         </div>
       </details>
    <!-- DISTRIBUTED ENDPOINTS SECTION -->
-           <details class="settings-section">
+      <details class="settings-section">
         <summary style="font-weight: 600; color: var(--accent); cursor: pointer;">🌐 Distributed Endpoints</summary>
         <div class="settings-category">
           <div class="setting-item">
@@ -2139,11 +2139,10 @@ OUTPUT: [your output here]</textarea>
             </select>
             <div class="hint">Split chunk processing across multiple API endpoints for faster generation</div>
           </div>
-          <div id="dist-endpoints-list" style="display:none; margin-top:1rem;">
-            <div style="font-size:.78rem; color:var(--text2); margin-bottom:.5rem;">Add endpoints with their own service, model, and API key</div>
-            
+	          <div id="dist-endpoints-list" style="display:none; margin-top:1rem;">
+	            <div style="font-size:.78rem; color:var(--text2); margin-bottom:.5rem;">Add endpoints with their own service, model, and API key</div>
             <!-- New Endpoint Form -->
-            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:.5rem; margin-bottom:.8 Stubb.8rem; padding:.8rem; background:var(--surface3); border-radius:8px; border:1px solid var(--border);">
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:.5rem; margin-bottom:.8rem; padding:.8rem; background:var(--surface3); border-radius:8px; border:1px solid var(--border);">
               <div style="grid-column: 1 / -1; font-size:.72rem; color:var(--accent); font-weight:600; margin-bottom:.3rem; text-transform:uppercase; letter-spacing:.05em;">New Endpoint</div>
               
               <div style="grid-column: 1 / -1;">
@@ -2179,14 +2178,7 @@ OUTPUT: [your output here]</textarea>
               
               <button class="btn btn-primary" style="grid-column: 1 / -1; font-size:.78rem; padding:.4rem .7rem;" onclick="addDistEndpointFromForm()">➕ Add Endpoint</button>
             </div>
-            
-            <div style="font-size:.78rem; color:var(--text2); margin-bottom:.5rem;">Configured Endpoints</div>
-            <div id="dist-endpoint-entries" style="display:flex; flex-direction:column; gap:.8rem;"></div>
-            
-            <div class="setting-item" style="background:rgba(255,170,0,.08); border-radius:6px; padding:.6rem; font-size:.78rem; color:var(--warn); margin-top: 0.5rem;">
-              ⚠️ <strong>Privacy note:</strong> Documents & queries will be sent to the cloud provider. Embeddings still run locally via Ollama.
-            </div>
-          </div>
+	          </div>
           <div class="setting-item" style="margin-top:1rem;">
             <label>Concurrency Limit</label>
             <input type="number" id="settings-dist-concurrency" min="1" max="20" value="4">
@@ -2293,17 +2285,13 @@ window.neuralBG = { state: 'idle', intensity: 0 };
   }
 
   function spawnSignal(a, b) {
-    if (signals.length >= MAX_SIGNALS) return;
-    const colors = [lerpColors.input, lerpColors.hidden, lerpColors.output];
-    const color = colors[Math.floor(Math.random() * colors.length)];
-    signals.push({
-      fromX: a.x, fromY: a.y, toX: b.x, toY: b.y,
-      progress: 0, speed: 0.015 + Math.random() * 0.02,
-      size: 1.5 + Math.random() * 2, alpha: 0.6 + Math.random() * 0.4,
-      color
-    });
-  }
-  }
+	              <button class="btn btn-primary" style="grid-column: 1 / -1; font-size:.78rem; padding:.4rem .7rem;" onclick="addDistEndpointFromForm()">➕ Add Endpoint</button>
+	            </div>
+	            
+	            <div id="dist-endpoint-entries"></div>
+	          </div>
+    }});
+  
 
   // ── Lerp helper ──
   function lerpVal(a, b, t) { return a + (b - a) * t; }
@@ -2650,13 +2638,14 @@ function syncSettingsFromDOM() {
   if (settingsSources) settingsSources.value = ragSettings.includeSources !== false ? 'yes' : 'no';
 
   // Ollama connection status
-	initOllamaSettings();
-	  initCloudSettings();
-	  
-	  // Ensure provider dropdown reflects actual state
-	  const providerSel = document.getElementById('settings-cloud-provider');
-	  if (providerSel) providerSel.value = CLOUD_PROVIDER || localStorage.getItem('know3_cloud_provider') || 'ollama';
-	  onCloudProviderChange();
+  initOllamaSettings();
+  initCloudSettings();
+  initDistSettings();
+  
+  // Ensure provider dropdown reflects actual state
+  const providerSel = document.getElementById('settings-cloud-provider');
+  if (providerSel) providerSel.value = CLOUD_PROVIDER || localStorage.getItem('know3_cloud_provider') || 'ollama';
+  onCloudProviderChange();
   console.log('✅ Settings synced from DOM');
 }
 
@@ -3880,6 +3869,9 @@ function initDistSettings() {
   
   renderDistEndpoints();
 }
+
+// Also expose initDistSettings to global scope
+window.initDistSettings = initDistSettings;
 
 // Sync distributed settings from main settings
 function syncDistSettingsFromDOM() {
