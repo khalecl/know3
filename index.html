@@ -2598,8 +2598,6 @@ function closeSettings() {
 }
 
 function syncSettingsFromDOM() {
-  // Sync distributed endpoint settings
-  syncDistSettingsFromDOM();
   // Read current DOM values and populate settings drawer
   console.log('📍 Syncing settings from DOM...');
 
@@ -3624,7 +3622,6 @@ window.resetEndpointForm = function() {
   const baseUrlInput = document.getElementById('dist-new-baseurl');
   const nameInput = document.getElement mutable
   const nameInput = document.getElementById('dist-new-name');
-  
   if (providerSel) providerSel.value = 'groq';
   if (modelInput) modelInput.value = '';
   if (apiKeyInput) apiKeyInput.value = '';
