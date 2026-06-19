@@ -2157,10 +2157,37 @@ OUTPUT: [your output here]</textarea>
               </div>
               
               <div style="grid-column: 1 / -1;">
-                <label style="font-size:.7rem; color:var(--text3); display:block; margin-bottom:.25rem;">Model Name</label>
-                <input type="text" id="dist-new-model" placeholder="e.g. llama-3.1-8b-instant" style="width:100%; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem;">
+                <label style="font-size: 0.7rem; color: var(--text3); display: block; margin-bottom: 0.25rem;">Model Name</label>
+                <select id="dist-new-model" style="width:100%; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem;"></select>
               </div>
-              
+              let distNewApiKeyInput = document.getElementById('dist-new-apikey');
+                    let distNewModelSelect = document.getElementById('dist-new-model');
+
+                    if (distNewApiKeyInput) {
+                      distNewApiKeyInput.addEventListener('input', async () => {
+                        const provider = document.getElementById('dist-new-provider').value;
+                        const apiKey = distNewApiKeyInput.value.trim();
+                        if (apiKey && provider !== 'ollama') {
+                          try {
+                            const baseUrl = DIST_PROVIDER_URLS[provider];
+                            const response = await fetch(`${baseUrl}/models`, {
+                              headers: { 'Authorization': `Bearer ${apiKey}` }
+                            });
+                            if (response.ok) {
+                              const data = await response.json();
+                              const models = (data.data || []).map(m => m.id);
+                              distNewModelSelect.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
+                            } else {
+                              distNewModelSelect.innerHTML = '<option value="">Error loading models</option>';
+                            }
+                          } catch (e) {
+                            distNewModelSelect.innerHTML = '<option value="">Error loading models</option>';
+                          }
+                        } else {
+                          distNewModelSelect.innerHTML = '<option value="">Enter API key first</option>';
+                        }
+                      });
+                    }
               <div style="grid-column: 1 / -1;">
                 <label style="font-size:.7rem; color:var(--text3); display:block; margin-bottom:.25rem;">API Key</label>
                 <input type="password" id="dist-new-apikey" placeholder="sk-..." style="width:100%; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem;">
@@ -2285,13 +2312,18 @@ window.neuralBG = { state: 'idle', intensity: 0 };
   }
 
   function spawnSignal(a, b) {
-	              <button class="btn btn-primary" style="grid-column: 1 / -1; font-size:.78rem; padding:.4rem .7rem;" onclick="addDistEndpointFromForm()">➕ Add Endpoint</button>
-	            </div>
-	            
-	            <div id="dist-endpoint-entries"></div>
-	          </div>
-    }});
-  
+    if (signals.length >= MAX_SIGNALS) return;
+    const color = lerpColors[['input', 'hidden', 'output'][a.layer]];
+    signals.push({
+      fromX: a.x, fromY: a.y,
+      toX: b.x, toY: b.y,
+      progress: 0,
+      speed: 0.008 + Math.random() * 0.012,
+      size: 1.5 + Math.random() * 2,
+      alpha: 0.6 + Math.random() * 0.4,
+      color: color
+    });
+  }
 
   // ── Lerp helper ──
   function lerpVal(a, b, t) { return a + (b - a) * t; }
