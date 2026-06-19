@@ -2146,7 +2146,7 @@ OUTPUT: [your output here]</textarea>
               <div style="grid-column: 1 / -1; font-size:.72rem; color:var(--accent); font-weight:600; margin-bottom:.3rem; text-transform:uppercase; letter-spacing:.05em;">New Endpoint</div>
               
               <div style="grid-column: 1 / -1;">
-                <label style="font-size:.7rem; color:var(--text3); display:block; margin-bottom:.25rem;">Service Provider</label>
+                <label style="font-size:0.7rem; color:var(--text3); display:block; margin-bottom:.25rem;">Service Provider</label>
                 <select id="dist-new-provider" style="width:100%; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem;">
                   <option value="groq">Groq</option>
                   <option value="cerebras">Cerebras</option>
@@ -2157,15 +2157,20 @@ OUTPUT: [your output here]</textarea>
               </div>
               
               <div style="grid-column: 1 / -1;">
-                <label style="font-size: 0.7rem; color: var(--text3); display: block; margin-bottom: 0.25rem;">Model Name</label>
-                <select id="dist-new-model" style="width:100%; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem;"></select>
-              </div>
-
-              <div style="grid-column: 1 / -1;">
-                <label style="font-size:.7rem; color:var(--text3); display:block; margin-bottom:.25rem;">API Key</label>
-                <input type="password" id="dist-new-apikey" placeholder="sk-..." style="width:100%; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem;">
+                <label style="font-size: 0.7rem; color: var(--text3); display: block; margin-bottom: 0.25rem;">API Key</label>
+                <div style="display:flex; gap:.4rem;">
+                  <input type="password" id="dist-new-apikey" placeholder="sk-..." style="flex:1; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem;">
+                  <button class="btn btn-primary" style="font-size:.75rem; padding:.4rem .7rem; white-space:nowrap;" onclick="loadDistModels()" title="Fetch available models">🔄 Load Models</button>
+                </div>
               </div>
               
+              <div style="grid-column: 1 / -1;">
+                <label style="font-size: 0.7rem; color: var(--text3); display: block; margin-bottom: 0.25rem;">Model Name</label>
+                <select id="dist-new-model" style="width:100%; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem;">
+                  <option value="">Enter API key and click Load Models</option>
+                </select>
+              </div>
+
               <div style="grid-column: 1 / -1;">
                 <label style="font-size:.7rem; color:var(--text3); display:block; margin-bottom:.25rem;">Base URL (optional — auto-filled for known providers)</label>
                 <input type="text" id="dist-new-baseurl" placeholder="https://api.groq.com/openai/v1" style="width:100%; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem;">
@@ -3934,6 +3939,69 @@ function applyDistSettings() {
                     }
   console.log('✅ Distributed settings applied:', { distEnabled, distConcurrency, distStrategy, endpoints: distEndpoints.length });
 }
+// Fetch and populate model names for distributed endpoint
+    async function loadDistModels() {
+      const provider = document.getElementById('dist-new-provider')?.value || 'custom';
+      const apiKey = document.getElementById('dist-new-apikey')?.value?.trim() || '';
+      const modelSelect = document.getElementById('dist-new-model');
+      const baseUrlInput = document.getElementById('dist-new-baseurl');
+      
+      if (!apiKey) {
+        alert('Please enter an API key first');
+        return;
+      }
+      
+      // Auto-fill base URL if empty
+      let baseUrl = baseUrlInput?.value?.trim() || '';
+      if (!baseUrl && DIST_PROVIDER_URLS[provider]) {
+        baseUrl = DIST_PROVIDER_URLS[provider];
+        if (baseUrlInput) baseUrlInput.value = baseUrl;
+      }
+      
+      if (!baseUrl) {
+        alert('Please enter a base URL');
+        return;
+      }
+      
+      // Show loading state
+      if (modelSelect) {
+        modelSelect.innerHTML = '<option value="">⏳ Loading models...</option>';
+      }
+      
+      try {
+        const response = await fetch(`${baseUrl}/models`, {
+          headers: { 'Authorization': `Bearer ${apiKey}` },
+          signal: AbortSignal.timeout(10000)
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${responsehttponse.statusText}`);
+        }
+        
+        const data = await response.json();
+        const models = (data.data || []).map(m => m.id || m.name).filter(Boolean).sort();
+        
+        if (models.length === 0) {
+          if (modelSelect) {
+            modelSelect.innerHTML = '<option value="">No models found — check API key</option>';
+          }
+          return;
+        }
+        
+        // Populate dropdown
+        if (modelSelect) {
+          modelSelect.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
+        }
+        
+        console.log(`✅ Loaded ${models.length} models from ${provider}`);
+      } catch (e) {
+        console.error('❌ Failed to load models:', e);
+        if (modelSelect) {
+          modelSelect.innerHTML = `<option value="">❌ Error: ${e.message}</option>`;
+        }
+      }
+    }
+    window.loadDistModels = loadDistModels;
 // Expose distributed endpoint functions to global scope
 window.syncDistSettingsFromDOM = syncDistSettingsFromDOM;
 window.applyDistSettings = applyDistSettings;
