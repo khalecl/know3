@@ -2140,6 +2140,11 @@ OUTPUT: [your output here]</textarea>
             <div class="hint">Split chunk processing across multiple API endpoints for faster generation</div>
           </div>
           <div id="dist-endpoints-list" style="display:none; margin-top:1rem;">
+            	            <!-- Endpoint List Container (visible when enabled) -->
+	            <div id="dist-endpoints-list" style="display:none; margin-top:1rem;">
+	              <div style="font-size:.78rem; color:var(--text2); margin-bottom:.5rem;">Configured Endpoints</div>
+	              <div id="dist-endpoint-entries" style="display:flex; flex-direction:column; gap:.8rem;"></div>
+	            </div>
             <div style="font-size:.78rem; color:var(--text2); margin-bottom:.5rem;">Add endpoints with their own service, model, and API key</div>
             
             <!-- New Endpoint Form -->
@@ -2179,7 +2184,12 @@ OUTPUT: [your output here]</textarea>
               
               <button class="btn btn-primary" style="grid-column: 1 / -1; font-size:.78rem; padding:.4rem .7rem;" onclick="addDistEndpointFromForm()">➕ Add Endpoint</button>
             </div>
-            
+            	          <div class="setting-item" style="background:rgba(255,170,0,.08); border-radius:6px; padding:.6rem; font-size:.78rem; color:var(--warn); margin-top: 0.5rem;">
+	            ⚠️ <strong>Privacy note:</strong> Documents & queries will be sent to the cloud provider. Embeddings still run locally via Ollama.
+	          </div>
+	          <div class="setting-item">
+	            <button class="btn btn-primary" style="width:100%; font-size:.78rem;" onclick="saveCloudSettings()">💾 Save Cloud Settings</button>
+	          </div>
             <div style="font-size:.72rem; color:var(--text3); margin-bottom:.5rem; text-transform:uppercase; letter-spacing:.05em;">Configured Endpoints</div>
             <div id="dist-endpoint-entries" style="display:flex; flex-direction:column; gap:.8rem;"></div>
           </div>
@@ -2289,18 +2299,11 @@ window.neuralBG = { state: 'idle', intensity: 0 };
   }
 
   function spawnSignal(a, b) {
-    if (signals.length >= MAX_SIGNALS) return;
-    const layerKey = ['input', 'hidden', 'output'];
-    const cA = lerpColors[layerKey[a.layer]];
-    const cB = lerpColors[layerKey[b.layer]];
-    const c = cA.map((v, i) => Math.round((v + cB[i]) / 2));
-    signals.push({
-      fromX: a.x, fromY: a.y, toX: b.x, toY: b.y,
-      progress: 0,
-      speed: 0.015 + Math.random() * 0.02,
-      color: c,
-      alpha: 0.5 + Math.random() * 0.3,
-      size: 1.5 + Math.random() * 1.5
+	              <button class="btn btn-primary" style="grid-column: 1 / -1; font-size:.78rem; padding:.4rem .7rem;" onclick="addDistEndpointFromForm()">➕ Add Endpoint</button>
+	            </div>
+	            
+	            <div id="dist-endpoint-entries"></div>
+	          </div>
     });
   }
 
