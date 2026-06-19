@@ -2649,6 +2649,10 @@ function syncSettingsFromDOM() {
   if (settingsSources) settingsSources.value = ragSettings.includeSources !== false ? 'yes' : 'no';
 
   // Ollama connection status
+  // Stub for initDistSettings — module script will override when loaded
+function initDistSettings() {
+  console.log('⏳ initDistSettings called before module loaded — will be overridden');
+}
   initOllamaSettings();
   initCloudSettings();
   initDistSettings();
@@ -3272,13 +3276,15 @@ function renderVisitorFlags(visitors) {
 function checkHosting() {
   const hostname = window.location.hostname;
   const protocol = window.location.protocol;
+  const href = window.location.href;
 
-  // Allowed origins: GitHub Pages only (and localhost for dev)
+  // Allowed origins: GitHub Pages, localhost, and blob URLs from GitHub Pages
   const isGitHub = hostname === 'khalecl.github.io';
   const isLocalDev = hostname === 'localhost' || hostname === '127.0.0.1' || hostname.endsWith('.localhost');
+  const isBlobFromGitHub = href.startsWith('blob:https://khalecl.github.io/');
   const isFile = protocol === 'file:';
 
-  if (isGitHub || isLocalDev) {
+  if (isGitHub || isLocalDev || isBlobFromGitHub) {
     // Fully allowed — no notice
     return;
   }
@@ -3673,7 +3679,7 @@ window.removeDistEndpoint = function(id) {
   if (!ep) return;
 
 
-  const confirmed = confirm(Remove endpoint "${ep.name || 'Untitled'}"?\n\nThis cannot be undone.);
+	  const confirmed = confirm(`Remove endpoint "${ep.name || 'Untitled'}"?\n\nThis cannot be undone.`);
   if (!confirmed) return;
 
 
@@ -3979,11 +3985,8 @@ async function generatePairsDistributed(chunksToProcess, model, systemPrompt, on
   // Process all batches in parallel
   const allResults = [];
   const promises = [];
-  	  // Process all batches in parallel
-	  const allResults = [];
-	  const promises = [];
-	
-	  endpointBatches.forEach(assignment => {
+		
+  endpointBatches.forEach(assignment => {
 	    if (assignment.batches.length === 0) return;
 	    
 	    const endpoint = assignment.endpoint;
@@ -4018,9 +4021,9 @@ async function generatePairsDistributed(chunksToProcess, model, systemPrompt, on
 	    }
 	  });
 	
-	  // Wait for all batches to complete
-	  const resultsArray = await Promise.all(promises);
-	  resultsArray.forEach(results => allResults.push(...results));
+  // Wait for all batches to complete
+  const batchResults = await Promise.all(promises);
+  batchResults.forEach(results => allResults.push(...results));
   for (const assignment of endpointBatches) {
     if (assignment.batches.length === 0) continue;
     
@@ -4115,17 +4118,16 @@ async function generatePairsDistributed(chunksToProcess, model, systemPrompt, on
   }
   
   // Wait for all batches to complete
-  const resultsArray = await Promise.all(promises);
+  const batchResultsArray = await Promise.all(promises);
   
   // Flatten results
-  resultsArray.forEach(results => {
+  batchResultsArray.forEach(results => {
     results.forEach(pair => allResults.push(pair));
   });
   
   log(`✨ Distributed generation complete: ${allResults.length} pairs from ${healthyEndpoints.length} endpoints`, 'ok');
   
   return { pairs: allResults, distributed: true };
-}
 
 // Initialize distributed settings UI
 function initDistSettings() {
