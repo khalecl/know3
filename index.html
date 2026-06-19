@@ -3508,7 +3508,8 @@ window.addDistEndpointFromForm = function() {
     name: name || `${provider} · ${model}`,
     healthy: null,
     latency: 0,
-    requestCount: 0
+    requestCount: 0,
+    paused: false
   };
   
   distEndpoints.push(endpoint);
@@ -3530,24 +3531,10 @@ window.addDistEndpoint = function() {
   if (!container) return;
   
   const id = Date.now().toString(36);
-  const entry = document.createElement('div');
-  entry.className = 'dist-endpoint-entry';
-  entry.dataset.id = id;
-  entry.style.cssText = 'display:grid; grid-template-columns: 1fr 1fr; gap:.5rem; padding:.8rem; background:var(--surface3); border-radius:8px; border:1px solid var(--border);';
-  entry.innerHTML = `
-    <div style="grid-column: 1 / -1; display:flex; justify-content:space-between; align-items:center;">
-      <span style="font-size:.72rem; color:var(--text3); font-family:var(--mono);">Endpoint ${distEndpoints.length + 1}</span>
-      <button onclick="removeDistEndpoint('${id}')" style="background:none; border:none; color:var(--text3); cursor:pointer; font-size:1.1rem;" title="Remove">🗑️</button>
-    </div>
-    <input type="text" class="dist-base-url" placeholder="Base URL (e.g., https://api.groq.com/openai/v1)" style="width:100%; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem; grid-column: 1 / 2;">
-    <input type="password" class="dist-api-key" placeholder="API Key" style="width:100%; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem; grid-column: 2 / 3;">
-    <input type="text" class="dist-model" placeholder="Model (e.g., llama-3.1-8b-instant)" style="width:100%; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem; grid-column: 1 / -1;">
-  `;
-  
-  container.appendChild(entry);
-  
-  // Add to distEndpoints array
-  distEndpoints.push({ id, provider: 'custom', baseUrl: '', apiKey: '', model: '', healthy: null, latency: 0, requestCount: 0 });
+  // Add to distEndpoints array with paused field
+  distEndpoints.push({ id, provider: 'custom', baseUrl: '', apiKey: '', model: '', healthy: null, latency: 0, requestCount: 0, paused: false });
+  saveDistEndpoints();
+  renderDistEndpoints();
 }
 
 // Remove an endpoint
@@ -3560,7 +3547,7 @@ window.removeDistEndpoint = function(id) {
   renderDistEndpoints();
 };
 
-// Render endpoints from array to UI
+// Render endpoints table with full controls
 function renderDistEndpoints() {
   const container = document.getElementById('dist-endpoint-entries');
   if (!container) return;
@@ -3571,42 +3558,99 @@ function renderDistEndpoints() {
     return;
   }
   
+  // Build table
+  const table = document.createElement('div');
+  table.style.cssText = 'width:100%; border:1px solid var(--border); border-radius:8px; overflow:hidden; font-size:.78rem;';
+  
+  // Header
+  const header = document.createElement('div');
+  header.style.cssText = 'display:grid; grid-template-columns: 2fr 1.5fr 1fr 1fr 1fr 1.2fr; gap:.5rem; padding:.5rem .75rem; background:var(--surface2-solid); border-bottom:1px solid var(--border); font-weight:600; color:var(--text3); font-size:.7rem; text-transform:uppercase; letter-spacing:.05em;';
+  header.innerHTML = `
+    <span>Name</span>
+    <span>Model</span>
+    <span>Status</span>
+    <span>Latency</span>
+    <span>Reqs</span>
+    <span style="text-align:center;">Actions</span>
+  `;
+  table.appendChild(header);
+  
+  // Rows
   distEndpoints.forEach((ep, idx) => {
-    const entry = document.createElement('div');
-    entry.className = 'dist-endpoint-entry';
-    entry.dataset.id = ep.id;
+    const row = document.createElement('div');
+    row.style.cssText = 'display:grid; grid-template-columns: 2fr 1.5fr 1fr 1fr 1fr 1.2fr; gap:.5rem; padding:.6rem .75rem; border-bottom:1px solid var(--border); align-items:center; transition:background .2s;';
+    row.onmouseover = () => row.style.background = 'rgba(255,255,255,0.02)';
+    row.onmouseout = () => row.style.background = '';
     
-    // Provider icon
-    const providerIcons = {
-      groq: '⚡', cerebras: '🚀', openai: '🤖', anthropic: '🧠', custom: '🔧'
-    };
+    const providerIcons = { groq: '⚡', cerebras: '🚀', openai: '🤖', anthropic: '🧠', custom: '🔧' };
     const icon = providerIcons[ep.provider] || '🔧';
-    const healthIndicator = ep.healthy === null ? '⏳' : (ep.healthy ? '✅' : '❌');
-    const healthColor = ep.healthy === null ? 'var(--text3)' : (ep.healthy ? 'var(--accent)' : 'var(--err)');
     
-    entry.style.cssText = 'padding:.8rem; background:var(--surface3); border-radius:8px; border:1px solid var(--border);';
-    entry.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:.5rem;">
-        <div style="display:flex; align-items:center; gap:.4rem;">
-          <span style="font-size:1.1rem;">${icon}</span>
-          <div>
-            <div style="font-size:.82rem; font-weight:600; color:var(--text);">${escHtml(ep.name || `Endpoint ${idx + 1}`)}</div>
-            <div style="font-size:.7rem; color:var(--text3); font-family:var(--mono);">${escHtml(ep.model)}</div>
-          </div>
-        </div>
-        <div style="display:flex; align-items:center; gap:.4rem;">
-          <span style="color:${healthColor}; font-size:.9rem;" title="${ep.healthy === null ? 'Not tested' : (ep.healthy ? 'Healthy' : 'Unhealthy')}">${healthIndicator}</span>
-          <button onclick="removeDistEndpoint('${ep.id}')" style="background:none; border:none; color:var(--text3); cursor:pointer; font-size:1.1rem;" title="Remove">🗑️</button>
-        </div>
+    // Status with toggle
+    const isHealthy = ep.healthy === true;
+    const statusColor = ep.healthy === null ? 'var(--text3)' : (isHealthy ? 'var(--accent)' : 'var(--err)');
+    const statusText = ep.healthy === null ? 'Unknown' : (isHealthy ? 'Active' : 'Failed');
+    const statusBg = ep.healthy === null ? 'var(--surface3)' : (isHealthy ? 'rgba(0,229,160,0.1)' : 'rgba(248,113,113,0.1)');
+    
+    // Pause/resume toggle
+    const isPaused = ep.paused === true;
+    const pauseBtn = isPaused 
+      ? `<button onclick="toggleEndpointPause('${ep.id}')" title="Resume endpoint" style="background:rgba(0,229,160,0.15);border:1px solid var(--accent);color:var(--accent);border-radius:4px;padding:.2rem .5rem;cursor:pointer;font-size:.7rem;">▶ Resume</button>`
+      : `<button onclick="toggleEndpointPause('${ep.id}')" title="Pause endpoint" style="background:var(--surface3);border:1px solid var(--border);color:var(--text3);border-radius:4px;padding:.2rem .5rem;cursor:pointer;font-size:.7rem;">⏸ Pause</button>`;
+    
+    row.innerHTML = `
+      <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escHtml(ep.name || `Endpoint ${idx + 1}`)}">
+        <span style="margin-right:.3rem;">${icon}</span>
+        <span style="font-weight:600; color:var(--text);">${escHtml(ep.name || `Endpoint ${idx + 1}`)}</span>
       </div>
-      <div style="display:grid; grid-template-columns: 1fr auto; gap:.5rem; font-size:.72rem; color:var(--text2); font-family:var(--mono);">
-        <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escHtml(ep.baseUrl)}</div>
-        <div style="color:var(--text3); white-space:nowrap;">${ep.latency > 0 ? ep.latency + 'ms' : ''}</div>
+      <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--mono); color:var(--text2);" title="${escHtml(ep.model)}">
+        ${escHtml(ep.model)}
+      </div>
+      <div>
+        <span style="display:inline-flex; align-items:center; gap:.3rem; padding:.15rem .4rem; border-radius:4px; font-size:.7rem; background:${statusBg}; color:${statusColor};">
+          <span style="width:6px; height:6px; border-radius:50%; background:${statusColor}; display:inline-block;"></span>
+          ${statusText}
+        </span>
+      </div>
+      <div style="font-family:var(--mono); color:var(--text2);">
+        ${ep.latency > 0 ? ep.latency + 'ms' : '—'}
+      </div>
+      <div style="font-family:var(--mono); color:var(--text2);">
+        ${ep.requestCount || 0}
+      </div>
+      <div style="display:flex; gap:.3rem; justify-content:center; flex-wrap:wrap;">
+        ${pauseBtn}
+        <button onclick="removeDistEndpoint('${ep.id}')" title="Remove endpoint" style="background:var(--surface3);border:1px solid var(--border);color:var(--err);border-radius:4px;padding:.2rem .5rem;cursor:pointer;font-size:.7rem;">🗑️</button>
       </div>
     `;
-    container.appendChild(entry);
+    table.appendChild(row);
   });
-}
+  
+  // Summary footer
+      const footer = document.createElement('div');
+      footer.style.cssText = 'padding:.5rem .75rem; background:var(--surface2-solid); font-size:.7rem; color:var(--text3); display:flex; gap:1rem;';
+      const activeCount = distEndpoints.filter(e => e.healthy === true && e.paused !== true).length;
+      const pausedCount = distEndpoints.filter(e => e.paused === true).length;
+      const totalReqs = distEndpoints.reduce((sum, e) => sum + (e.requestCount || 0), 0);
+      footer.innerHTML = `
+        <span><strong style="color:var(--accent);">${activeCount}</strong> active</span>
+        <span><strong style="color:var(--warn);">${pausedCount}</strong> paused</span>
+        <span><strong style="color:var(--blue);">${totalReqs.toLocaleString()}</strong> total requests</span>
+        <span style="margin-left:auto;">${distEndpoints.length} endpoint${distEndpoints.length !== 1 ? 's' : ''}</span>
+      `;
+      table.appendChild(footer);
+      
+      container.appendChild(table);
+    }
+
+// Toggle endpoint pause state
+    window.toggleEndpointPause = function(id) {
+      const ep = distEndpoints.find(e => e.id === id);
+      if (!ep) return;
+      ep.paused = !ep.paused;
+      saveDistEndpoints();
+      renderDistEndpoints();
+      console.log(`⏸ Endpoint ${ep.name} ${ep.paused ? 'paused' : 'resumed'}`);
+    };
 
 // Collect endpoints from UI (legacy — now endpoints are managed via the form)
 function collectDistEndpointsFromUI() {
@@ -3634,6 +3678,31 @@ function collectDistEndpointsFromUI() {
 }
 
 
+
+// Test a single endpoint
+async function testDistEndpoint(ep) {
+  const startTime = Date.now();
+  try {
+    const resp = await fetch(`${ep.baseUrl}/models`, {
+      headers: { 'Authorization': `Bearer ${ep.apiKey}` },
+      signal: AbortSignal.timeout(10000)
+    });
+    const latency = Date.now() - startTime;
+    if (resp.ok) {
+      ep.healthy = true;
+      ep.latency = latency;
+      return { success: true, latency, error: null };
+    } else {
+      ep.healthy = false;
+      ep.latency = latency;
+      return { success: false, latency, error: `HTTP ${resp.status}` };
+    }
+  } catch (e) {
+    ep.healthy = false;
+    ep.latency = Date.now() - startTime;
+    return { success: false, latency: ep.latency, error: e.message };
+  }
+}
 
 // Health check all endpoints
 window.testAllDistEndpoints = async function() {
@@ -3669,9 +3738,9 @@ window.testAllDistEndpoints = async function() {
   }
 };
 
-// Get next endpoint based on strategy
+// Get next endpoint based on strategy (respects paused endpoints)
 function getNextDistEndpoint() {
-  const healthy = distEndpoints.filter(ep => ep.healthy === true);
+  const healthy = distEndpoints.filter(ep => ep.healthy === true && ep.paused !== true);
   if (healthy.length === 0) return null;
   
   switch (distStrategy) {
@@ -3681,7 +3750,7 @@ function getNextDistEndpoint() {
       return ep;
     
     case 'least-loaded':
-      return healthy.reduce((min, ep) => ep.requestCount < min.requestCount ? ep : min, healthy[0]);
+      return healthy.reduce((min, ep) => (ep.requestCount || 0) < (min.requestCount || 0) ? ep : min, healthy[0]);
     
     case 'weighted':
       // Weight by inverse latency (faster = more weight)
