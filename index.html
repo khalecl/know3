@@ -2181,7 +2181,8 @@ OUTPUT: [your output here]</textarea>
                 <input type="text" id="dist-new-name" placeholder="e.g. Groq Fast" style="width:100%; padding:.45rem; background:var(--surface-solid); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:.82rem;">
               </div>
               
-              <button class="btn btn-primary" style="grid-column: 1 / -1; font-size:.78rem; padding:.4rem .7rem;" onclick="addDistEndpointFromForm()">➕ Add Endpoint</button>
+              <button class="btn btn-primary" id="dist-add-btn" style="grid-column: 1 / -1; font-size:.78rem; padding:.4rem .7rem;" onclick="addDistEndpointFromForm()">➕ Add Endpoint</button>
+              <button class="btn btn-secondary" id="dist-cancel-edit-btn" style="grid-column: 1 / -1; font-size:.78rem; padding:.4rem .7rem; display:none;" onclick="cancelDistEndpointEdit()">❌ Cancel Edit</button>
             </div>
             
             <!-- Existing Endpoints List -->
@@ -2650,12 +2651,9 @@ function syncSettingsFromDOM() {
 
   // Ollama connection status
   // Stub for initDistSettings — module script will override when loaded
-function initDistSettings() {
-  console.log('⏳ initDistSettings called before module loaded — will be overridden');
-}
   initOllamaSettings();
   initCloudSettings();
-  initDistSettings();
+  // initDistSettings will be called from module script when loaded
   
   // Ensure provider dropdown reflects actual state
   const providerSel = document.getElementById('settings-cloud-provider');
@@ -3478,7 +3476,10 @@ const DIST_PROVIDER_URLS = {
   custom: ''
 };
 
-// Add a new endpoint from the form
+// Track if we're in edit mode
+let _editingEndpointId = null;
+
+// Add a new endpoint from the form (or save edited endpoint)
 window.addDistEndpointFromForm = function() {
   const provider = document.getElementById('dist-new-provider')?.value || 'custom';
   const model = document.getElementById('dist-new-model')?.value.trim() || '';
@@ -3493,7 +3494,7 @@ window.addDistEndpointFromForm = function() {
   
   // Validation
   if (!model) {
-    alert('Please enter a model name');
+    alert('Please select or enter a model name');
     return;
   }
   if (!apiKey) {
@@ -3505,6 +3506,25 @@ window.addDistEndpointFromForm = function() {
     return;
   }
   
+  // If editing existing endpoint, update it
+  if (_editingEndpointId) {
+    const ep = distEndpoints.find(e => e.id === _editingEndpointId);
+    if (ep) {
+      ep.provider = provider;
+      ep.model = model;
+      ep.apiKey = apiKey;
+      ep.baseUrl = baseUrl;
+      ep.name = name || `${provider} · ${model}`;
+      ep.healthy = null; // Reset health status on edit
+      saveDistEndpoints();
+      renderDistEndpoints();
+      console.log('✅ Updated endpoint:', ep.name);
+    }
+    cancelDistEndpointEdit();
+    return;
+  }
+  
+  // Create new endpoint
   const id = Date.now().toString(36);
   const endpoint = {
     id,
@@ -3524,12 +3544,33 @@ window.addDistEndpointFromForm = function() {
   renderDistEndpoints();
   
   // Clear form
-  document.getElementById('dist-new-model').value = '';
+  clearDistForm();
+  
+  console.log('✅ Added distributed endpoint:', endpoint.name);
+};
+
+// Clear the add endpoint form
+function clearDistForm() {
+  document.getElementById('dist-new-provider').value = 'groq';
+  document.getElementById('dist-new-model').innerHTML = '<option value="">Enter API key and click Load Models</option>';
   document.getElementById('dist-new-apikey').value = '';
   document.getElementById('dist-new-baseurl').value = '';
   document.getElementById('dist-new-name').value = '';
+}
+
+// Cancel edit mode and reset form
+window.cancelDistEndpointEdit = function() {
+  _editingEndpointId = null;
+  clearDistForm();
   
-  console.log('✅ Added distributed endpoint:', endpoint.name);
+  // Reset UI buttons
+  const addBtn = document.getElementById('dist-add-btn');
+  const cancelBtn = document.getElementById('dist-cancel-edit-btn');
+  if (addBtn) {
+    addBtn.textContent = '➕ Add Endpoint';
+    addBtn.onclick = addDistEndpointFromForm;
+  }
+  if (cancelBtn) cancelBtn.style.display = 'none';
 };
 
 // Legacy: Add a blank endpoint entry (kept for backwards compatibility)
@@ -3551,26 +3592,31 @@ window.editDistEndpoint = function(id) {
   
   // Populate the form with existing values for editing
   const providerSel = document.getElementById('dist-new-provider');
-  const modelInput = document.getElementById('dist-new-model');
+  const modelSelect = document.getElementById('dist-new-model');
   const apiKeyInput = document.getElementById('dist-new-apikey');
   const baseUrlInput = document.getElementById('dist-new-baseurl');
   const nameInput = document.getElementById('dist-new-name');
   
   if (providerSel) providerSel.value = ep.provider || 'custom';
-  if (modelInput) modelInput.value = ep.model || '';
+  if (modelSelect) {
+    // Populate with current model as selected option
+    modelSelect.innerHTML = `<option value="${ep.model}" selected>${ep.model}</option>`;
+  }
   if (apiKeyInput) apiKeyInput.value = ep.apiKey || '';
   if (baseUrlInput) baseUrlInput.value = ep.baseUrl || '';
   if (nameInput) nameInput.value = ep.name || '';
   
   // Store the ID being edited
-  window._editingEndpointId = id;
+  _editingEndpointId = id;
   
   // Change button to indicate edit mode
-  const addBtn = document.querySelector('#dist-endpoints-list button[onclick="addDistEndpointFromForm()"]');
+  const addBtn = document.getElementById('dist-add-btn');
+  const cancelBtn = document.getElementById('dist-cancel-edit-btn');
   if (addBtn) {
     addBtn.textContent = '💾 Update Endpoint';
-    addBtn.onclick = function() { saveEditedEndpoint(); };
+    addBtn.onclick = addDistEndpointFromForm;
   }
+  if (cancelBtn) cancelBtn.style.display = 'block';
   
   // Scroll to form
   document.getElementById('dist-endpoints-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -3579,65 +3625,14 @@ window.editDistEndpoint = function(id) {
 };
 
 // Save edited endpoint
+// Legacy: keep for backwards compatibility but redirect
 window.saveEditedEndpoint = function() {
-  const id = window._editingEndpointId;
-  if (!id) return;
-  
-  const ep = distEndpoints.find(e => e.id === id);
-  if (!ep) return;
-  
-  const provider = document.getElementById('dist-new-provider')?.value || 'custom';
-  const model = document.getElementById('dist-new-model')?.value?.trim() || '';
-  const apiKey = document.getElementById('dist-new-apikey')?.value?.trim() || '';
-  let baseUrl = document.getElementById('dist-new-baseurl')?.value?.trim() || '';
-  const name = document.getElementById('dist-new-name')?.value?.trim() || '';
-  
-  // Auto-fill base URL from provider if not specified
-  if (!baseUrl && DIST_PROVIDER_URLS[provider]) {
-    baseUrl = DIST_PROVIDER_URLS[provider];
-  }
-  
-  // Validation
-  if (!model) { alert('Please enter a model name'); return; }
-  if (!apiKey) { alert('Please enter an API key'); return; }
-  if (!baseUrl) { alert('Please enter a base URL'); return; }
-  
-  // Update endpoint
-  ep.provider = provider;
-  ep.model = model;
-  ep.apiKey = apiKey;
-  ep.baseUrl = baseUrl;
-  ep.name = name || `${provider} · ${model}`;
-  
-  saveDistEndpoints();
-  renderDistEndpoints();
-  
-  // Reset form and button
-  resetEndpointForm();
-  
-  console.log('✅ Updated endpoint:', ep.name);
+  addDistEndpointFromForm();
 };
 
-// Reset the endpoint form to "Add" mode
+// Legacy: keep for backwards compatibility
 window.resetEndpointForm = function() {
-  window._editingEndpointId = null;
-  
-  const providerSel = document.getElementById('dist-new-provider');
-  const modelInput = document.getElementById('dist-new-model');
-  const apiKeyInput = document.getElementById('dist-new-apikey');
-  const baseUrlInput = document.getElementById('dist-new-baseurl');
-  const nameInput = document.getElementById('dist-new-name');
-  if (providerSel) providerSel.value = 'groq';
-  if (modelInput) modelInput.value = '';
-  if (apiKeyInput) apiKeyInput.value = '';
-  if (baseUrlInput) baseUrlInput.value = '';
-  if (nameInput) nameInput.value = '';
-  
-  const addBtn = document.querySelector('#dist-endpoints-list button[onclick="saveEditedEndpoint()"]');
-  if (addBtn) {
-    addBtn.textContent = '➕ Add Endpoint';
-    addBtn.onclick = function() { addDistEndpointFromForm(); };
-  }
+  cancelDistEndpointEdit();
 };
 
 // Duplicate an endpoint
@@ -4128,6 +4123,7 @@ async function generatePairsDistributed(chunksToProcess, model, systemPrompt, on
   log(`✨ Distributed generation complete: ${allResults.length} pairs from ${healthyEndpoints.length} endpoints`, 'ok');
   
   return { pairs: allResults, distributed: true };
+}
 
 // Initialize distributed settings UI
 function initDistSettings() {
@@ -4142,8 +4138,11 @@ function initDistSettings() {
     enabledSelect.value = distEnabled ? 'yes' : 'no';
     enabledSelect.addEventListener('change', (e) => {
       distEnabled = e.target.value === 'yes';
-      if (endpointsList) endpointsList.style.display = distEnabled ? 'block' : 'none';
+      if (endpointsList) {
+        endpointsList.style.display = distEnabled ? 'block' : 'none';
+      }
       saveDistEndpoints();
+      renderDistEndpoints(); // Ensure list is populated when shown
     });
     
     if (endpointsList) {
@@ -4168,6 +4167,9 @@ function initDistSettings() {
   }
   
   renderDistEndpoints();
+  
+  // Setup auto-load listener
+  setupDistApiKeyAutoLoad();
 }
 
 // Also expose initDistSettings to global scope
@@ -4199,36 +4201,75 @@ function applyDistSettings() {
   if (strategySelect) distStrategy = strategySelect.value || 'round-robin';
   
   saveDistEndpoints();
-                let distNewApiKeyInput = document.getElementById('dist-new-apikey');
-                    let distNewModelSelect = document.getElementById('dist-new-model');
-
-                    if (distNewApiKeyInput) {
-                      distNewApiKeyInput.addEventListener('input', async () => {
-                        const provider = document.getElementById('dist-new-provider').value;
-                        const apiKey = distNewApiKeyInput.value.trim();
-                        if (apiKey && provider !== 'ollama') {
-                          try {
-                            const baseUrl = DIST_PROVIDER_URLS[provider];
-                            const response = await fetch(`${baseUrl}/models`, {
-                              headers: { 'Authorization': `Bearer ${apiKey}` }
-                            });
-                            if (response.ok) {
-                              const data = await response.json();
-                              const models = (data.data || []).map(m => m.id);
-                              distNewModelSelect.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
-                            } else {
-                              distNewModelSelect.innerHTML = '<option value="">Error loading models</option>';
-                            }
-                          } catch (e) {
-                            distNewModelSelect.innerHTML = '<option value="">Error loading models</option>';
-                          }
-                        } else {
-                          distNewModelSelect.innerHTML = '<option value="">Enter API key first</option>';
-                        }
-                      });
-                    }
+  renderDistEndpoints(); // Ensure list is populated after applying settings
+  
+  // Update visibility of endpoints list based on enabled state
+  const endpointsList = document.getElementById('dist-endpoints-list');
+  if (endpointsList) {
+    endpointsList.style.display = distEnabled ? 'block' : 'none';
+  }
+  
   console.log('✅ Distributed settings applied:', { distEnabled, distConcurrency, distStrategy, endpoints: distEndpoints.length });
 }
+
+// Setup API key input listener once on init
+function setupDistApiKeyListener() {
+  const distNewApiKeyInput = document.getElementById('dist-new-apikey');
+  const distNewModelSelect = document.getElementById('dist-new-model');
+
+  if (distNewApiKeyInput && !distNewApiKeyInput._know3ListenerAdded) {
+    distNewApiKeyInput._know3ListenerAdded = true;
+    distNewApiKeyInput.addEventListener('input', async () => {
+      const provider = document.getElementById('dist-new-provider').value;
+      const apiKey = distNewApiKeyInput.value.trim();
+      if (apiKey && provider !== 'ollama') {
+        try {
+          const baseUrl = DIST_PROVIDER_URLS[provider];
+          const response = await fetch(`${baseUrl}/models`, {
+            headers: { 'Authorization': `Bearer ${apiKey}` }
+          });
+          if (response.ok) {
+            const data = await response.json();
+            const models = (data.data || []).map(m => m.id);
+            distNewModelSelect.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
+          } else {
+            distNewModelSelect.innerHTML = '<option value="">Error loading models</option>';
+          }
+        } catch (e) {
+          distNewModelSelect.innerHTML = '<option value="">Error loading models</option>';
+        }
+      } else {
+        distNewModelSelect.innerHTML = '<option value="">Enter API key first</option>';
+      }
+    });
+  }
+}
+// Auto-load models when API key is entered (with debounce)
+let _distApiKeyTimer = null;
+function setupDistApiKeyAutoLoad() {
+  const apiKeyInput = document.getElementById('dist-new-apikey');
+  if (!apiKeyInput || apiKeyInput._know3AutoLoadSetup) return;
+  
+  apiKeyInput.addEventListener('input', () => {
+    if (_distApiKeyTimer) clearTimeout(_distApiKeyTimer);
+    _distApiKeyTimer = setTimeout(() => {
+      const apiKey = apiKeyInput.value.trim();
+      if (apiKey && apiKey.length > 10) {
+        // Auto-fill base URL if empty
+        const provider = document.getElementById('dist-new-provider')?.value || 'custom';
+        const baseUrlInput = document.getElementById('dist-new-baseurl');
+        if (baseUrlInput && !baseUrlInput.value.trim() && DIST_PROVIDER_URLS[provider]) {
+          baseUrlInput.value = DIST_PROVIDER_URLS[provider];
+        }
+        // Auto-load models
+        loadDistModels();
+      }
+    }, 800); // Debounce 800ms after typing stops
+  });
+  
+  apiKeyInput._know3AutoLoadSetup = true;
+}
+
 // Fetch and populate model names for distributed endpoint
     async function loadDistModels() {
       const provider = document.getElementById('dist-new-provider')?.value || 'custom';
@@ -4265,7 +4306,7 @@ function applyDistSettings() {
         });
         
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${responsehttponse.statusText}`);
+           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
         
         const data = await response.json();
@@ -4299,6 +4340,11 @@ window.addDistEndpoint = addDistEndpoint;
 window.addDistEndpointFromForm = addDistEndpointFromForm;
 window.removeDistEndpoint = removeDistEndpoint;
 window.testAllDistEndpoints = testAllDistEndpoints;
+window.editDistEndpoint = editDistEndpoint;
+window.duplicateDistEndpoint = duplicateDistEndpoint;
+window.clearAllDistEndpoints = clearAllDistEndpoints;
+window.cancelDistEndpointEdit = cancelDistEndpointEdit;
+window.toggleEndpointPause = toggleEndpointPause;
 
 function updateDomainSelects() {
   const domainKeys = Object.keys(DOMAIN_PROMPTS);
